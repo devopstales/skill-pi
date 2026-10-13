@@ -1,0 +1,4 @@
+# Downloaded fallback search binaries (file-search extension resolves these
+# at startup only when no system fd/rg is present).
+/fd
+/rg

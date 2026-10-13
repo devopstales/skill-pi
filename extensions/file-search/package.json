@@ -1,0 +1,22 @@
+{
+  "name": "file-search",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "First-class fd and rg tools for pi. Inspired by davis7dotsh/my-pi-setup's file-search (MIT). Runtime deps (effect, @effect/*, @earendil-works/*, typebox) resolve from the skill-pi root node_modules; the deps/devDeps below are the standalone toolchain (check/test) and are not installed by skill-pi.",
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@effect/platform-node": "^4.0.0-beta.99",
+    "effect": "^4.0.0-beta.99"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "^0.24.2",
+    "@effect/vitest": "^4.0.0-beta.99",
+    "typescript": "^7.0.2",
+    "vitest": "4.1.10"
+  }
+}

@@ -88,6 +88,16 @@ Bundled (shipped with the package): add the file to `extensions/` and list it in
 `pi.extensions` array in `extensions/package.json` — it loads for every `skill-pi`
 invocation.
 
+Currently bundled:
+
+- **`skill-pi-banner`** — a `session_start` notification confirming the isolated session.
+- **`file-search`** — first-class `fd` (find files) and `rg` (search content) tools. On
+  session start it resolves a usable binary per tool: a system `fd`/`fdfind`/`rg` is
+  preferred silently, then a fallback in the package root `bin/` (silently), and only when
+  neither exists does it download an official release into `bin/` (the one case that
+  notifies). Inspired by the `file-search` extension in
+  [davis7dotsh/my-pi-setup](https://github.com/davis7dotsh/my-pi-setup) (MIT).
+
 ## Upgrading
 
 `skill-pi` depends on `@earendil-works/pi-coding-agent` through normal npm semver.

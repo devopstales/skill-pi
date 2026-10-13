@@ -6,7 +6,8 @@
   "description": "Bundled pi extensions for skill-pi. Declared as a pi manifest dir (the same `pi.extensions` shape omegon-pi uses); skill-pi passes this directory to pi via --extension so pi resolves the extensions listed here on every launch.",
   "pi": {
     "extensions": [
-      "./skill-pi-banner.ts"
+      "./skill-pi-banner.ts",
+      "./file-search/index.ts"
     ]
   }
 }
