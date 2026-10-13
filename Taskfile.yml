@@ -1,0 +1,74 @@
+version: "3"
+
+vars:
+  AGENT_DIR:
+    sh: echo "${SKILL_PI_AGENT_DIR:-$HOME/.skill-pi/agent}"
+  WORK_DIR:
+    sh: echo "${SKILL_PI_WORK_DIR:-$HOME/.skill-pi/work}"
+
+tasks:
+  install:
+    desc: "Install skill-pi globally (npm link) and verify"
+    cmds:
+      - npm ci
+      - node --test "test/*.test.js"
+      - node bin/skill-pi.js --version
+      - npm link
+      - 'echo "skill-pi installed: $(which skill-pi)"'
+      - 'echo "agent dir: {{.AGENT_DIR}}"'
+      - 'echo "work dir:  {{.WORK_DIR}}"'
+    status:
+      - 'test -x "$(which skill-pi 2>/dev/null || echo /nonexistent)"'
+
+  uninstall:
+    desc: "Uninstall skill-pi (--force to also wipe ~/.skill-pi)"
+    cmds:
+      - npm unlink -g skill-pi 2>/dev/null || true
+      - npm uninstall -g skill-pi 2>/dev/null || true
+      - '{{ if .FORCE }}rm -rf "{{.AGENT_DIR}}" "{{.WORK_DIR}}"; echo "wiped agent dir and work dir"{{ end }}'
+      - 'echo "uninstalled; $(command -v skill-pi 2>/dev/null || echo "skill-pi removed from PATH")"'
+    vars:
+      FORCE:
+        sh: '[ "$1" = "--force" ] && echo true || echo false'
+
+  clean:
+    desc: "Remove node_modules and local .pi artifacts"
+    cmds:
+      - rm -rf node_modules .pi
+    status:
+      - test ! -d node_modules
+
+  test:
+    desc: "Run test suite"
+    cmds:
+      - node --test "test/**/*.test.js"
+
+  pack:
+    desc: "Create a .tgz package for inspection"
+    cmds:
+      - npm pack
+
+  publish:
+    desc: "Publish to npm (usage: task publish -- --dry-run | -- --access public)"
+    deps: [test]
+    cmds:
+      - npm publish {{.PUBLISH_ARGS}}
+    vars:
+      PUBLISH_ARGS:
+        sh: |
+          for a in "$@"; do
+            case "$a" in
+              --dry-run|--access) echo "$a";;
+              --access=*) echo "$a";;
+            esac
+          done
+    preconditions:
+      - test: test -n "$(npm config get //registry.npmjs.org/:_authToken 2>/dev/null)"
+        message: "No npm auth token found. Run: npm login"
+
+  all:
+    desc: "Clean, install, test"
+    cmds:
+      - task: clean
+      - task: install
+      - task: test
