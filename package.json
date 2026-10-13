@@ -18,6 +18,7 @@
     "docs",
     "extensions",
     "skills",
+    ".skillgrid",
     "SYSTEM.md"
   ],
   "dependencies": {

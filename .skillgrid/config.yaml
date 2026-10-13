@@ -1,0 +1,175 @@
+schema: skillgrid/v1
+project: skill-pi
+context: >-
+  Node.js 22 ESM CLI wrapper around @earendil-works/pi-coding-agent 1.2.0.
+  Provides an isolated pi install (separate agent dir under ~/.skill-pi/agent,
+  shim project dir) plus bundled extensions loaded via a dir-level pi manifest.
+  Constraints: thin wrapper only — no fork of pi; never touch the stock ~/.pi/agent.
+
+# --- Ticketing ---
+ticketing:
+  enabled: true
+  type: gh
+  backlogmd:
+    dir: .backlog
+    task_prefix: "task"
+    zero_padded_ids: 3
+  gh:
+    labels:
+      triage: "needs-triage"
+      info: "needs-info"
+      ready_agent: "ready-for-agent"
+      ready_human: "ready-for-human"
+      wontfix: "wontfix"
+    labels_file: .skillgrid/artifacts/triage-labels.md
+
+# --- Testing ---
+testing:
+  runner: node --test "test/**/*.test.js"
+  setup: ""
+  layers: [unit, integration]
+  coverage: ""
+  mutation: ""
+  tdd: true
+
+# --- QA Gates ---
+quality:
+  coverage_min: 0
+  mutation_min: 0
+  p0_pass_rate: 100
+  p1_pass_rate: 95
+
+# --- Security Scan ---
+security:
+  trivy:
+    command: ""
+    target: "."
+    severities: "CRITICAL"
+    scan_types: "vuln"
+    fail_on: ""
+
+# --- Commands ---
+commands:
+  build: "task build"
+  lint: ""
+  format: ""
+  typecheck: ""
+
+# --- AGENTS.md preamble ---
+agents:
+  directories:
+    - path: "bin/"
+      purpose: "skill-pi CLI entrypoints (wrapper: env, seeding, shim, launch)"
+    - path: "lib/"
+      purpose: "wrapper modules — config/shim/auth/brand (CJS + ESM)"
+    - path: "extensions/"
+      purpose: "bundled pi extensions (TypeScript, always loaded via pi.extensions manifest)"
+    - path: "test/"
+      purpose: "node:test suites (unit + integration + E2E)"
+  security_boundaries:
+    - "Never read or write the stock ~/.pi/agent — isolation is the product"
+    - "The wrapper only sets PI_CODING_AGENT_DIR; never set PI_PACKAGE_DIR"
+  dependency_policies:
+    - "Thin wrapper only — no fork of pi; pi behavior changes come via npm semver"
+    - "Production deps: @earendil-works/pi-coding-agent only; dev deps for tests only"
+  architecture_constraints:
+    - "No comments in code unless asked"
+    - "Keep changes minimal and scoped"
+    - "Verify before claiming: run the tests, read the output, then report"
+  definition_of_done:
+    - "node --test \"test/**/*.test.js\" is green"
+  engineering_standards:
+    - "Follow existing patterns; reuse before creating"
+
+# --- Conventions ---
+conventions:
+  specs_root: .skillgrid/specs
+  scratch_dir: .skillgrid/sdd
+  artifacts: .skillgrid/artifacts
+  worktree_dir: .worktrees
+  commit_style: conventional
+  state_file: .skillgrid/state.yaml
+
+# --- Work-unit commits ---
+checkpoint:
+  enabled: true
+
+# --- ADR format ---
+adr_style: madr-minimal
+
+# --- BDD / Acceptance Testing ---
+bdd:
+  enabled: true
+  stack: javascript
+  specs_dir: .skillgrid/specs
+  runner_dir: acceptance-tests
+  lint: gherkin
+
+# --- Mnemonic ---
+mnemonic:
+  enabled: true
+  data_dir: ~/.skillgrid/mnemonic
+
+# --- Research ---
+research:
+  default: research
+  output_dir: .skillgrid/specs
+  code_research_preset: standard
+
+# --- Prototype ---
+prototype:
+  enabled: true
+  dir: .skillgrid/prototypes
+  findings: .skillgrid/specs/{topic}/findings.md
+  module_dir: .skillgrid/specs/{topic}/modules
+
+# --- Sketch ---
+sketch:
+  enabled: true
+  findings: .skillgrid/specs/{topic}/findings.md
+  dir: .skillgrid/specs/{topic}/sketches
+
+# --- Rules (per-phase overrides) ---
+rules:
+  brainstorm: []
+  blueprint:
+    - Include rollback plan for risky changes
+    - Include success criteria (measurable)
+    - Document architecture decisions with rationale (Choice/Alternatives/Rationale)
+    - Carry the threat matrix applicable rows forward into per-step WHAT
+  slicing: []
+  execution: []
+  review: []
+  tiers:
+    default: T2
+    T0: { name: Prototype, blueprint: none,  qa: self-check }
+    T1: { name: Alpha,     blueprint: light, qa: L1+verify  }
+    T2: { name: Beta,      blueprint: full,  qa: L2+L3,     review: two-axis }
+    T3: { name: GA,        blueprint: full,  qa: L4,        review: parallel+fresh-model }
+  ship:
+    fast_track_light: true
+  reflect:
+    verdict_gate: advisory
+  fast_track:
+    enabled: true
+    classes:
+      trivial:
+        criteria:
+          - "single concern, ≤3 files, no behavior change (typo, copy, single-line config, pure rename)"
+          - "no migration, no new dependency, no trust-boundary change"
+        skips: [brainstorming, blueprint, acceptance.feature]
+        tasks: light
+      small:
+        criteria:
+          - "single file or single concern, no new capability, no migration"
+          - "≤10 files"
+        skips: [brainstorming, blueprint]
+        tasks: light
+    waiver:
+      required: true
+      recorded_in: briefing.md
+    blocked_when:
+      - "any threat-matrix row Applicable"
+      - "new trust boundary or migration"
+      - "multi-domain impact"
+      - "400+ line change"

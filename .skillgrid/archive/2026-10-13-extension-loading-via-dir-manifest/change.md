@@ -2,7 +2,7 @@
 
 > **STATUS:** `complete` (2026-10-13) — implemented before Skillgrid onboarding; retrofitted into SDD structure.
 >
-> **For agentic workers:** REQUIRED: follow `docs/skillgrid/config.yaml` + the SDD structure convention. This file is WHY + HOW.
+> **For agentic workers:** REQUIRED: follow `.skillgrid/config.yaml` + the SDD structure convention. This file is WHY + HOW. (Historical: authored under the `docs/skillgrid` layout; migrated 2026-10-13.)
 
 **Goal:** Bundled pi extensions load on every skill-pi launch via an explicit `pi.extensions` manifest, matching the mechanism used by `omegon-pi`.
 
@@ -37,7 +37,7 @@ This change is done only when **all** of the following are true:
 - [x] `--extension <pkg>/extensions` resolves (via pi's `resolveExtensionEntries`) to exactly the files listed in `extensions/package.json` `pi.extensions`.
 - [x] `npm test` config/auth/shim tests pass; the 3 pre-existing failures (`--version`, `--print`, `rpc`) are unchanged by this work (root cause: `ensureAgentDir` + pi 1.2.0 `--extension` dir handling, tracked separately).
 - [x] README "Bundled extensions always load" and "Adding your own extensions" describe the manifest.
-- [x] `docs/adr/0001-extension-loading-via-dir-manifest.md` promoted (decision outlives the change).
+- [x] ADR 0001 promoted (`.skillgrid/artifacts/04-adr-0001-extension-loading-via-dir-manifest.md`; decision outlives the change).
 
 ---
 
@@ -106,7 +106,7 @@ Add `extensions/package.json` with a `pi.extensions` array listing the bundled e
 2. Keep auto-discovery (no manifest) — rejected: no explicit contract; ordering/files are implicit.
 **Rationale:** dir-level manifest is the exact mechanism `omegon-pi` uses, is resolved by pi's own loader with no env tricks, and gives an explicit ordered list.
 
-> Promoted: [`docs/adr/0001-extension-loading-via-dir-manifest.md`](../../../adr/0001-extension-loading-via-dir-manifest.md)
+> Promoted: [`.skillgrid/artifacts/04-adr-0001-extension-loading-via-dir-manifest.md`](../../artifacts/04-adr-0001-extension-loading-via-dir-manifest.md)
 
 ### Decision: agent-dir extensions keep auto-discovery
 

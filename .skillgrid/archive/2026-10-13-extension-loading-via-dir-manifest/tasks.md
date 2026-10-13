@@ -10,9 +10,9 @@
 
 **Tech Stack:** Node.js 22 ESM, `@earendil-works/pi-coding-agent@1.2.0`
 
-**Spec:** `docs/skillgrid/changes/001-extension-loading-via-dir-manifest/change.md`
+**Spec:** `.skillgrid/archive/2026-10-13-extension-loading-via-dir-manifest/change.md`
 
-**Acceptance:** `docs/skillgrid/changes/001-extension-loading-via-dir-manifest/acceptance.feature` (`@step-NN`)
+**Acceptance:** `.skillgrid/archive/2026-10-13-extension-loading-via-dir-manifest/acceptance.feature` (`@step-NN`)
 
 ---
 

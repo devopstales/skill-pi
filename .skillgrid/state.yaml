@@ -1,0 +1,10 @@
+schema: skillgrid/state/v1
+pipeline:
+  current_phase: "spec"
+  current_change: "2026-10-13-ask-user"
+  status: in_progress
+progress:
+  completed_changes: 1
+  blocked_changes: 0
+constraints_ref: .skillgrid/ASSUMPTIONS.md
+notes: "Migrated from docs/skillgrid (NNN) to .skillgrid (YYYY-MM-DD) layout on 2026-10-13. In-flight: 2026-10-13-ask-user at user gate (slicing done, execution not started)."
