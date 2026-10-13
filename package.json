@@ -1,0 +1,40 @@
+{
+  "name": "skill-pi",
+  "version": "0.1.0",
+  "description": "A pi-based coding agent with bundled extensions, fully isolated from stock pi installs.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "skill-pi": "./bin/skill-pi.js",
+    "skill-pi-version": "./bin/skill-pi-version.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "defaults",
+    "docs",
+    "extensions",
+    "skills",
+    "SYSTEM.md"
+  ],
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "llm",
+    "wrapper",
+    "isolated"
+  ]
+}
