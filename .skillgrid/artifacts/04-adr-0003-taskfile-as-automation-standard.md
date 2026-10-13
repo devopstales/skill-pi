@@ -1,7 +1,11 @@
-# ADR 0003: Taskfile.yml as the automation standard for build/install/test/pack/publish
+# Taskfile.yml as the automation standard for build/install/test/pack/publish
 
-- Status: accepted
-- Date: 2026-10-13
+---
+status: "accepted"
+date: 2026-10-13
+supersedes: none
+---
+
 - SDD change: none yet (pre-propose decision; candidate change `003-…`)
 - Artifact: `Taskfile.yml` (root)
 

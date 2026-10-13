@@ -1,9 +1,13 @@
-# ADR 0002: Full separation from pi (agent dir + project dir + skill sources)
+# Full separation from pi (agent dir + project dir + skill sources)
 
-- Status: proposed
-- Date: 2026-10-13
+---
+status: "proposed"
+date: 2026-10-13
+supersedes: none
+---
+
 - SDD change: none yet (pre-propose decision; will become change `002-…`)
-- Related: [ADR 0001](./0001-extension-loading-via-dir-manifest.md)
+- Related: [ADR 0001](./04-adr-0001-extension-loading-via-dir-manifest.md)
 - Reference: `@earendil-works/pi-coding-agent@1.2.0` loader (traced from `dist/bundle/chunks/`)
 
 ## Context

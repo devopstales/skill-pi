@@ -1,10 +1,14 @@
-# ADR 0004: Extensions are separately published, installable pi packages
+# Extensions are separately published, installable pi packages
 
-- Status: proposed
-- Date: 2026-10-13
+---
+status: "proposed"
+date: 2026-10-13
+supersedes: none
+---
+
 - SDD change: none yet (pre-propose decision; candidate change `004-…`)
 - Reference: [`spences10/my-pi`](https://github.com/spences10/my-pi) (pnpm monorepo of `@spences10/pi-*` packages), `@earendil-works/pi-coding-agent@1.2.0` package-manager loader
-- Related: [ADR 0001](./0001-extension-loading-via-dir-manifest.md) (superseded in part), [ADR 0003](./0003-taskfile-as-automation-standard.md) (publish pipeline)
+- Related: [ADR 0001](./04-adr-0001-extension-loading-via-dir-manifest.md) (superseded in part), [ADR 0003](./04-adr-0003-taskfile-as-automation-standard.md) (publish pipeline)
 
 ## Context
 
