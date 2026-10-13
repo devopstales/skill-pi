@@ -266,6 +266,15 @@ Core matrix rows (doc-path classification, git repo selection, commit/push state
 
 - None — scope, tool name, PTY library, E2E model, and batch review behavior were settled with the user on 2026-10-13.
 
+## Naming note (ADR-0005)
+
+This change does not rename or publish packages. If `ask_user` is ever split into a
+separately published package (per [ADR 0004](../../artifacts/04-adr-0004-extensions-as-separately-published-packages.md)),
+its npm name is **`@devopstales/pi-ask-user`** per [ADR 0005](../../artifacts/04-adr-0005-package-naming-devopstales-scope.md)
+(`@devopstales` scope, `pi-<name>` pattern). Do not hardcode `@skill-pi/*` in code, tests, or
+docs for this extension. See the change's [ADR review manifest](./adr.md) for the full
+in-force ADR set.
+
 ## Glossary
 
 | Term | Definition | Glossary file |

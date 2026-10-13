@@ -7,6 +7,7 @@ supersedes: none
 ---
 
 - SDD change: none yet (pre-propose decision; candidate change `004-…`)
+- Note: the `@skill-pi` scope is superseded — read all `@skill-pi/*` as `@devopstales/*` per [ADR 0005](./04-adr-0005-package-naming-devopstales-scope.md).
 - Reference: [`spences10/my-pi`](https://github.com/spences10/my-pi) (pnpm monorepo of `@spences10/pi-*` packages), `@earendil-works/pi-coding-agent@1.2.0` package-manager loader
 - Related: [ADR 0001](./04-adr-0001-extension-loading-via-dir-manifest.md) (superseded in part), [ADR 0003](./04-adr-0003-taskfile-as-automation-standard.md) (publish pipeline)
 
