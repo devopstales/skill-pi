@@ -1,0 +1,29 @@
+schema: skillgrid-sdd/v1
+project: skill-pi
+context: >
+  Node.js 22 ESM CLI wrapper around @earendil-works/pi-coding-agent 1.2.0.
+  Provides an isolated pi install (separate agent dir under ~/.skill-pi/agent,
+  shim project dir) plus bundled extensions loaded via a dir-level pi manifest.
+  Constraints: thin wrapper only — no fork of pi; never touch the stock ~/.pi/agent.
+issue_tracker: gh
+testing:
+  runner: node --test "test/**/*.test.js"
+  layers: [unit, integration]
+  coverage: null
+  tdd: true
+conventions:
+  artifacts_root: docs/skillgrid
+  scratch_dir: .skillgrid/sdd
+  registry: docs/skillgrid/agents/skill-registry.md
+rules:
+  explore: []
+  propose:
+    - Include rollback plan for risky changes
+    - Include success criteria (measurable)
+    - Document architecture decisions with rationale (Choice/Alternatives/Rationale)
+    - Carry the threat matrix applicable rows forward into per-step WHAT
+  spec:
+    - Own NN allocation; one ## section per Step Blueprint entry in tasks.md
+    - Group tasks by step; keep each task completable in one sitting
+    - One change-level acceptance.feature with @step-NN Features
+    - Cover a happy path and at least one edge + failure per step
