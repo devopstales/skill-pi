@@ -14,6 +14,14 @@ import type { Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "
 import { extractBashCommands } from "./bash-parser.js";
 import { loadExtensionSettings } from "./project.js";
 import { buildHardRejectedReason } from "./rejection.js";
+import { showPermissionReviewDialog } from "./review-dialog.js";
+import {
+  buildEditPermissionPreview,
+  buildWritePermissionPreview,
+  type PermissionEditPreviewInput,
+  type PermissionReviewPreview,
+  type PermissionWritePreviewInput,
+} from "./review-preview.js";
 
 const EXTENSION = "permission";
 
@@ -46,6 +54,12 @@ export default function (pi: ExtensionAPI) {
     }
 
     const promptResult = await promptForPermission(event.toolName, event.input as Record<string, unknown>, argValue, ctx);
+    if (isAutomaticFeedbackRejection(promptResult)) {
+      return {
+        block: true,
+        reason: promptResult.reason,
+      };
+    }
     if (promptResult === PERMISSION_PROMPT_ALLOW_ONCE) {
       return undefined;
     }
@@ -172,16 +186,70 @@ export async function resolveMode(
   return worst;
 }
 
+type PermissionPromptResult = PermissionPromptChoice | undefined | AutomaticFeedbackRejection;
+
+type AutomaticFeedbackRejection = {
+  kind: "automatic-feedback-rejection";
+  reason: string;
+};
+
 async function promptForPermission(
   toolName: string,
   input: Record<string, unknown>,
   argValue: string,
   ctx: ExtensionContext,
-): Promise<PermissionPromptChoice | undefined> {
+): Promise<PermissionPromptResult> {
+  if (toolName === "edit") {
+    const preview = await buildEditPermissionPreview(asEditToolInput(input), ctx.cwd);
+    return asPromptResult(preview) ?? showPermissionReviewDialog(ctx, preview);
+  }
+
+  if (toolName === "write") {
+    const preview = await buildWritePermissionPreview(asWriteToolInput(input), ctx.cwd);
+    return asPromptResult(preview) ?? showPermissionReviewDialog(ctx, preview);
+  }
+
   const details = argValue ?? JSON.stringify(input, null, 2);
   const title = `${toolName}\n\n${details}\n\nChoose permission:`;
   const choice = await ctx.ui.select(title, [...PERMISSION_CHOICES]);
   return isPermissionPromptChoice(choice) ? choice : undefined;
+}
+
+function asEditToolInput(input: Record<string, unknown>): PermissionEditPreviewInput {
+  return {
+    path: typeof input.path === "string" ? input.path : "",
+    edits: Array.isArray(input.edits)
+      ? input.edits
+          .filter(
+            (edit): edit is { oldText: string; newText: string } =>
+              typeof edit === "object" &&
+              edit !== null &&
+              typeof edit.oldText === "string" &&
+              typeof edit.newText === "string",
+          )
+          .map((edit) => ({ oldText: edit.oldText, newText: edit.newText }))
+      : [],
+  };
+}
+
+function asWriteToolInput(input: Record<string, unknown>): PermissionWritePreviewInput {
+  return {
+    path: typeof input.path === "string" ? input.path : "",
+    content: typeof input.content === "string" ? input.content : "",
+  };
+}
+
+function asPromptResult(preview: PermissionReviewPreview): AutomaticFeedbackRejection | undefined {
+  if (preview.kind !== "error") return undefined;
+
+  return {
+    kind: "automatic-feedback-rejection",
+    reason: preview.error,
+  };
+}
+
+function isAutomaticFeedbackRejection(value: PermissionPromptResult): value is AutomaticFeedbackRejection {
+  return typeof value === "object" && value !== null && value.kind === "automatic-feedback-rejection";
 }
 
 function isPermissionPromptChoice(value: string | undefined): value is PermissionPromptChoice {
