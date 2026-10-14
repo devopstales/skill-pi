@@ -1,23 +1,81 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { agentDirFor, ensureAgentDir } from "../lib/config.js";
-import { resolveShimCwd } from "../lib/shim.js";
 import { brandOverlayDir } from "../lib/brand.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const bundledExtensionFiles = [join(pkgRoot, "extensions")];
+
+// Resolve the entry points a subdirectory exposes, matching pi's own
+// resolveExtensionEntries convention exactly: a package.json with a non-empty
+// "pi.extensions" manifest wins (each declared path, relative to the dir),
+// else index.ts, else index.js. Returns [] when the dir has no entry point.
+function resolveDirEntryPoints(dir) {
+  const manifestPath = join(dir, "package.json");
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      const declared = manifest?.pi?.extensions;
+      if (Array.isArray(declared) && declared.length > 0) {
+        return declared
+          .filter((p) => typeof p === "string")
+          .map((p) => join(dir, p))
+          .filter((p) => existsSync(p));
+      }
+    } catch {
+      // malformed manifest; fall through to index detection
+    }
+  }
+  if (existsSync(join(dir, "index.ts"))) return [join(dir, "index.ts")];
+  if (existsSync(join(dir, "index.js"))) return [join(dir, "index.js")];
+  return [];
+}
+
+// Scan an extensions directory for entry points: top-level *.ts/*.js files
+// (alphabetical) plus subdirectories that carry an entry point (manifest,
+// index.ts, or index.js — the same convention pi's own discovery uses). The
+// wrapper enumerates files itself because --no-extensions suppresses pi's
+// package-scope auto-discovery, which is exactly the isolation we want.
+function collectExtensionFiles(dir) {
+  if (!existsSync(dir)) return [];
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const full = join(dir, entry.name);
+    let isFile = entry.isFile();
+    let isDir = entry.isDirectory();
+    if (entry.isSymbolicLink()) {
+      try {
+        const st = statSync(full);
+        isFile = st.isFile();
+        isDir = st.isDirectory();
+      } catch {
+        continue;
+      }
+    }
+    if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
+      files.push(full);
+    } else if (isDir) {
+      files.push(...resolveDirEntryPoints(full));
+    }
+  }
+  return files;
+}
 
 function parseArgs(argv) {
   const args = {
     project: null,
     importAuthFrom: null,
     agentDir: null,
-    noShim: false,
     version: false,
     passthrough: [],
   };
@@ -28,8 +86,6 @@ function parseArgs(argv) {
       if (!args.importAuthFrom) fail("--import-auth requires a source directory");
     } else if (a === "--agent-dir") {
       args.agentDir = expandHome(argv[++i] ?? null);
-    } else if (a === "--no-shim") {
-      args.noShim = true;
     } else if (a === "--project") {
       args.project = resolve(argv[++i] ?? null);
     } else if (a === "--help" || a === "-h") {
@@ -87,11 +143,10 @@ Usage:
   skill-pi [PROJECT] [pi args...]            Launch the agent for PROJECT (default: cwd)
   skill-pi --import-auth DIR                 Copy auth.json + models.json from DIR (default ~/.pi/agent)
   skill-pi --agent-dir DIR [pi args...]      Override the agent directory
-  skill-pi --no-shim [PROJECT] [pi args...]  Run in PROJECT directly (share its .pi/ project config)
 
 Isolation:
   Global config:  ~/.skill-pi/agent (override: $SKILL_PI_AGENT_DIR or --agent-dir)
-  Project config: shim dir ~/.skill-pi/work/<hash>/.pi — your project's .pi/ is never touched
+  Project config: <PROJECT>/.skill-pi — your project's .pi/ is never touched
   Sessions/auth:  fully separate from pi (~/.pi/agent)
 
 Pass everything after the project (or after --) straight through to pi:
@@ -132,15 +187,25 @@ async function main() {
 
   const overlay = brandOverlayDir(agentDir);
 
-  let cwd = args.project;
-  if (!args.noShim) {
-    cwd = resolveShimCwd(cwd);
-  }
+  // pi runs with cwd = the real project. Under ADR-0002 D2 the project config
+  // dir is .skill-pi (never .pi), so no shim is needed to keep a project's .pi/
+  // unused — pi reads <project>/.skill-pi directly and your .pi/ is untouched.
+  const cwd = args.project;
 
+  // --no-extensions suppresses pi's package-scope discovery (settings packages
+  // + auto-discovered agent/project dirs). We re-inject the sources we own
+  // explicitly: bundled extensions, then user extensions from the agent dir.
   const extensionFlags = [];
-  for (const file of bundledExtensionFiles) {
-    if (existsSync(file)) extensionFlags.push("--extension", file);
+  const extensionSources = [
+    join(pkgRoot, "extensions"),
+    join(agentDir, "extensions"),
+  ];
+  for (const source of extensionSources) {
+    for (const file of collectExtensionFiles(source)) {
+      extensionFlags.push("--extension", file);
+    }
   }
+  extensionFlags.push("--no-extensions");
 
   const spawn = spawnSync(
     process.execPath,
