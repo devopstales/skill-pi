@@ -171,6 +171,106 @@ test("[Validation rejects oversized batches] five questions is an error", async 
   assert.equal(text(result), "ask_user: a batch needs 2–4 questions, got 5");
 });
 
+test("[Single question selection returns structured details] selection in RPC mode", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  selectQueue.push("beta");
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["main", "beta", "dev"] },
+    ctx,
+  );
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(calls.select, [
+    {
+      title: "Which branch?",
+      options: ["main", "beta", "dev", "✎ Type something…"],
+    },
+  ]);
+  assert.deepEqual(result.details, {
+    question: "Which branch?",
+    options: ["main", "beta", "dev"],
+    answer: { kind: "selection", selections: ["beta"] },
+    cancelled: false,
+  });
+  assert.match(text(result), /beta/);
+});
+
+test("[Single question selection returns structured details] no freeform option when allowFreeform is false", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  selectQueue.push("dev");
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["main", "dev"], allowFreeform: false },
+    ctx,
+  );
+  assert.deepEqual(calls.select[0].options, ["main", "dev"]);
+  assert.deepEqual(result.details.answer, {
+    kind: "selection",
+    selections: ["dev"],
+  });
+});
+
+test("[Single question freeform returns structured details] freeform path in RPC mode", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, inputQueue, calls } = makeCtx();
+  selectQueue.push("✎ Type something…");
+  inputQueue.push("custom answer");
+  const result = await execute(
+    tool,
+    { question: "Describe the issue", options: ["Option A", "Option B"] },
+    ctx,
+  );
+  assert.deepEqual(inputQueue, []);
+  assert.equal(calls.input.length, 1);
+  assert.equal(calls.input[0].title, "Describe the issue");
+  assert.deepEqual(result.details, {
+    question: "Describe the issue",
+    options: ["Option A", "Option B"],
+    answer: { kind: "freeform", text: "custom answer" },
+    cancelled: false,
+  });
+});
+
+test("[Single question freeform returns structured details] empty freeform input cancels", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, inputQueue } = makeCtx();
+  selectQueue.push("✎ Type something…");
+  inputQueue.push("");
+  const result = await execute(
+    tool,
+    { question: "Describe the issue", options: ["Option A", "Option B"] },
+    ctx,
+  );
+  assert.deepEqual(result.details, {
+    question: "Describe the issue",
+    options: ["Option A", "Option B"],
+    answer: null,
+    cancelled: true,
+  });
+  assert.match(text(result), /declined/);
+});
+
+test("[Dialog cancellation returns cancelled with no answer] dialog cancel in RPC mode", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push(undefined);
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["main", "dev"] },
+    ctx,
+  );
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.details, {
+    question: "Which branch?",
+    options: ["main", "dev"],
+    answer: null,
+    cancelled: true,
+  });
+  assert.match(text(result), /declined/);
+});
+
 test("validation errors carry cancelled details and fire no events", async () => {
   const { tool, eventBus } = makePi();
   const { ctx } = makeCtx();

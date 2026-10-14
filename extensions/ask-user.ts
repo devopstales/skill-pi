@@ -199,6 +199,44 @@ export function renderAskResult(
   return new Text(theme.fg("success", `✓ ${label}`), 0, 0);
 }
 
+export const FREEFORM_OPTION = "✎ Type something…";
+export const DONE_OPTION = "Done";
+
+export async function askSingleViaRpc(q: AskQuestion, ctx: ExtensionToolContext) {
+  const dialogOptions =
+    q.allowFreeform === false ? q.options : [...q.options, FREEFORM_OPTION];
+  const choice = await ctx.ui.select(q.question, dialogOptions);
+  if (choice === undefined) return null;
+  if (choice === FREEFORM_OPTION) {
+    const text = await ctx.ui.input(q.question, "Type your answer…");
+    return text ? ({ kind: "freeform", text } as AskFreeform) : null;
+  }
+  return { kind: "selection", selections: [choice] } as AskSelection;
+}
+
+export function singleResult(q: AskQuestion, answer: AskSelection | AskFreeform | null): AgentToolResult<AskSingleDetails> {
+  const details: AskSingleDetails = {
+    question: q.question,
+    options: q.options,
+    answer,
+    cancelled: answer === null,
+  };
+  return {
+    content: [
+      {
+        type: "text",
+        text:
+          answer === null
+            ? "The user declined to answer; proceed without this decision and do not assume one."
+            : answer.kind === "freeform"
+              ? `User answer: ${answer.text}`
+              : `User selected: ${answer.selections.join(", ")}`,
+      },
+    ],
+    details,
+  };
+}
+
 export default function askUserExtension(pi: ExtensionAPI) {
   pi.registerTool<AskUserParamsSchema, AskDetails>({
     name: "ask_user",
@@ -218,7 +256,14 @@ export default function askUserExtension(pi: ExtensionAPI) {
     ): Promise<AgentToolResult<AskDetails>> {
       const error = validateParams(params);
       if (error) return validationError(error);
-      return validationError("not implemented yet");
+      const q: AskQuestion = {
+        question: params.question!,
+        options: params.options!,
+        multiSelect: params.multiSelect,
+        allowFreeform: params.allowFreeform,
+      };
+      const answer = await askSingleViaRpc(q, _ctx);
+      return singleResult(q, answer);
     },
 
     renderCall(args, theme) {
