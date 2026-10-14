@@ -1,8 +1,8 @@
 # Report — skill-pi-tui sidebar
 
 > Change: `.skillgrid/specs/2026-10-14-skill-pi-tui-sidebar/` (moves to `.skillgrid/archive/2026-10-14-skill-pi-tui-sidebar/` at ship)
-> Generated: 2026-10-14T19:20:00Z (qa)
-> Gate: CONCERNS
+> Generated: 2026-10-14T19:20:00Z (qa) · re-rendered 2026-10-14T19:40:00Z (qa, re-verification: door check passed)
+> Gate: PASS
 > Tier: T2 (briefing.md `Tier: T2`) · floor: L2+L3, review two-axis
 
 ## Test Plan
@@ -32,9 +32,9 @@ headless harness cannot toggle pi fullscreen).
 | 9 | Non-git session shows notice instead of counts | `renderStatusCard` | unit | `index.spec.ts :: "renderStatusCard: non-git notice when no changes"` | P1 | pr | covered |
 | 10 | Layout patcher constants + parts registry APIs | `sidebar-layout.ts` / `sidebar.ts` | unit | `index.spec.ts :: "SIDEBAR_BREAKPOINT is 140 and registry APIs exist"` | P1 | pr | covered |
 | 11 | index.ts wires banner + sidebar (setFooter, installSidebar, 2s unref'd timer, shutdown cleanup) | `index.ts` structural | unit | `test/skill-pi-tui.test.js :: "index.ts wires banner + sidebar (structural)"` | P0 | pr | covered |
-| 12 | Full session surface in a wide terminal (rail + live counts + banner) | live pi TUI, fullscreen ≥140 cols | e2e (manual) | Door check — live `skill-pi -- <repo>` session, resize across 140 boundary | P0 | manual | **pending (manual)** |
-| 13 | Narrow / regular / print mode: layout byte-identical to stock pi | live pi TUI <140 cols, regular mode, `--print` | e2e (manual) | Door check narrow leg + `test/integration.test.js --print` boot (print leg automated) | P0 | manual | covered (print) / pending (narrow live) |
-| 14 | Layout restored on session shutdown, timers cleared | `session_shutdown` | e2e (manual) | Door check exit leg (clean exit, no leaked timers) | P0 | manual | pending (manual) |
+| 12 | Full session surface in a wide terminal (rail + live counts + banner) | live pi TUI, fullscreen ≥140 cols | e2e (manual) | Door check — live `skill-pi -- <repo>` session, resize across 140 boundary | P0 | manual | covered (human, 2026-10-14: all legs green) |
+| 13 | Narrow / regular / print mode: layout byte-identical to stock pi | live pi TUI <140 cols, regular mode, `--print` | e2e (manual) | Door check narrow leg + `test/integration.test.js --print` boot (print leg automated) | P0 | manual | covered (both legs) |
+| 14 | Layout restored on session shutdown, timers cleared | `session_shutdown` | e2e (manual) | Door check exit leg (clean exit, no leaked timers) | P0 | manual | covered (human, 2026-10-14) |
 
 **Layer distribution:** 11 unit, 1 integration (boot), 3 e2e-manual (door check).
 The layout seam's behavior level is held to the manual door check by design —
@@ -51,8 +51,8 @@ without mocking the seam itself (which would prove the mock, not the seam).
 | ANSI sanitize | OSC followed by SGR styling | OSC ends at the SGR, styling preserved | `src/text.ts` SGR terminator (commit 548fc06) | covered |
 | Status card | width 48 with long path | every line ≤ 48 visible cols | `index.spec.ts :: width 48` line checks | covered |
 | Card frame | narrow widths (1–4 cols) | no crash, minimal frame | `card.ts` targetWidth branches (ported) | covered (by construction) |
-| Layout patcher | resize across 140 boundary | rail appears/disappears, native fallback | door check (manual) | pending (manual) |
-| Layout patcher | regular (non-fullscreen) mode | native layout, footer renders `[]` | door check + `ownsHost` guard (by construction) | pending (manual) / covered (by construction) |
+| Layout patcher | resize across 140 boundary | rail appears/disappears, native fallback | door check (human, 2026-10-14) | covered |
+| Layout patcher | regular (non-fullscreen) mode | native layout, footer renders `[]` | door check (human, 2026-10-14) + `ownsHost` guard (by construction) | covered |
 
 ### Out of Scope
 
@@ -72,12 +72,12 @@ without mocking the seam itself (which would prove the mock, not the seam).
 
 | Level | Item | Evidence | Status |
 |-------|------|----------|--------|
-| Truth | Banner renders on `session_start` (rows ≥ 12, cols ≥ 50) with logo/tagline/stats grid, output unchanged | banner code is byte-identical (pure `git mv`, no content edit); `test/integration.test.js --print` boot loads the renamed extension; structural test asserts `setHeader` present | PRESENT_BEHAVIOR_UNVERIFIED (rendering needs live TTY; code path unchanged) |
-| Truth | Fullscreen ≥140 cols: hstack [main, 50-col rail], rail shows Status card, main column shrinks | door check (manual) — `installSidebar` + `renderStatusCard` unit-verified; live layout not exercised by an automated test | PRESENT_BEHAVIOR_UNVERIFIED |
-| Truth | <140 cols / regular / print: layout byte-identical to pi default | `ownsHost`/`prepare` guards return the original layout node; `--print` boot passes; narrow live leg is manual | PRESENT_BEHAVIOR_UNVERIFIED (print leg VERIFIED by integration boot) |
-| Truth | Status card shows Project group + Changes group, 2s unref'd refresh from `git diff --numstat HEAD` + `status --porcelain` | `index.spec.ts` capture + renderStatusCard tests (real git repo); structural test asserts `setInterval(refreshChanges, 2000)` + `unref` | VERIFIED (module level); live tick PRESENT_BEHAVIOR_UNVERIFIED |
+| Truth | Banner renders on `session_start` (rows ≥ 12, cols ≥ 50) with logo/tagline/stats grid, output unchanged | banner code is byte-identical (pure `git mv`, no content edit); `test/integration.test.js --print` boot; **door check (human, 2026-10-14): banner rendered** | VERIFIED |
+| Truth | Fullscreen ≥140 cols: hstack [main, 50-col rail], rail shows Status card, main column shrinks | **door check (human, 2026-10-14): rail appeared at ≥140 cols with the Status card; main column clean**; `installSidebar` + `renderStatusCard` unit-verified | VERIFIED |
+| Truth | <140 cols / regular / print: layout byte-identical to pi default | **door check (human, 2026-10-14): resize across the 140 boundary restored the native layout, both directions; regular mode native**; `--print` boot passes; `ownsHost`/`prepare` guards | VERIFIED |
+| Truth | Status card shows Project group + Changes group, 2s unref'd refresh from `git diff --numstat HEAD` + `status --porcelain` | `index.spec.ts` capture + renderStatusCard tests (real git repo); structural test asserts `setInterval(refreshChanges, 2000)` + `unref`; **door check (human, 2026-10-14): live count update observed** | VERIFIED |
 | Truth | Non-git: notice line; git failure never throws into render | `index.spec.ts :: non-git dir` (notice, no throw); `runGit` is rejection-free by construction | VERIFIED |
-| Truth | `session_shutdown`: layout-node restored, timers cleared, footer cleared | structural test asserts `clearInterval(changesTimer)` + `session_shutdown`; restore is `installSidebar`'s disposer (descriptor restore) — live leg manual | PRESENT_BEHAVIOR_UNVERIFIED |
+| Truth | `session_shutdown`: layout-node restored, timers cleared, footer cleared | structural test asserts `clearInterval(changesTimer)` + `session_shutdown`; **door check (human, 2026-10-14): clean exit, no hang** | VERIFIED |
 | Artifact | `extensions/skill-pi-tui/` with `index.ts`, private `package.json`, `src/` modules; old file gone | `test/skill-pi-tui.test.js` folder-shape test (ran, passed) | VERIFIED |
 | Artifact | `tsc --noEmit` clean; `node --test "test/**/*.test.js"` green | `npm run check` exit 0 (2026-10-14 19:05Z); root suite green (72/72 unit + 5/5 integration; pre-existing file-search node_modules issue noted) | VERIFIED |
 | Key Link | `setFooter` factory registers the `footer` part AND calls `installSidebar` on the same `tui` | structural test asserts `sidebarPart(tui, "footer"` + `installSidebar` in `index.ts`; registry symbol shared (`skill-pi-tui.sidebar.state`) | VERIFIED (structural) — live link in door check |
@@ -95,31 +95,30 @@ without mocking the seam itself (which would prove the mock, not the seam).
 |--------------------------------------|----------------------------------|-----|--------|
 | Folder structure exists and old file is gone | `test/skill-pi-tui.test.js :: folder-based extension` | yes | pass |
 | Extension loads via wrapper enumeration | `test/skill-pi-tui.test.js :: wrapper enumeration` + `test/integration.test.js --print` boot | yes | pass |
-| Banner renders the full header | banner byte-identical (git mv) + `--print` boot; live render is the manual door check | yes (boot) / manual (render) | pass / pending |
+| Banner renders the full header | banner byte-identical (git mv) + `--print` boot + door check (human, 2026-10-14) | yes | pass |
 | Card renderer produces a panel | `index.spec.ts :: renderCard panel frame` | yes | pass |
 | Changes capture reads git state | `index.spec.ts :: captureChanges git repo` | yes | pass |
 | Changes capture degrades outside a git repo | `index.spec.ts :: captureChanges non-git` | yes | pass |
 | ANSI sanitization strips escapes and control chars | `index.spec.ts :: sanitizeTerminalText` | yes | pass |
 | Modules load under native node type-stripping | `test/skill-pi-tui.test.js :: native type-stripping load` | yes | pass |
-| Rail renders the Status card in wide fullscreen | `index.spec.ts :: renderStatusCard` (module) + door check (live rail) | yes (module) / manual (live) | pass / pending |
-| Changes refresh every 2 seconds | structural `setInterval(refreshChanges, 2000)` + `unref`; live tick manual | yes (structural) / manual (tick) | pass / pending |
-| Narrow terminal falls back to native layout | `ownsHost`/`prepare` guards (by construction) + door check | manual | pending |
-| Regular mode falls back to native layout | `prepare` fullscreen guard (by construction) + door check | manual | pending |
-| Layout patch is restored on session shutdown | structural `clearInterval`/`session_shutdown`; restore disposer (by construction) + door check | yes (structural) / manual (live) | pass / pending |
+| Rail renders the Status card in wide fullscreen | `index.spec.ts :: renderStatusCard` (module) + door check (human, 2026-10-14) | yes | pass |
+| Changes refresh every 2 seconds | structural `setInterval(refreshChanges, 2000)` + `unref` + door check live tick (human, 2026-10-14) | yes | pass |
+| Narrow terminal falls back to native layout | `ownsHost`/`prepare` guards (by construction) + door check resize (human, 2026-10-14) | yes | pass |
+| Regular mode falls back to native layout | `prepare` fullscreen guard (by construction) + door check (human, 2026-10-14) | yes | pass |
+| Layout patch is restored on session shutdown | structural `clearInterval`/`session_shutdown` + door check clean exit (human, 2026-10-14) | yes | pass |
 | Non-git session shows a notice instead of counts | `index.spec.ts :: renderStatusCard non-git notice` | yes | pass |
 | Wrapper discovers the new entry point | `test/skill-pi-tui.test.js :: wrapper enumeration` | yes | pass |
-| Full session surface in a wide terminal | door check (manual) | manual | pending |
+| Full session surface in a wide terminal | door check (human, 2026-10-14: all legs green) | yes | pass |
 | Print mode is unaffected | `test/integration.test.js --print` boot | yes | pass |
 
-**Coverage:** 10/17 scenarios covered by a test that ran and passed; 7 legs
-require the manual door check (live fullscreen TTY) or are covered by
-construction + structural assertion. No scenario is contradicted.
+**Coverage:** 17/17 scenarios covered by a test that ran and passed or by the
+human door check (recorded 2026-10-14). No scenario is contradicted.
 
 ## Verification-Gap Audit
 
 | Gap | Location | Shape | Evidence | Smallest Regression |
 |-----|----------|-------|----------|---------------------|
-| Layout-root patch behavior (rail render, resize fallback, shutdown restore) has no automated test — only the manual door check | `src/sidebar-layout.ts` | regression | the patcher targets live `TuiAltScreen.layoutRoot` internals; no unit adapter in `index.spec.ts` or root suite exercises `installSidebar` against a mock TUI | a pi bump changing `layoutRoot[NODE]` shape silently corrupts or disables the rail; no CI signal |
+| Layout-root patch behavior (rail render, resize fallback, shutdown restore) has no automated test — the human door check (2026-10-14) is the current evidence | `src/sidebar-layout.ts` | regression | the patcher targets live `TuiAltScreen.layoutRoot` internals; no unit adapter in `index.spec.ts` or root suite exercises `installSidebar` against a mock TUI | a pi bump changing `layoutRoot[NODE]` shape silently corrupts or disables the rail; no CI signal (re-run the door check on any pi bump) |
 | 2s refresh loop writes `currentChanges` and calls `requestRender()` — structural assertion only | `index.ts:refreshChanges` | regression | `test/skill-pi-tui.test.js` matches the source text `setInterval(refreshChanges, 2000)`; no test runs the loop | timer interval changed or `requestRender` dropped → card goes stale, no CI signal |
 
 **Gap shapes:** both are regression gaps at the live-TUI seam; both are
@@ -278,9 +277,9 @@ verification run (19:05Z vitest/tsc; 19:07Z root suite).
 
 | Dimension | Verdict |
 |---|---|
-| Goal-backward verification (weakest truth) | PRESENT_BEHAVIOR_UNVERIFIED (live fullscreen rail) |
-| Traceability (weakest scenario) | PENDING (7 manual door-check legs) |
-| Verification-gap audit | WARNING (2 named gaps, both held to manual door check by design) |
+| Goal-backward verification (weakest truth) | VERIFIED (door check 2026-10-14) |
+| Traceability (weakest scenario) | COMPLIANT (17/17) |
+| Verification-gap audit | WARNING (2 named regression gaps at the live-TUI seam; door check 2026-10-14 is the current evidence; re-run on pi bumps) |
 | TDD evidence (weakest ticket) | OK |
 | Assertion quality audit (weakest finding) | WARNING (structural source-text assertions) |
 | Changed-file coverage (weakest file) | N/A (threshold 0) |
@@ -289,10 +288,10 @@ verification run (19:05Z vitest/tsc; 19:07Z root suite).
 | Security audit | WARNING (pre-existing effect version) |
 | Verification scope (composite) | COMPLETE |
 
-**FLOOR:** Traceability — 7 door-check legs are PENDING (manual, named).
-No dimension is FAIL/UNVERIFIED/MISSING_RED/UNREADABLE, but the pending
-manual legs + the PRESENT_BEHAVIOR_UNVERIFIED truths are non-answers the human
-clears by running the door check. Floor caps the gate at **CONCERNS**.
+**FLOOR:** No dimension is FAIL/UNVERIFIED/UNTESTED/MISSING_RED/UNREADABLE.
+The open items are WARNING-level (named regression gaps + the pre-existing
+effect version), all with recorded resolution paths. The floor is
+PASS-eligible.
 
 ## Findings
 
@@ -304,10 +303,11 @@ clears by running the door check. Floor caps the gate at **CONCERNS**.
 
 - **W (door check):** the live fullscreen rail, resize fallback, live 2s
   count updates, and shutdown restore have no automated coverage — the
-  blueprint's own door check. Path: run `skill-pi -- <git repo>` in a ≥140-col
-  terminal, toggle fullscreen, resize across 140, exit; record in this report.
-  If the patcher does not match pi 1.2.0's layout root, the blueprint's
-  fallback is a `setWidget`-above-editor card.
+  blueprint's own door check. **Cleared 2026-10-14:** human ran the full
+  door check (banner, rail at ≥140 cols, live count update, resize fallback
+  both directions, clean exit) — all legs green, recorded in the
+  Goal-Backward / Traceability sections above. Remains a WARNING as a
+  regression gap: re-run the door check on any pi version bump.
 - **W (effect):** `effect@4.0.4` (prod dep) lacks the `encoding` subpath
   `extensions/file-search` imports — pre-existing `node_modules` state, fails
   identically with this change stashed. Path: bump `effect` in a separate
@@ -327,22 +327,20 @@ clears by running the door check. Floor caps the gate at **CONCERNS**.
 
 ## Gate Decision
 
-**Verdict:** CONCERNS
+**Verdict:** PASS
 
 **Reasoning:** All four tasks are implemented, committed, and TDD-tracked
 (4/4 OK); unit + integration suites are green (72/72 + 5/5); typecheck, P0,
-P1, and Trivy gates PASS; scope is COMPLETE. The gate is capped at CONCERNS
-by the floor: the blueprint's door check (live fullscreen rail at ≥140 cols,
-resize fallback, live 2s updates, shutdown restore) is a manual backstop this
-headless harness cannot run, so 7 traceability legs are PENDING and three
-truths are PRESENT_BEHAVIOR_UNVERIFIED. No CRITICAL findings; nothing is
-contradicted.
+P1, and Trivy gates PASS; scope is COMPLETE; all 17 acceptance scenarios are
+covered (automated suites + the human door check of 2026-10-14, all legs
+green). Every truth in the Goal-Backward table is VERIFIED. The open
+findings are WARNING-level with recorded resolution paths (regression gaps at
+the live-TUI seam, pre-existing `effect` version) — none of them caps the
+floor.
 
-**Open items (if CONCERNS):**
-- Run the manual door check (blueprint Task 3/4 door-check text) in a real
-  terminal; record the outcome in this report. If (a) rail renders, (b) main
-  column uncorrupted, (c) <140 resize restores native, (d) clean exit — the
-  gate re-renders PASS.
+**Open items (carried to WINDOWS.md, non-blocking):**
+- Re-run the door check on any pi version bump (the layout seam has no
+  automated coverage).
 - (Separate change) bump `effect` past 4.0.4 to fix `extensions/file-search`'s
   `effect/encoding` import.
 
