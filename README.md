@@ -115,6 +115,13 @@ Currently bundled:
   allow/reject prompt with an `edit`/`write` diff review, `Allow always` rules persisted
   to `conf.d/permission.conf`, and a `/permission-toggle-auto-accept` auto-accept toggle
   (status line reflects on/off; optional `keybindings.autoAcceptEdits` shortcut).
+- **`todo`** — a `todo` tool (`write`/`add`/`update`/`clear`/`list`) that gives the model
+  a task list you can see, drawn as a card in the `skill-pi-tui` sidebar (widget above the
+  editor on narrow terminals). The open snapshot is mirrored into the transcript, so the
+  list survives `/reload`, compaction, and branch navigation. `ctrl+shift+t` collapses,
+  `alt+shift+up/down` scrolls; a stale warning appears after several untouched turns.
+  Published standalone as
+  [`@devopstales/pi-todo`](https://github.com/devopstales/skill-pi/tree/main/extensions/todo).
 
 ## Upgrading
 
