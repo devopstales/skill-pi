@@ -23,9 +23,13 @@
   ],
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@pierre/diffs": "^1.1.15",
+    "@pierre/theme": "^0.0.29",
     "@effect/platform-node": "4.0.0-beta.101",
     "@effect/platform-node-shared": "4.0.0-beta.101",
-    "effect": "4.0.0-beta.101"
+    "effect": "4.0.0-beta.101",
+    "tree-sitter-bash": "^0.25.1",
+    "web-tree-sitter": "^0.26.8"
   },
   "scripts": {
     "test": "node --test test/*.test.js"
