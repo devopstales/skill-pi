@@ -1,4 +1,4 @@
-import test, { describe } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 import { Text, parseKey } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 
 let mod;
 try {
-  mod = require("../extensions/ask-user.ts");
+  mod = require("./index.ts");
 } catch {
   mod = null;
 }
@@ -89,7 +89,7 @@ function text(result) {
 
 describe("ask_user contract", { skip: !mod }, () => {
 describe("contract", () => {
-test("registers the ask_user tool with the contract shape", () => {
+it("registers the ask_user tool with the contract shape", () => {
   const { tool } = makePi();
   assert.equal(tool.name, "ask_user");
   assert.equal(tool.label, "Ask User");
@@ -104,7 +104,7 @@ test("registers the ask_user tool with the contract shape", () => {
   assert.ok(props.allowFreeform);
 });
 
-test("[Validation rejects conflicting or missing question parameters] both question and questions is an error", async () => {
+it("[Validation rejects conflicting or missing question parameters] both question and questions is an error", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(
@@ -126,7 +126,7 @@ test("[Validation rejects conflicting or missing question parameters] both quest
   );
 });
 
-test("[Validation rejects conflicting or missing question parameters] neither question nor questions is an error", async () => {
+it("[Validation rejects conflicting or missing question parameters] neither question nor questions is an error", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(
@@ -141,7 +141,7 @@ test("[Validation rejects conflicting or missing question parameters] neither qu
   );
 });
 
-test("[Validation rejects out-of-bounds option counts] one option is an error", async () => {
+it("[Validation rejects out-of-bounds option counts] one option is an error", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(tool, { question: "Q?", options: ["a"] }, ctx);
@@ -149,7 +149,7 @@ test("[Validation rejects out-of-bounds option counts] one option is an error", 
   assert.equal(text(result), "ask_user: each question needs 2–5 options, got 1");
 });
 
-test("[Validation rejects out-of-bounds option counts] six options is an error", async () => {
+it("[Validation rejects out-of-bounds option counts] six options is an error", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(
@@ -161,7 +161,7 @@ test("[Validation rejects out-of-bounds option counts] six options is an error",
   assert.equal(text(result), "ask_user: each question needs 2–5 options, got 6");
 });
 
-test("[Validation rejects oversized batches] five questions is an error", async () => {
+it("[Validation rejects oversized batches] five questions is an error", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const q = (n) => ({ question: `Q${n}?`, options: ["a", "b"] });
@@ -174,7 +174,7 @@ test("[Validation rejects oversized batches] five questions is an error", async 
   assert.equal(text(result), "ask_user: a batch needs 2–4 questions, got 5");
 });
 
-test("[Single question selection returns structured details] selection in RPC mode", async () => {
+it("[Single question selection returns structured details] selection in RPC mode", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   selectQueue.push("beta");
@@ -199,7 +199,7 @@ test("[Single question selection returns structured details] selection in RPC mo
   assert.match(text(result), /beta/);
 });
 
-test("[Single question selection returns structured details] no freeform option when allowFreeform is false", async () => {
+it("[Single question selection returns structured details] no freeform option when allowFreeform is false", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   selectQueue.push("dev");
@@ -215,7 +215,7 @@ test("[Single question selection returns structured details] no freeform option 
   });
 });
 
-test("[Single question freeform returns structured details] freeform path in RPC mode", async () => {
+it("[Single question freeform returns structured details] freeform path in RPC mode", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, inputQueue, calls } = makeCtx();
   selectQueue.push("✎ Type something…");
@@ -236,7 +236,7 @@ test("[Single question freeform returns structured details] freeform path in RPC
   });
 });
 
-test("[Single question freeform returns structured details] empty freeform input cancels", async () => {
+it("[Single question freeform returns structured details] empty freeform input cancels", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, inputQueue } = makeCtx();
   selectQueue.push("✎ Type something…");
@@ -255,7 +255,7 @@ test("[Single question freeform returns structured details] empty freeform input
   assert.match(text(result), /declined/);
 });
 
-test("[Batch of two returns index-aligned answers] answers in asked order", async () => {
+it("[Batch of two returns index-aligned answers] answers in asked order", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, inputQueue } = makeCtx();
   selectQueue.push("opt1", "✎ Type something…");
@@ -285,7 +285,7 @@ test("[Batch of two returns index-aligned answers] answers in asked order", asyn
   });
 });
 
-test("[Cancelling any batch question cancels the whole batch] second question cancelled", async () => {
+it("[Cancelling any batch question cancels the whole batch] second question cancelled", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   selectQueue.push("opt1", undefined);
@@ -312,7 +312,7 @@ test("[Cancelling any batch question cancels the whole batch] second question ca
   assert.match(text(result), /declined/);
 });
 
-test("batch validation rejects out-of-bounds options on any question", async () => {
+it("batch validation rejects out-of-bounds options on any question", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(
@@ -329,7 +329,7 @@ test("batch validation rejects out-of-bounds options on any question", async () 
   assert.equal(text(result), "ask_user: each question needs 2–5 options, got 1");
 });
 
-test("[Non-dialog mode returns a graceful unavailable result] print mode", async () => {
+it("[Non-dialog mode returns a graceful unavailable result] print mode", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue } = makeCtx({ mode: "print", hasUI: false });
   selectQueue.push("a");
@@ -348,7 +348,7 @@ test("[Non-dialog mode returns a graceful unavailable result] print mode", async
   });
 });
 
-test("[Non-dialog mode returns a graceful unavailable result] batch in json mode", async () => {
+it("[Non-dialog mode returns a graceful unavailable result] batch in json mode", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx({ mode: "json", hasUI: false });
   const result = await execute(
@@ -367,7 +367,7 @@ test("[Non-dialog mode returns a graceful unavailable result] batch in json mode
   assert.equal(result.details.answers, null);
 });
 
-test("[Non-dialog mode returns a graceful unavailable result] rpc mode without UI", async () => {
+it("[Non-dialog mode returns a graceful unavailable result] rpc mode without UI", async () => {
   const { tool } = makePi();
   const { ctx } = makeCtx({ mode: "rpc", hasUI: false });
   const result = await execute(
@@ -379,7 +379,7 @@ test("[Non-dialog mode returns a graceful unavailable result] rpc mode without U
   assert.equal(result.details.cancelled, true);
 });
 
-test("[Answer outcome emits the answered event once] selection emits ask:answered", async () => {
+it("[Answer outcome emits the answered event once] selection emits ask:answered", async () => {
   const { tool, eventBus } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push("beta");
@@ -392,7 +392,7 @@ test("[Answer outcome emits the answered event once] selection emits ask:answere
   });
 });
 
-test("[Answer outcome emits the answered event once] freeform emits ask:answered with kind freeform", async () => {
+it("[Answer outcome emits the answered event once] freeform emits ask:answered with kind freeform", async () => {
   const { tool, eventBus } = makePi();
   const { ctx, selectQueue, inputQueue } = makeCtx();
   selectQueue.push(FREEFORM_OPTION);
@@ -403,7 +403,7 @@ test("[Answer outcome emits the answered event once] freeform emits ask:answered
   assert.deepEqual(events[0].data, { question: "Describe", kind: "freeform" });
 });
 
-test("[Answer outcome emits the answered event once] batch answered emits once per question in order", async () => {
+it("[Answer outcome emits the answered event once] batch answered emits once per question in order", async () => {
   const { tool, eventBus } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push("opt1", "x");
@@ -425,7 +425,7 @@ test("[Answer outcome emits the answered event once] batch answered emits once p
   );
 });
 
-test("[Cancellation emits the cancelled event once] dialog cancel emits ask:cancelled", async () => {
+it("[Cancellation emits the cancelled event once] dialog cancel emits ask:cancelled", async () => {
   const { tool, eventBus } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push(undefined);
@@ -436,7 +436,7 @@ test("[Cancellation emits the cancelled event once] dialog cancel emits ask:canc
   assert.equal(eventBus.emitted.filter((e) => e.channel === "ask:answered").length, 0);
 });
 
-test("[Cancellation emits the cancelled event once] batch cancel emits once for the cancelled question only", async () => {
+it("[Cancellation emits the cancelled event once] batch cancel emits once for the cancelled question only", async () => {
   const { tool, eventBus } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push("opt1", undefined);
@@ -459,7 +459,7 @@ test("[Cancellation emits the cancelled event once] batch cancel emits once for 
   assert.deepEqual(cancelled[0].data, { question: "Q2?" });
 });
 
-test("unavailable mode and validation errors fire no events", async () => {
+it("unavailable mode and validation errors fire no events", async () => {
   const { tool, eventBus } = makePi();
   const unavailable = makeCtx({ mode: "print", hasUI: false });
   await execute(tool, { question: "Q?", options: ["a", "b"] }, unavailable.ctx);
@@ -467,7 +467,7 @@ test("unavailable mode and validation errors fire no events", async () => {
   assert.deepEqual(eventBus.emitted, []);
 });
 
-test("[Render call summarizes question and options] single call shows question and options", () => {
+it("[Render call summarizes question and options] single call shows question and options", () => {
   const { tool } = makePi();
   const component = tool.renderCall(
     { question: "Which branch?", options: ["main", "dev"] },
@@ -481,7 +481,7 @@ test("[Render call summarizes question and options] single call shows question a
   assert.match(rendered, /dev/);
 });
 
-test("[Render call summarizes question and options] batch call is truncated to 120 chars", () => {
+it("[Render call summarizes question and options] batch call is truncated to 120 chars", () => {
   const { tool } = makePi();
   const long = (n) => `question ${n} with a fairly long label to fill space up`;
   const component = tool.renderCall(
@@ -503,7 +503,7 @@ test("[Render call summarizes question and options] batch call is truncated to 1
   assert.match(rendered, /Ask \(4 questions\):/);
 });
 
-test("[Render result shows success or cancelled rows] answered single selection shows number and label", () => {
+it("[Render result shows success or cancelled rows] answered single selection shows number and label", () => {
   const { tool } = makePi();
   const component = tool.renderResult(
     {
@@ -523,7 +523,7 @@ test("[Render result shows success or cancelled rows] answered single selection 
   assert.match(rendered, /✓ 2\. beta/);
 });
 
-test("[Render result shows success or cancelled rows] freeform shows the custom text", () => {
+it("[Render result shows success or cancelled rows] freeform shows the custom text", () => {
   const { tool } = makePi();
   const component = tool.renderResult(
     {
@@ -542,7 +542,7 @@ test("[Render result shows success or cancelled rows] freeform shows the custom 
   assert.match(component.render(80).join(""), /✓ custom answer/);
 });
 
-test("[Render result shows success or cancelled rows] cancelled shows a warning row", () => {
+it("[Render result shows success or cancelled rows] cancelled shows a warning row", () => {
   const { tool } = makePi();
   const component = tool.renderResult(
     {
@@ -556,7 +556,7 @@ test("[Render result shows success or cancelled rows] cancelled shows a warning 
   assert.match(component.render(80).join(""), /✗ cancelled/);
 });
 
-test("[Render result shows success or cancelled rows] batch answered and cancelled rows", () => {
+it("[Render result shows success or cancelled rows] batch answered and cancelled rows", () => {
   const { tool } = makePi();
   const answered = tool.renderResult(
     {
@@ -591,7 +591,7 @@ test("[Render result shows success or cancelled rows] batch answered and cancell
   assert.match(cancelled.render(80).join(""), /✗ cancelled \(batch\)/);
 });
 
-test("[Prompt guidelines steer the model to focused questions] snippet and guidelines", () => {
+it("[Prompt guidelines steer the model to focused questions] snippet and guidelines", () => {
   const { tool } = makePi();
   assert.equal(
     tool.promptSnippet,
@@ -660,7 +660,7 @@ const KEY_SEQS = {
 };
 
 describe("parseKey raw sequences", { skip: !mod }, () => {
-test("maps each raw sequence in KEY_SEQS to its key name", () => {
+it("maps each raw sequence in KEY_SEQS to its key name", () => {
   for (const [name, seq] of Object.entries(KEY_SEQS)) {
     assert.equal(parseKey(seq), name, `parseKey(${JSON.stringify(seq)})`);
   }
@@ -681,7 +681,7 @@ function runTui(tool, params, keyScript) {
 }
 
 describe("TUI popup", { skip: !mod }, () => {
-test("[TUI single-select popup confirms a focused option] navigate to the second option and press Enter", async () => {
+it("[TUI single-select popup confirms a focused option] navigate to the second option and press Enter", async () => {
   const { tool, eventBus } = makePi();
   const { tui, pending } = runTui(
     tool,
@@ -710,7 +710,7 @@ test("[TUI single-select popup confirms a focused option] navigate to the second
   assert.deepEqual(events[0].data, { question: "Which branch?", kind: "selection" });
 });
 
-test("[TUI freeform editor submits non-empty text] open the freeform row, type, and press Enter", async () => {
+it("[TUI freeform editor submits non-empty text] open the freeform row, type, and press Enter", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -738,7 +738,7 @@ test("[TUI freeform editor submits non-empty text] open the freeform row, type, 
   assert.match(text(result), /hello/);
 });
 
-test("[TUI freeform Esc returns to options without answering] Esc in the editor restores the options list", async () => {
+it("[TUI freeform Esc returns to options without answering] Esc in the editor restores the options list", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -768,7 +768,7 @@ test("[TUI freeform Esc returns to options without answering] Esc in the editor 
   });
 });
 
-test("[TUI Esc cancels the prompt with cancelled details] pressing Esc on the options cancels", async () => {
+it("[TUI Esc cancels the prompt with cancelled details] pressing Esc on the options cancels", async () => {
   const { tool, eventBus } = makePi();
   const { pending } = runTui(tool, { question: "Which branch?", options: ["a", "b"] }, ["escape"]);
   const result = await pending;
@@ -784,7 +784,7 @@ test("[TUI Esc cancels the prompt with cancelled details] pressing Esc on the op
   assert.deepEqual(events[0].data, { question: "Which branch?" });
 });
 
-test("[Aborting the agent dismisses the open prompt] abort signal resolves with cancelled details", async () => {
+it("[Aborting the agent dismisses the open prompt] abort signal resolves with cancelled details", async () => {
   const { tool } = makePi();
   const { tui, pending } = runTui(tool, { question: "Which branch?", options: ["a", "b"] }, []);
   await new Promise((resolve) => setImmediate(resolve));
@@ -798,7 +798,7 @@ test("[Aborting the agent dismisses the open prompt] abort signal resolves with 
   });
 });
 
-test("[TUI multi-select commits the selected set on Done] toggle two options on and confirm Done", async () => {
+it("[TUI multi-select commits the selected set on Done] toggle two options on and confirm Done", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -834,7 +834,7 @@ test("[TUI multi-select commits the selected set on Done] toggle two options on 
   assert.match(text(result), /api, db/);
 });
 
-test("[TUI multi-select toggling is reversible before Done] toggle on, off, on another; only the final set commits", async () => {
+it("[TUI multi-select toggling is reversible before Done] toggle on, off, on another; only the final set commits", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -862,7 +862,7 @@ test("[TUI multi-select toggling is reversible before Done] toggle on, off, on a
   });
 });
 
-test("[TUI popup number keys jump to an option] pressing number three confirms the third option immediately", async () => {
+it("[TUI popup number keys jump to an option] pressing number three confirms the third option immediately", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -879,7 +879,7 @@ test("[TUI popup number keys jump to an option] pressing number three confirms t
   assert.match(text(result), /dev/);
 });
 
-test("[TUI batch switches pages without losing answers] answer page 1, Tab to page 2, both answers retained", async () => {
+it("[TUI batch switches pages without losing answers] answer page 1, Tab to page 2, both answers retained", async () => {
   const { tool } = makePi();
   const questions = [
     { question: "Q1?", options: ["opt1", "opt2"] },
@@ -912,7 +912,7 @@ test("[TUI batch switches pages without losing answers] answer page 1, Tab to pa
   assert.match(text(result), /x/);
 });
 
-test("[TUI review page warns then submits with skips] first Enter warns, second Enter submits with (skipped)", async () => {
+it("[TUI review page warns then submits with skips] first Enter warns, second Enter submits with (skipped)", async () => {
   const { tool, eventBus } = makePi();
   const questions = [
     { question: "Which branch?", options: ["main", "dev"] },
@@ -942,7 +942,7 @@ test("[TUI review page warns then submits with skips] first Enter warns, second 
   assert.deepEqual(answered[0].data, { question: "Which branch?", kind: "selection" });
 });
 
-test("[Render result shows success or cancelled rows] TUI selection result row shows the success marker", async () => {
+it("[Render result shows success or cancelled rows] TUI selection result row shows the success marker", async () => {
   const { tool } = makePi();
   const { pending } = runTui(
     tool,
@@ -954,7 +954,7 @@ test("[Render result shows success or cancelled rows] TUI selection result row s
   assert.match(component.render(80).join(""), /✓ 2\. dev/);
 });
 
-test("TUI batch number keys jump back to a page from the review", async () => {
+it("TUI batch number keys jump back to a page from the review", async () => {
   const { tool } = makePi();
   const questions = [
     { question: "Q1?", options: ["opt1", "opt2"] },
@@ -976,7 +976,7 @@ test("TUI batch number keys jump back to a page from the review", async () => {
   await pending;
 });
 
-test("[TUI Esc cancels the prompt with cancelled details] Esc on a batch page cancels the whole batch", async () => {
+it("[TUI Esc cancels the prompt with cancelled details] Esc on a batch page cancels the whole batch", async () => {
   const { tool, eventBus } = makePi();
   const questions = [
     { question: "Q1?", options: ["a", "b"] },
@@ -996,7 +996,7 @@ test("[TUI Esc cancels the prompt with cancelled details] Esc on a batch page ca
   assert.deepEqual(cancelled[0].data, { question: "Q2?" });
 });
 
-test("[Aborting the agent dismisses the open prompt] abort dismisses an open batch popup", async () => {
+it("[Aborting the agent dismisses the open prompt] abort dismisses an open batch popup", async () => {
   const { tool } = makePi();
   const questions = [
     { question: "Q1?", options: ["a", "b"] },
@@ -1011,7 +1011,7 @@ test("[Aborting the agent dismisses the open prompt] abort dismisses an open bat
 });
 
 describe("TUI/RPC parity", () => {
-test("single selection: TUI details equal RPC details", async () => {
+it("single selection: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const rpc = makeCtx();
   rpc.selectQueue.push("beta");
@@ -1029,7 +1029,7 @@ test("single selection: TUI details equal RPC details", async () => {
   assert.deepEqual(tuiResult.details, rpcResult.details);
 });
 
-test("single freeform: TUI details equal RPC details", async () => {
+it("single freeform: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const rpc = makeCtx();
   rpc.selectQueue.push("✎ Type something…");
@@ -1048,7 +1048,7 @@ test("single freeform: TUI details equal RPC details", async () => {
   assert.deepEqual(tuiResult.details, rpcResult.details);
 });
 
-test("single cancel: TUI details equal RPC details", async () => {
+it("single cancel: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const rpc = makeCtx();
   rpc.selectQueue.push(undefined);
@@ -1062,7 +1062,7 @@ test("single cancel: TUI details equal RPC details", async () => {
   assert.deepEqual(tuiResult.details, rpcResult.details);
 });
 
-test("multi-select: TUI details equal RPC details", async () => {
+it("multi-select: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const rpc = makeCtx();
   rpc.selectQueue.push("api", "db", "Done");
@@ -1080,7 +1080,7 @@ test("multi-select: TUI details equal RPC details", async () => {
   assert.deepEqual(tuiResult.details, rpcResult.details);
 });
 
-test("batch answered: TUI details equal RPC details", async () => {
+it("batch answered: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const questions = [
     { question: "Q1?", options: ["opt1", "opt2"] },
@@ -1094,7 +1094,7 @@ test("batch answered: TUI details equal RPC details", async () => {
   assert.deepEqual(tuiResult.details, rpcResult.details);
 });
 
-test("batch cancelled: TUI details equal RPC details", async () => {
+it("batch cancelled: TUI details equal RPC details", async () => {
   const { tool } = makePi();
   const questions = [
     { question: "Q1?", options: ["opt1", "opt2"] },
@@ -1111,7 +1111,7 @@ test("batch cancelled: TUI details equal RPC details", async () => {
 });
 
 describe("multi-select and cancellation", { skip: !mod }, () => {
-test("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
+it("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   selectQueue.push("api", "db", "Done");
@@ -1139,7 +1139,7 @@ test("[Multi-select commits the explicit selection on Done] commits only the tog
   assert.ok(calls.select[0].options.includes(FREEFORM_OPTION));
 });
 
-test("[Multi-select round cap without Done cancels without partial commit] toggling back and forth until the cap cancels", async () => {
+it("[Multi-select round cap without Done cancels without partial commit] toggling back and forth until the cap cancels", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   const cap = Math.max(32, 4 + 2);
@@ -1163,7 +1163,7 @@ test("[Multi-select round cap without Done cancels without partial commit] toggl
   assert.match(text(result), /declined/);
 });
 
-test("[Multi-select commits the explicit selection on Done] all options on commits immediately", async () => {
+it("[Multi-select commits the explicit selection on Done] all options on commits immediately", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
   selectQueue.push("a", "b");
@@ -1180,7 +1180,7 @@ test("[Multi-select commits the explicit selection on Done] all options on commi
   assert.equal(result.details.cancelled, false);
 });
 
-test("[Multi-select commits the explicit selection on Done] cancelling a round cancels with no partial commit", async () => {
+it("[Multi-select commits the explicit selection on Done] cancelling a round cancels with no partial commit", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push("a", undefined);
@@ -1197,7 +1197,7 @@ test("[Multi-select commits the explicit selection on Done] cancelling a round c
   });
 });
 
-test("[Dialog cancellation returns cancelled with no answer] dialog cancel in RPC mode", async () => {
+it("[Dialog cancellation returns cancelled with no answer] dialog cancel in RPC mode", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue } = makeCtx();
   selectQueue.push(undefined);
@@ -1216,7 +1216,7 @@ test("[Dialog cancellation returns cancelled with no answer] dialog cancel in RP
   assert.match(text(result), /declined/);
 });
 
-test("validation errors carry cancelled details and fire no events", async () => {
+it("validation errors carry cancelled details and fire no events", async () => {
   const { tool, eventBus } = makePi();
   const { ctx } = makeCtx();
   const result = await execute(tool, { question: "Q?" }, ctx);
