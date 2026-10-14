@@ -13,6 +13,7 @@ try {
 }
 
 const extension = mod.default;
+const FREEFORM_OPTION = mod.FREEFORM_OPTION ?? "✎ Type something…";
 
 function makePi() {
   const registered = [];
@@ -250,6 +251,92 @@ test("[Single question freeform returns structured details] empty freeform input
     cancelled: true,
   });
   assert.match(text(result), /declined/);
+});
+
+test("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  selectQueue.push("api", "db", "Done");
+  const result = await execute(
+    tool,
+    {
+      question: "Select services",
+      options: ["api", "web", "db", "cache"],
+      multiSelect: true,
+    },
+    ctx,
+  );
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.details, {
+    question: "Select services",
+    options: ["api", "web", "db", "cache"],
+    answer: { kind: "selection", selections: ["api", "db"] },
+    cancelled: false,
+  });
+  assert.equal(calls.select.length, 3);
+  assert.ok(calls.select[0].title.includes("api") && calls.select[0].title.includes("web"));
+  for (const option of ["api", "web", "db", "cache", "Done"]) {
+    assert.ok(calls.select[0].options.includes(option), `first round offers ${option}`);
+  }
+  assert.ok(calls.select[0].options.includes(FREEFORM_OPTION));
+});
+
+test("[Multi-select round cap without Done cancels without partial commit] toggling back and forth until the cap cancels", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  const cap = Math.max(32, 4 + 2);
+  selectQueue.push(...Array.from({ length: cap }, (_, i) => (i % 2 === 0 ? "api" : "web")));
+  const result = await execute(
+    tool,
+    {
+      question: "Select services",
+      options: ["api", "web", "db", "cache"],
+      multiSelect: true,
+    },
+    ctx,
+  );
+  assert.equal(calls.select.length, cap);
+  assert.deepEqual(result.details, {
+    question: "Select services",
+    options: ["api", "web", "db", "cache"],
+    answer: null,
+    cancelled: true,
+  });
+  assert.match(text(result), /declined/);
+});
+
+test("[Multi-select commits the explicit selection on Done] all options on commits immediately", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  selectQueue.push("a", "b");
+  const result = await execute(
+    tool,
+    { question: "Pick", options: ["a", "b"], multiSelect: true, allowFreeform: false },
+    ctx,
+  );
+  assert.equal(calls.select.length, 2);
+  assert.deepEqual(result.details.answer, {
+    kind: "selection",
+    selections: ["a", "b"],
+  });
+  assert.equal(result.details.cancelled, false);
+});
+
+test("[Multi-select commits the explicit selection on Done] cancelling a round cancels with no partial commit", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push("a", undefined);
+  const result = await execute(
+    tool,
+    { question: "Pick", options: ["a", "b"], multiSelect: true, allowFreeform: false },
+    ctx,
+  );
+  assert.deepEqual(result.details, {
+    question: "Pick",
+    options: ["a", "b"],
+    answer: null,
+    cancelled: true,
+  });
 });
 
 test("[Dialog cancellation returns cancelled with no answer] dialog cancel in RPC mode", async () => {

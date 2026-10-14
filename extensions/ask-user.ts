@@ -214,6 +214,46 @@ export async function askSingleViaRpc(q: AskQuestion, ctx: ExtensionToolContext)
   return { kind: "selection", selections: [choice] } as AskSelection;
 }
 
+function multiSelectTitle(q: AskQuestion, selected: Set<string>, round: number) {
+  const marks = q.options
+    .map((option) => `${selected.has(option) ? "[x]" : "[ ]"} ${option}`)
+    .join("\n");
+  return `${q.question}\n${marks}\n(Round ${round})`;
+}
+
+export async function askMultiSelectViaRpc(
+  q: AskQuestion,
+  ctx: ExtensionToolContext,
+): Promise<AskSelection | null> {
+  const selected = new Set<string>();
+  const cap = Math.max(32, q.options.length + 2);
+  const dialogOptions = [
+    ...q.options,
+    DONE_OPTION,
+    ...(q.allowFreeform === false ? [] : [FREEFORM_OPTION]),
+  ];
+  for (let round = 1; round <= cap; round++) {
+    const choice = await ctx.ui.select(
+      multiSelectTitle(q, selected, round),
+      dialogOptions,
+    );
+    if (choice === undefined) return null;
+    if (choice === DONE_OPTION) {
+      return { kind: "selection", selections: [...selected] } as AskSelection;
+    }
+    if (choice === FREEFORM_OPTION) {
+      const text = await ctx.ui.input(q.question, "Type your answer…");
+      return text ? ({ kind: "freeform", text } as AskFreeform) : null;
+    }
+    if (selected.has(choice)) selected.delete(choice);
+    else selected.add(choice);
+    if (selected.size === q.options.length) {
+      return { kind: "selection", selections: [...selected] } as AskSelection;
+    }
+  }
+  return null;
+}
+
 export function singleResult(q: AskQuestion, answer: AskSelection | AskFreeform | null): AgentToolResult<AskSingleDetails> {
   const details: AskSingleDetails = {
     question: q.question,
@@ -262,7 +302,9 @@ export default function askUserExtension(pi: ExtensionAPI) {
         multiSelect: params.multiSelect,
         allowFreeform: params.allowFreeform,
       };
-      const answer = await askSingleViaRpc(q, _ctx);
+      const answer = q.multiSelect
+        ? await askMultiSelectViaRpc(q, _ctx)
+        : await askSingleViaRpc(q, _ctx);
       return singleResult(q, answer);
     },
 
