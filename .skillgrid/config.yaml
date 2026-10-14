@@ -9,7 +9,7 @@ context: >-
 # --- Ticketing ---
 ticketing:
   enabled: true
-  type: gh
+  type: backlogmd
   backlogmd:
     dir: .backlog
     task_prefix: "task"
@@ -89,6 +89,12 @@ conventions:
   worktree_dir: .worktrees
   commit_style: conventional
   state_file: .skillgrid/state.yaml
+
+# --- Delivery / branch strategy ---
+# All change work commits directly on the change branch — no per-ticket
+# feature branches. Chain strategy for slicing/ship: stacked-to-main.
+delivery:
+  chain_strategy: stacked-to-main
 
 # --- Work-unit commits ---
 checkpoint:
