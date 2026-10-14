@@ -1236,4 +1236,358 @@ it("validation errors carry cancelled details and fire no events", async () => {
   assert.deepEqual(eventBus.emitted, []);
 });
 });
+
+describe("option descriptions", { skip: !mod }, () => {
+  it("[Object options normalize to labeled details] details store label and description", async () => {
+    const { tool } = makePi();
+    const { ctx, selectQueue } = makeCtx();
+    selectQueue.push("A");
+    const result = await execute(
+      tool,
+      {
+        question: "Q?",
+        options: [
+          { label: "A", description: "desc A" },
+          { label: "B", description: "desc B" },
+        ],
+      },
+      ctx,
+    );
+    assert.deepEqual(result.details, {
+      question: "Q?",
+      options: ["A", "B"],
+      answer: { kind: "selection", selections: ["A"] },
+      cancelled: false,
+    });
+  });
+
+  it("[Object options reject a missing or blank description] object without description is an error", async () => {
+    const { tool } = makePi();
+    const { ctx } = makeCtx();
+    const result = await execute(
+      tool,
+      { question: "Q?", options: [{ label: "A", description: "" }, "B"] },
+      ctx,
+    );
+    assert.equal(result.isError, true);
+    assert.equal(text(result), "ask_user: option A needs a non-empty description");
+  });
+
+  it("[Object options reject a missing description] object without description field is an error", async () => {
+    const { tool } = makePi();
+    const { ctx } = makeCtx();
+    const result = await execute(tool, { question: "Q?", options: [{ label: "A" }, "B"] }, ctx);
+    assert.equal(result.isError, true);
+    assert.equal(text(result), "ask_user: option A needs a non-empty description");
+  });
+
+  it("[Object options reject a non-string label] numeric label is an error", async () => {
+    const { tool } = makePi();
+    const { ctx } = makeCtx();
+    const result = await execute(
+      tool,
+      { question: "Q?", options: [{ label: 1, description: "x" }, "B"] },
+      ctx,
+    );
+    assert.equal(result.isError, true);
+    assert.equal(text(result), "ask_user: each option needs a string label");
+  });
+
+  it("[Batch object options reject a missing description] validation applies per question", async () => {
+    const { tool } = makePi();
+    const { ctx } = makeCtx();
+    const result = await execute(
+      tool,
+      {
+        questions: [
+          { question: "Q1?", options: [{ label: "a", description: "ok" }, "b"] },
+          { question: "Q2?", options: [{ label: "c" }, "d"] },
+        ],
+      },
+      ctx,
+    );
+    assert.equal(result.isError, true);
+    assert.equal(text(result), "ask_user: option c needs a non-empty description");
+  });
+
+  it("[TUI popup renders descriptions under labels] each option shows its description line", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(
+      tool,
+      {
+        question: "Which cache?",
+        options: [
+          { label: "In-memory", description: "fast but volatile, per-process" },
+          { label: "Redis", description: "shared across instances" },
+        ],
+      },
+      [
+        (c) => {
+          const lines = c.render().join("\n");
+          assert.match(lines, /1\. In-memory/);
+          assert.match(lines, /fast but volatile, per-process/);
+          assert.match(lines, /2\. Redis/);
+          assert.match(lines, /shared across instances/);
+        },
+        "1",
+      ],
+    );
+    const result = await pending;
+    assert.deepEqual(result.details.answer, { kind: "selection", selections: ["In-memory"] });
+  });
+
+  it("[TUI popup renders wrapped long descriptions] a long description wraps within the box width", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(
+      tool,
+      {
+        question: "Q?",
+        options: [
+          { label: "A", description: "a very long description that will definitely need to wrap across multiple lines in a narrow terminal box" },
+          "B",
+        ],
+      },
+      [
+        (c) => {
+          const all = c.render();
+          const maxVisible = Math.max(...all.map((line) => line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").length));
+          assert.ok(maxVisible <= 72, `every rendered line stays within the 72-col box, got ${maxVisible}`);
+          assert.ok(all.length > 8, "wrapped description adds lines");
+        },
+        "1",
+      ],
+    );
+    await pending;
+  });
+
+  it("[TUI multi-select renders descriptions] checkbox rows show descriptions", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(
+      tool,
+      {
+        question: "Which services?",
+        options: [
+          { label: "api", description: "public REST surface" },
+          { label: "db", description: "primary datastore" },
+        ],
+        multiSelect: true,
+      },
+      [
+        (c) => {
+          const lines = c.render().join("\n");
+          assert.match(lines, /\[ \] 1\. api/);
+          assert.match(lines, /public REST surface/);
+          assert.match(lines, /\[ \] 2\. db/);
+          assert.match(lines, /primary datastore/);
+        },
+        "1",
+        "2",
+      ],
+    );
+    const result = await pending;
+    assert.deepEqual(result.details.answer, { kind: "selection", selections: ["api", "db"] });
+  });
+
+  it("[Render call summarizes labels only] object options render without descriptions in the call summary", () => {
+    const { tool } = makePi();
+    const component = tool.renderCall(
+      {
+        question: "Q?",
+        options: [
+          { label: "A", description: "desc A" },
+          { label: "B", description: "desc B" },
+        ],
+      },
+      theme,
+      {},
+    );
+    const rendered = component.render(120).join("");
+    assert.match(rendered, /Q\? \(A, B\)/);
+    assert.ok(!rendered.includes("desc A"), "descriptions stay out of the call summary");
+  });
+
+  it("[TUI Esc cancels with object options] cancel works on normalized details", async () => {
+    const { tool } = makePi();
+    const { pending } = runTui(
+      tool,
+      { question: "Q?", options: [{ label: "A", description: "dA" }, { label: "B", description: "dB" }] },
+      ["escape"],
+    );
+    const result = await pending;
+    assert.deepEqual(result.details, {
+      question: "Q?",
+      options: ["A", "B"],
+      answer: null,
+      cancelled: true,
+    });
+  });
+
+  it("[Object options RPC parity] TUI details equal RPC details", async () => {
+    const { tool } = makePi();
+    const params = {
+      question: "Q?",
+      options: [
+        { label: "A", description: "dA" },
+        { label: "B", description: "dB" },
+      ],
+    };
+    const rpc = makeCtx();
+    rpc.selectQueue.push("B");
+    const rpcResult = await execute(tool, params, rpc.ctx);
+    const { pending } = runTui(tool, params, ["down", "enter"]);
+    const tuiResult = await pending;
+    assert.deepEqual(tuiResult.details, rpcResult.details);
+  });
+});
+
+describe("per-question notes", { skip: !mod }, () => {
+  it("[Notes open with n and submit with Enter] typed note is captured and answered by selection", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(tool, { question: "Which branch?", options: ["main", "dev"] }, [
+      "n",
+      (c) => assert.match(c.render().join("\n"), /Note: Esc back  Enter submit/),
+      "h",
+      "e",
+      "l",
+      "l",
+      "o",
+      "enter",
+      (c) => assert.match(c.render().join("\n"), /✎ note: hello/),
+      "1",
+    ]);
+    const result = await pending;
+    assert.deepEqual(result.details, {
+      question: "Which branch?",
+      options: ["main", "dev"],
+      answer: { kind: "selection", selections: ["main"] },
+      note: "hello",
+      cancelled: false,
+    });
+    assert.match(text(result), /User selected: main/);
+    assert.match(text(result), /user notes: hello/);
+  });
+
+  it("[Notes Esc discards the draft] Esc in the note editor restores the options without a note", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(tool, { question: "Q?", options: ["a", "b"] }, [
+      "n",
+      (c) => assert.match(c.render().join("\n"), /Note:/),
+      "x",
+      "y",
+      "escape",
+      (c) => assert.ok(!c.render().join("\n").includes("✎ note:")),
+      "1",
+    ]);
+    const result = await pending;
+    assert.deepEqual(result.details, {
+      question: "Q?",
+      options: ["a", "b"],
+      answer: { kind: "selection", selections: ["a"] },
+      cancelled: false,
+    });
+  });
+
+  it("[Note editor is single-line] backspace after space deletes one char", async () => {
+    const { tool } = makePi();
+    const { tui, pending } = runTui(tool, { question: "Q?", options: ["a", "b"] }, [
+      "n",
+      "h",
+      "i",
+      "space",
+      "enter",
+      "enter",
+      "1",
+    ]);
+    const result = await pending;
+    assert.equal(result.details.note, "hi");
+  });
+
+  it("[Review page notes act as the global note] a note on the review page is the global note", async () => {
+    const { tool } = makePi();
+    const questions = [
+      { question: "Q1?", options: ["a", "b"] },
+      { question: "Q2?", options: ["c", "d"] },
+    ];
+    const { pending } = runTui(tool, { questions }, [
+      "1",
+      "tab",
+      "n",
+      "g",
+      "l",
+      "o",
+      "b",
+      "a",
+      "l",
+      "enter",
+      (c) => assert.match(c.render().join("\n"), /✎ global note: global/),
+      "enter",
+    ]);
+    const result = await pending;
+    assert.equal(result.details.globalNote, "global");
+    assert.match(text(result), /global note: global/);
+  });
+
+  it("[Notes do not answer] a note alone leaves the question unanswered", async () => {
+    const { tool } = makePi();
+    const questions = [
+      { question: "Q1?", options: ["a", "b"] },
+      { question: "Q2?", options: ["c", "d"] },
+    ];
+    const { pending } = runTui(tool, { questions }, [
+      "n",
+      "n",
+      "o",
+      "t",
+      "e",
+      "enter",
+      "tab",
+      (c) => assert.match(c.render().join("\n"), /⚠ 2 questions unanswered/),
+      "enter",
+      "enter",
+    ]);
+    const result = await pending;
+    assert.equal(result.details.answers?.[0], null);
+    assert.equal(result.details.answers?.[1], null);
+    assert.equal(result.details.globalNote, undefined);
+    assert.match(text(result), /Batch answered/);
+  });
+
+  it("[Notes render in review rows] an answered question with a note shows it in the review", async () => {
+    const { tool } = makePi();
+    const questions = [
+      { question: "Q1?", options: ["a", "b"] },
+      { question: "Q2?", options: ["c", "d"] },
+    ];
+    const { pending } = runTui(tool, { questions }, [
+      "n",
+      "z",
+      "enter",
+      "1",
+      "tab",
+      (c) => assert.match(c.render().join("\n"), /1\. Q1\?  →  a  ·  note: z/),
+      "enter",
+      "enter",
+    ]);
+    await pending;
+  });
+});
+
+describe("terminal bell", { skip: !mod }, () => {
+  it("[TUI mount rings the terminal bell once] a single BEL byte is written on a TTY", async () => {
+    installBellMock();
+    const { tool } = makePi();
+    const { pending } = runTui(tool, { question: "Q?", options: ["a", "b"] }, ["1"]);
+    await pending;
+    assert.deepEqual(bellWrites.filter((w) => w === "\u0007"), ["\u0007"]);
+  });
+
+  it("[Non-TTY mounts ring no bell] redirected output stays untouched", async () => {
+    installBellMock();
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+    const { tool } = makePi();
+    const { pending } = runTui(tool, { question: "Q?", options: ["a", "b"] }, ["1"]);
+    await pending;
+    assert.equal(bellWrites.length, 0);
+  });
+});
 });
