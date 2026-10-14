@@ -33,3 +33,16 @@ test("skill-pi-tui native type-stripping load", () => {
   assert.equal(r.status, 0, `loader must exit 0, stderr:\n${r.stderr}`);
   assert.match(r.stdout, /ok/);
 });
+
+test("index.ts wires banner + sidebar (structural)", () => {
+  const src = readFileSync(join(extDir, "index.ts"), "utf8");
+  assert.match(src, /setHeader/);
+  assert.match(src, /setFooter/);
+  assert.match(src, /installSidebar/);
+  assert.match(src, /sidebarPart\(tui, "footer"/);
+  assert.match(src, /captureChanges/);
+  assert.match(src, /setInterval\(refreshChanges, 2000\)/);
+  assert.match(src, /changesTimer\.unref\(\)/);
+  assert.match(src, /session_shutdown/);
+  assert.match(src, /clearInterval\(changesTimer\)/);
+});

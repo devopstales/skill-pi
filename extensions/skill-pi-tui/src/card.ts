@@ -63,6 +63,15 @@ const TITLE_ROLE: Record<CardTone, string> = {
 const HINT_ROLE = "dim";
 const SUBTITLE_ROLE = "muted";
 const BODY_ROLE = "text";
+// pi themes precompute per-token ANSI; a missing token (e.g. a custom theme
+// without borderAccent) must degrade to the plain border role, not throw mid-frame.
+function fgSafe(theme: CardTheme, role: string, text: string): string {
+  try {
+    return theme.fg(role, text);
+  } catch {
+    return theme.fg("text", text);
+  }
+}
 const SEPARATOR = "·";
 const FRAME_COLUMNS = 4;
 
@@ -98,8 +107,8 @@ function rule(length: number): string {
 function titleText(card: Card, theme: CardTheme): { styled: string; width: number } {
   const head = `${card.glyph ?? CARD_GLYPH} ${card.title}`;
   const styled = card.subtitle
-    ? `${theme.fg(TITLE_ROLE[card.tone], head)} ${theme.fg(SUBTITLE_ROLE, SEPARATOR)} ${theme.fg(SUBTITLE_ROLE, card.subtitle)}`
-    : theme.fg(TITLE_ROLE[card.tone], head);
+    ? `${fgSafe(theme, TITLE_ROLE[card.tone], head)} ${fgSafe(theme, SUBTITLE_ROLE, SEPARATOR)} ${fgSafe(theme, SUBTITLE_ROLE, card.subtitle)}`
+    : fgSafe(theme, TITLE_ROLE[card.tone], head);
   return { styled, width: visibleWidth(head) + (card.subtitle ? visibleWidth(card.subtitle) + 3 : 0) };
 }
 
@@ -108,14 +117,14 @@ function bodyLines(card: Card, innerWidth: number): string[] {
 }
 
 function frame(theme: CardTheme, tone: CardTone, text: string): string {
-  return theme.fg(FRAME_ROLE[tone], text);
+  return fgSafe(theme, FRAME_ROLE[tone], text);
 }
 
 export function cardTop(card: Card, theme: CardTheme, width: number, hint?: string): string {
   const targetWidth = Math.max(0, Math.floor(width));
   if (targetWidth === 0) return "";
   if (targetWidth < 5) {
-    const left = theme.fg(FRAME_ROLE[card.tone], "╭");
+    const left = fgSafe(theme, FRAME_ROLE[card.tone], "╭");
     if (targetWidth === 1) return left;
     return left + frame(theme, card.tone, `${rule(targetWidth - 2)}╮`);
   }
@@ -128,8 +137,8 @@ export function cardTop(card: Card, theme: CardTheme, width: number, hint?: stri
   const styledTitle = title.width <= titleWidth ? title.styled : truncateToWidth(title.styled, titleWidth, "");
   const styledTitleWidth = title.width <= titleWidth ? title.width : visibleWidth(styledTitle);
   const fill = rule(targetWidth - styledTitleWidth - 5 - hintWidth);
-  const tail = shownHint ? ` ${theme.fg(HINT_ROLE, shownHint)} ` : "";
-  return theme.fg(FRAME_ROLE[card.tone], chrome.topLeft) + frame(theme, card.tone, chrome.topLead) + styledTitle + frame(theme, card.tone, ` ${fill}`) + tail + frame(theme, card.tone, chrome.topRight);
+  const tail = shownHint ? ` ${fgSafe(theme, HINT_ROLE, shownHint)} ` : "";
+  return fgSafe(theme, FRAME_ROLE[card.tone], chrome.topLeft) + frame(theme, card.tone, chrome.topLead) + styledTitle + frame(theme, card.tone, ` ${fill}`) + tail + frame(theme, card.tone, chrome.topRight);
 }
 
 export function cardLine(text: string, tone: CardTone, theme: CardTheme, width: number): string {
@@ -154,7 +163,7 @@ export function cardBottom(tone: CardTone, theme: CardTheme, width: number, cont
   if (content === undefined || visibleWidth(content) === 0) return left + frame(theme, tone, `${rule(targetWidth - 2)}${chrome.bottomRight}`);
   const contentWidth = visibleWidth(content) + 2;
   if (targetWidth - 2 - contentWidth < 3) return left + frame(theme, tone, `${rule(targetWidth - 2)}${chrome.bottomRight}`);
-  return left + frame(theme, tone, `${rule(targetWidth - 2 - contentWidth)} `) + theme.fg(HINT_ROLE, content) + frame(theme, tone, ` ${chrome.bottomRight}`);
+  return left + frame(theme, tone, `${rule(targetWidth - 2 - contentWidth)} `) + fgSafe(theme, HINT_ROLE, content) + frame(theme, tone, ` ${chrome.bottomRight}`);
 }
 
 export function cardInnerWidth(width: number): number {
@@ -245,7 +254,7 @@ export interface CardParts {
 export function renderCard(card: Card, theme: CardTheme, width: number, options: CardRenderOptions): string[] {
   if (options.previewRows !== undefined) return width <= 0 ? [] : floatRows(card.tone, theme, width, (inner) => ({
     head: [cardTop(card, theme, inner, options.hint)],
-    body: cardBodyRows(card.body.map((line) => theme.fg(BODY_ROLE, line)), card.tone, theme, inner, options),
+    body: cardBodyRows(card.body.map((line) => fgSafe(theme, BODY_ROLE, line)), card.tone, theme, inner, options),
     bottom: cardBottom(card.tone, theme, inner),
   }));
   if (chrome !== OUTLINE_CHROME) return withChrome(OUTLINE_CHROME, () => renderCard(card, theme, width, options));
@@ -262,9 +271,9 @@ function cardText(card: Card, theme: CardTheme, innerWidth: number, expanded: bo
   if (!expanded) {
     const first = lines.find((line) => line !== "") ?? "";
     const clipped = lines.length > 1 ? truncateToWidth(first, Math.max(1, innerWidth - 1), "") + "…" : first;
-    return [theme.fg(BODY_ROLE, clipped)];
+    return [fgSafe(theme, BODY_ROLE, clipped)];
   }
-  return lines.map((line) => (line === "" ? "" : theme.fg(BODY_ROLE, line)));
+  return lines.map((line) => (line === "" ? "" : fgSafe(theme, BODY_ROLE, line)));
 }
 
 function floatPanel(card: Card, theme: CardTheme, width: number, options: CardRenderOptions): string[] {
@@ -279,10 +288,10 @@ function fitRow(text: string, width: number): string {
 }
 
 function panelHeader(card: Card, theme: CardTheme, width: number, hint?: string): string {
-  const lead = theme.fg(FRAME_ROLE[card.tone], chrome.topLeft) + chrome.topLead;
-  const subtitle = card.subtitle ? `  ${theme.fg(SUBTITLE_ROLE, card.subtitle)}` : "";
-  const left = `${lead}${theme.fg(TITLE_ROLE[card.tone], `${card.glyph ?? CARD_GLYPH} ${card.title}`)}${subtitle}`;
-  const right = hint ? `${theme.fg(SUBTITLE_ROLE, hint)}${chrome.topRight}` : "";
+  const lead = fgSafe(theme, FRAME_ROLE[card.tone], chrome.topLeft) + chrome.topLead;
+  const subtitle = card.subtitle ? `  ${fgSafe(theme, SUBTITLE_ROLE, card.subtitle)}` : "";
+  const left = `${lead}${fgSafe(theme, TITLE_ROLE[card.tone], `${card.glyph ?? CARD_GLYPH} ${card.title}`)}${subtitle}`;
+  const right = hint ? `${fgSafe(theme, SUBTITLE_ROLE, hint)}${chrome.topRight}` : "";
   const gap = width - visibleWidth(left) - visibleWidth(right);
   return right && gap >= 1 ? `${left}${" ".repeat(gap)}${right}` : fitRow(left, width);
 }

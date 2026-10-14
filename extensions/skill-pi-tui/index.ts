@@ -3,10 +3,14 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { VERSION, getAgentDir, SettingsManager, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { installSidebar } from "./src/sidebar-layout.ts";
+import { sidebarPart } from "./src/sidebar.ts";
+import { renderStatusCard } from "./src/status-card.ts";
+import { captureChanges, emptyChanges, type ChangesModel } from "./src/changes.ts";
 
 const LOGO = [
   " ███████╗██╗  ██╗██╗██╗     ██╗     ██████╗  ██████╗ ██╗██████╗  ",
@@ -164,6 +168,34 @@ class BannerHeader implements Component {
   }
 }
 
+let currentCtx: ExtensionContext | undefined;
+let tuiRef: TUI | undefined;
+let removeSidebar: (() => void) | undefined;
+let changesTimer: ReturnType<typeof setInterval> | undefined;
+let currentChanges: ChangesModel = emptyChanges();
+
+function refreshChanges() {
+  const cwd = currentCtx?.cwd ?? process.cwd();
+  void captureChanges(cwd).then((changes) => {
+    currentChanges = changes;
+    tuiRef?.requestRender();
+  });
+}
+
+function buildTheme(theme: Theme) {
+  // ponytail: card theme accepts free color names ("success"/"error"/"accent"/
+  // "muted"/"border"/"dim") not in pi's ThemeColor union — the pi Theme fg
+  // falls back to the default fg for unknown tokens, matching old2 behavior.
+  return { fg: (color: ThemeColor, text: string) => theme.fg(color, text), bold: (text: string) => theme.bold(text) };
+}
+
+function shortenHome(cwd: string): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  if (!home || !cwd.startsWith(home)) return cwd;
+  const rel = cwd.slice(home.length).replace(/^\/+/, "");
+  return rel ? `~/${rel}` : "~";
+}
+
 export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
@@ -221,5 +253,61 @@ export default function (pi: ExtensionAPI): void {
     };
 
     ctx.ui.setHeader((_tui, _theme) => new BannerHeader(stats));
+
+    currentCtx = ctx;
+    refreshChanges();
+    changesTimer = setInterval(refreshChanges, 2000);
+    changesTimer.unref();
+
+    ctx.ui.setFooter((tui, theme, footerData) => {
+      tuiRef = tui;
+      const barTheme = buildTheme(theme);
+      const bottom: Component & { dispose(): void } = {
+        render() {
+          return [];
+        },
+        invalidate() {},
+        dispose() {
+          removeSidebar?.();
+          removeSidebar = undefined;
+          tuiRef = undefined;
+        },
+      };
+      const statusCard = {
+        render(width: number): string[] {
+          const changes = currentChanges.files.length
+            ? { files: currentChanges.files.length, added: currentChanges.added, deleted: currentChanges.deleted, notice: currentChanges.notice }
+            : undefined;
+          return renderStatusCard(
+            {
+              cwd: shortenHome(resolve(currentCtx?.cwd ?? ctx.cwd)),
+              branch: footerData?.getGitBranch() ?? null,
+              sessionName: ctx.sessionManager?.getSessionName?.() ?? undefined,
+              changes,
+            },
+            barTheme,
+            width,
+          );
+        },
+        invalidate: () => tui.requestRender(),
+        digest: () => JSON.stringify([currentChanges.added, currentChanges.deleted, currentChanges.files.length]),
+      };
+      const part = sidebarPart(tui, "footer", bottom, statusCard);
+      removeSidebar = installSidebar(tui, barTheme);
+      return part;
+    });
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    if (changesTimer) {
+      clearInterval(changesTimer);
+      changesTimer = undefined;
+    }
+    ctx.ui.setFooter(undefined);
+    removeSidebar?.();
+    removeSidebar = undefined;
+    tuiRef = undefined;
+    currentCtx = undefined;
+    currentChanges = emptyChanges();
   });
 }
