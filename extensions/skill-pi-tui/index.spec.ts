@@ -58,9 +58,10 @@ it("sanitizeTerminalText: strips SGR, OSC, and control chars", () => {
   assert.equal(sanitizeTerminalText("safe\x1b]52;c;Zm9vtext"), "safe");
 });
 
-const fakeTheme: CardTheme = {
+const fakeTheme: CardTheme & { bold(text: string): string } = {
   fg: (_color, text) => text,
   bg: (_color, text) => `\x1b[48;5;16m${text}\x1b[49m`,
+  bold: (text) => text,
 };
 
 it("renderCard: panel frame at fixed width", () => {
@@ -80,3 +81,40 @@ function visibleWidthCheck(line: string): boolean {
   const plain = line.replace(/\x1b\[[0-9;]*m/g, "");
   return [...plain].length <= 50;
 }
+
+import { renderStatusCard, type StatusCardModel } from "./src/status-card.ts";
+import { SIDEBAR_BREAKPOINT, invalidateSidebar } from "./src/sidebar-layout.ts";
+import { sidebarState, sidebarPart } from "./src/sidebar.ts";
+
+it("renderStatusCard: project + changes groups at width 48", () => {
+  const model: StatusCardModel = {
+    cwd: "~/git/ai-test/skill-pi",
+    branch: "main",
+    sessionName: "tui work",
+    changes: { files: 3, added: 10, deleted: 2 },
+  };
+  const lines = renderStatusCard(model, fakeTheme, 48);
+  const flat = lines.join("\n");
+  assert.match(flat, /Status/);
+  assert.match(flat, /~/);
+  assert.match(flat, /main/);
+  assert.match(flat, /tui work/);
+  assert.match(flat, /3 files/);
+  assert.match(flat, /\+10/);
+  assert.match(flat, /−2/);
+  for (const line of lines) assert.ok([...line.replace(/\x1b\[[0-9;]*m/g, "")].length <= 48);
+});
+
+it("renderStatusCard: non-git notice when no changes", () => {
+  const model: StatusCardModel = { cwd: "/tmp/x", branch: null, changes: undefined };
+  const flat = renderStatusCard(model, fakeTheme, 48).join("\n");
+  assert.match(flat, /No captured changes/);
+  assert.notMatch(flat, /Branch/);
+});
+
+it("SIDEBAR_BREAKPOINT is 140 and registry APIs exist", () => {
+  assert.equal(SIDEBAR_BREAKPOINT, 140);
+  assert.equal(typeof invalidateSidebar, "function");
+  assert.equal(typeof sidebarState, "function");
+  assert.equal(typeof sidebarPart, "function");
+});
