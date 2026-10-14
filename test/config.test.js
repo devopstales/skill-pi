@@ -25,14 +25,12 @@ test("ensureAgentDir seeds settings, auth, and subdirs", () => {
   assert.ok(existsSync(join(dir, "bin")));
 });
 
-test("ensureAgentDir seeds default packages into settings", () => {
+test("ensureAgentDir seeds an empty packages array into settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-pkgs-"));
   ensureAgentDir(dir);
   const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
-  assert.ok(Array.isArray(settings.packages), "fresh settings must register default packages");
-  for (const pkg of defaultPackages) {
-    assert.ok(settings.packages.includes(pkg), `missing default package ${pkg}`);
-  }
+  assert.ok(Array.isArray(settings.packages), "fresh settings must have a packages array");
+  assert.equal(settings.packages.length, 0, "no default provider packages are seeded");
 });
 
 test("seedDefaultPackages is additive and idempotent", () => {
@@ -43,15 +41,8 @@ test("seedDefaultPackages is additive and idempotent", () => {
   seedDefaultPackages(dir);
   const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
   assert.ok(settings.packages.includes("npm:custom-provider"), "must keep existing packages");
-  for (const pkg of defaultPackages) {
-    assert.ok(settings.packages.includes(pkg), `missing default package ${pkg}`);
-  }
   assert.equal(settings.quietStartup, true, "must preserve unrelated settings");
-  assert.equal(
-    settings.packages.filter((p) => p === defaultPackages[0]).length,
-    1,
-    "idempotent: a default package appears exactly once",
-  );
+  assert.equal(settings.packages.length, 1, "no default packages added; user package untouched");
 });
 
 test("seedDefaultPackages leaves existing settings file untouched when complete", () => {
