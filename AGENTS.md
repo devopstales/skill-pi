@@ -24,6 +24,7 @@ State: `.skillgrid/state.yaml` (dynamic) — where the project is right now (pha
 
 **Rules & standards:** operational rules are owned by this file's `### Rules` section (the real source — edit there). Shared standards are referenced, never inlined — each loads via the skills that apply it.
 
+- **Dependency policy** — Production deps: `@earendil-works/pi-coding-agent` + bundled-extension runtime deps (`@pierre/*`, `web-tree-sitter`, `tree-sitter-bash`); dev deps for tests only.
 - **Coding conventions** — reference `.agents/skills/_shared/rules/code-standards.md` for detailed coding conventions.
 - **Testing conventions** — reference `.agents/skills/_shared/references/strict-tdd.md` for the TDD cycle and testing conventions.
 - **Commits & verification** — reference `.agents/skills/_shared/rules/commits.md` for the commit contract, `.agents/skills/_shared/rules/verification-ladder.md` for the verification ladder, and `.agents/skills/_shared/planning/rigor-tiers.md` for rigor tiers.

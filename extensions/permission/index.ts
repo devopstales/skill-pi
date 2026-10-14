@@ -8,6 +8,7 @@ import {
   type ExtensionContext,
   type SlashCommandInfo,
 } from "@earendil-works/pi-coding-agent";
+import type { KeyId } from "@earendil-works/pi-tui";
 
 import {
   APPROVAL_CONFIRM_APPROVE,
@@ -53,6 +54,50 @@ const LOCAL_SKILL_SCOPES = new Set<LocalSkillScope>(["user", "project"]);
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined;
 
 export default function (pi: ExtensionAPI) {
+  const initSettings = loadSettings(process.cwd());
+  const keybindings = initSettings.keybindings ?? {};
+
+  if (keybindings.autoAcceptEdits) {
+    pi.registerShortcut(keybindings.autoAcceptEdits as KeyId, {
+      description: "Toggle auto-accept edits",
+      handler: toggleAutoAcceptEdits,
+    });
+  }
+
+  pi.registerCommand("permission-toggle-auto-accept", {
+    description: "Toggle auto-accept edits",
+    handler: async (_args, ctx) => toggleAutoAcceptEdits(ctx),
+  });
+
+  pi.registerCommand("permission-settings", {
+    description: "Show resolved permission settings",
+    handler: async (_args, ctx) => {
+      const sessionState = getSessionState(ctx);
+      const derivedSkillAllowState = getDerivedSkillAllowState(pi);
+      const persistedSettings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules);
+      const overrides = Object.fromEntries(sessionState.modeOverrides);
+      const sessionApprovedRules = Array.from(sessionState.approvalRules);
+      const effectiveSettings = mergeSessionApprovalRules(persistedSettings, sessionApprovedRules);
+      const output = JSON.stringify(
+        {
+          settings: persistedSettings,
+          effectiveSettings,
+          derivedSkillAllowRules: derivedSkillAllowState.rules,
+          skillRuleSources: derivedSkillAllowState.sources,
+          sessionApprovedRules,
+          sessionOverrides: overrides,
+        },
+        null,
+        2,
+      );
+      await ctx.ui.editor("Resolved permission settings", output);
+    },
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    syncSessionStatus(ctx);
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     const sessionState = getSessionState(ctx);
     const derivedSkillAllowState = getDerivedSkillAllowState(pi);
@@ -307,6 +352,15 @@ function mergeSkillAllowRules(settings: PermissionSettings, skillRules: string[]
   };
 }
 
+function mergeSessionApprovalRules(settings: PermissionSettings, sessionRules: string[]): PermissionSettings {
+  if (sessionRules.length === 0) return settings;
+
+  return {
+    ...settings,
+    always: [...new Set([...(settings.always ?? []), ...sessionRules])],
+  };
+}
+
 export function resetDerivedSkillAllowStateCacheForTest(): void {
   cachedDerivedSkillAllowState = undefined;
 }
@@ -322,6 +376,30 @@ function getSessionState(ctx: ExtensionContext): RuntimeSessionState {
   };
   SessionStates.set(sessionId, state);
   return state;
+}
+
+function syncSessionStatus(ctx: ExtensionContext) {
+  const sessionState = getSessionState(ctx);
+  const autoAcceptEnabled =
+    sessionState.modeOverrides.get("edit") === "allow" && sessionState.modeOverrides.get("write") === "allow";
+
+  ctx.ui.setStatus("permission", autoAcceptEnabled ? "▶︎ Auto-accept edits" : undefined);
+}
+
+export function toggleAutoAcceptEdits(ctx: ExtensionContext) {
+  const sessionState = getSessionState(ctx);
+  const editCurrent = sessionState.modeOverrides.get("edit");
+  const writeCurrent = sessionState.modeOverrides.get("write");
+
+  if (editCurrent === "allow" && writeCurrent === "allow") {
+    sessionState.modeOverrides.delete("edit");
+    sessionState.modeOverrides.delete("write");
+  } else {
+    sessionState.modeOverrides.set("edit", "allow");
+    sessionState.modeOverrides.set("write", "allow");
+  }
+
+  syncSessionStatus(ctx);
 }
 
 export function parseRule(rule: string): ParsedRule {

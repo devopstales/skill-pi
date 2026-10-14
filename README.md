@@ -97,6 +97,11 @@ Currently bundled:
   neither exists does it download an official release into `bin/` (the one case that
   notifies). Inspired by the `file-search` extension in
   [davis7dotsh/my-pi-setup](https://github.com/davis7dotsh/my-pi-setup) (MIT).
+- **`permission`** — an opencode-style permission gate for tool calls: allow/deny/ask
+  rules resolved per call (strictest wins, bash commands AST-parsed), an interactive
+  allow/reject prompt with an `edit`/`write` diff review, `Allow always` rules persisted
+  to `conf.d/permission.conf`, and a `/permission-toggle-auto-accept` auto-accept toggle
+  (status line reflects on/off; optional `keybindings.autoAcceptEdits` shortcut).
 
 ## Upgrading
 
