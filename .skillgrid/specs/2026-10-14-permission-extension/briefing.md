@@ -284,16 +284,21 @@ config/AGENTS policy text must be updated to acknowledge.
   drifts, the port pins the reference's resolved versions.
 - **Assumption:** the `file-search`-style "extension package.json is a private
   toolchain not installed by the root" holds for `permission` too — i.e. the
-  root `npm install` does not recurse into `extensions/*/node_modules`.
+  root `npm install` does not recurse into `extensions/*/node_modules` (ADR 0007).
 - **Assumption:** pi's native type-stripping handles the `permission` TS
   without needing `tsx`/`esbuild` at runtime (verified for `file-search` today).
+- **Question (ADR 0007 open):** drift guard for runtime deps declared in both the
+  root and the extension `package.json` — E2E "loads" check vs. an explicit
+  presence assertion. Resolve at the QA gate.
 
 ## Decisions (ADR)
 
-- None cleared the ADR bar (hard-to-reverse + surprising + real trade-off). The
-  dep-home choice is a convention (the `file-search` precedent), recorded in the
-  config/AGENTS, not an ADR. If a surprise surfaces during execution (e.g. the
-  wasm resolution fails under the shim-cwd), file ADR-0006 then.
+- [ADR 0007 — Bundled extensions are independently packaged units](../artifacts/04-adr-0007-self-contained-extensions.md):
+  every bundled extension is `extensions/<name>/` with its own private `package.json`
+  (runtime deps + dev toolchain); runtime deps **also** resolve via the root
+  `node_modules` because pi type-strips and imports root-relative; no wrapper change.
+  This is the packaging contract this change's dep strategy rests on, and it
+  reconciles with the proposed-but-not-executed ADR 0004 (separate publication).
 
 ## Terms
 
