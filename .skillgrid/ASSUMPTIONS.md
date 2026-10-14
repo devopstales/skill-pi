@@ -16,7 +16,7 @@ Durable project understanding. Tiers: `## VERIFIED` (checked against code), `## 
 
 ## LOCKED
 
-Highest sequence in use: 0007
+Highest sequence in use: 0008
 
 | ADR | Decision | Status | Path |
 |-----|----------|--------|------|
@@ -27,6 +27,7 @@ Highest sequence in use: 0007
 | 0005 | Package naming under `@devopstales`: wrapper `@devopstales/skill-pi`, extensions `@devopstales/pi-<name>` | accepted | `.skillgrid/artifacts/04-adr-0005-package-naming-devopstales-scope.md` |
 | 0006 | Never modify pi source — build on top of its public surface (env, CLI flags, settings, `pi.extensions` manifest); no fork, no runtime patch, no post-install edit | accepted | `.skillgrid/artifacts/04-adr-0006-never-modify-pi-source.md` |
 | 0007 | Bundled extensions are self-contained subdirs (`extensions/<name>/` + own `package.json` + toolchain); runtime deps resolve via the root `node_modules`, extension `node_modules` is a private dev toolchain | proposed | `.skillgrid/artifacts/04-adr-0007-self-contained-extensions.md` |
+| 0008 | Plugin/extension config lives in `$AGENT_HOME/conf.d/<name>.conf` (user) + `<project-root>/conf.d/<name>.conf` (project); derived from `getAgentDir()` so the same extension works in stock pi and skill-pi; bounded ADR 0002 exception for the project `.pi/conf.d` fallback read | proposed | `.skillgrid/artifacts/04-adr-0008-plugin-config-confd.md` |
 
 ## Open Questions
 

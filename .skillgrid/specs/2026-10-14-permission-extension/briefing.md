@@ -25,7 +25,7 @@ isolated agent so every `skill-pi` session gets it without touching stock
   - `ask` on `edit`/`write` shows a Pierre-backed diff review (compact +
     fullscreen, reject-with-feedback); a preview-construction failure blocks the
     tool with the exact error.
-  - "Allow always" persists rules to `<repo-root>/.agents/permission.settings.json`
+  - "Allow always" persists rules to `<project-root>/conf.d/permission.conf`
     under `always` (file-locked, atomic) and they take effect on the next tool
     call with no reload.
   - Auto-accept toggle flips `edit`/`write` to `allow` for the session and the
@@ -134,9 +134,10 @@ config/AGENTS policy text must be updated to acknowledge.
 4. **R4 — "Allow always" persists rules with a file lock + atomic write.**
    - **Current:** none.
    - **Target:** persisting appends to `always` in
-     `<repo-root>/.agents/permission.settings.json` via a `wx` lockfile
-     (retry + stale detection) and a temp-then-rename write; rules re-read on
-     the next tool call (no reload).
+     `<project-root>/conf.d/permission.conf` (ADR 0008 project scope:
+     `.skill-pi/conf.d/` then `.pi/conf.d/` fallback) via a `wx` lockfile
+     (`permission.conf.lock`, retry + stale detection) and a temp-then-rename
+     write; rules re-read on the next tool call (no reload).
    - **Acceptance:** integration test on a temp dir asserts the `always` array
      gains the rule exactly once, the lock file is removed, and a concurrent
      second writer either waits or times out per the constants.
@@ -196,8 +197,8 @@ config/AGENTS policy text must be updated to acknowledge.
 - **Modules to build/modify:**
   - New `extensions/permission/` with: `index.ts` (entry + tool_call hook +
     prompt flow + persistence + auto-accept + commands), `constants.ts`,
-    `models.ts`, `project.ts` (3-tier settings loader, ported from
-    `__lib/project.ts`), `bash-parser.ts`, `bash-arity.ts`, `rejection.ts`,
+    `models.ts`, `project.ts` (conf.d settings loader, ported from
+    `__lib/project.ts`; path resolution rewritten to ADR 0008), `bash-parser.ts`, `bash-arity.ts`, `rejection.ts`,
     `review-preview.ts`, `review-dialog.ts`, `pierre-highlight.ts`,
     `pierre-metadata.ts`, `pierre-rows.ts`, `pierre-theme.ts`, `pierre-types.ts`,
     `package.json`, `tsconfig.json`, `*.spec.ts`.
@@ -209,16 +210,27 @@ config/AGENTS policy text must be updated to acknowledge.
   - Settings schema (`PermissionSettings`): `defaultMode?`, `always?: string[]`,
     `allow?: string[]`, `deny?: string[]`, `ask?: string[]`,
     `keybindings?: { autoAcceptEdits?: string }`.
+  - **Config location (ADR 0008):** one file per extension, `<name>.conf`, JSON body.
+    User scope `$AGENT_HOME/conf.d/permission.conf` where `$AGENT_HOME =
+    dirname(getAgentDir())` (`~/.pi` for stock pi, `~/.skill-pi` for skill-pi).
+    Project scope `<project-root>/conf.d/permission.conf`, resolved
+    `.skill-pi/conf.d/` then `.pi/conf.d/` fallback (bounded ADR 0002 exception).
+    Replaces the reference's `<repo-root>/.agents/permission.settings.json`.
+    `project.ts` derives the paths from `getAgentDir()` + git root; the lockfile is
+    `permission.conf.lock`.
   - Rule grammar: `"tool"` (blanket), `"glob*"` (name glob),
     `"tool(argPattern)"` (arg match). Arg source per tool: `bash`→AST command
     text, `edit/write/read`→`path`, `fetch`→`url`, `grep/find/ls`→`path`.
-  - 3-tier settings paths: global `<agent-dir>/permission.settings.json`,
-    project `<repo-root>/.agents/permission.settings.json`,
-    local `<repo-root>/.agents/permission.settings.local.json`.
-- **Data flow:** `tool_call` → load+merge 3-tier settings → merge skill allow
-  rules → resolve mode (AST for bash) → `allow`/`deny` short-circuit, `ask` →
-  prompt (review dialog for edit/write) → on "allow always", lock + atomic
-  write to the project settings `always` array → re-read on next call.
+  - 3-tier settings paths (ADR 0008): user `<agent-home>/conf.d/permission.conf`,
+    project `<project-root>/.skill-pi/conf.d/permission.conf` (then `.pi/conf.d/`
+    fallback). (The reference's "3 tiers" collapse to 2 scopes under the conf.d
+    contract — there is no separate `.local` override; `.pi/conf.d` is the
+    host-compat fallback, not a third tier.)
+- **Data flow:** `tool_call` → load+merge conf.d settings (project over user,
+  ADR 0008) → merge skill allow rules → resolve mode (AST for bash) →
+  `allow`/`deny` short-circuit, `ask` → prompt (review dialog for edit/write) →
+  on "allow always", lock + atomic write to the project `conf.d/permission.conf`
+  `always` array → re-read on next call.
 - **Error handling:** invalid settings JSON → throw with path+message (fail
   loud); preview-build failure → block with exact error; no-UI `ask` → block
   with "no UI for confirmation"; persistent-save contention → lock retry with
@@ -240,7 +252,8 @@ config/AGENTS policy text must be updated to acknowledge.
 - **Modules to test:** `matchPattern`/`parseRule`/`resolveSingleMode`/
   `resolveMode`; `bash-arity.prefix`; `applyEditsToNormalizedContent`;
   `buildEditPermissionPreview`/`buildWritePermissionPreview`;
-  `summarizeDiffMetadata`; 3-tier `loadExtensionSettings` merge;
+  `summarizeDiffMetadata`; conf.d `loadExtensionSettings` merge (project-over-user,
+  ADR 0008);
   `getApprovalRules`; `persistApprovalRules` (temp dir, lock + atomic).
 - **Prior art:** `extensions/file-search/index.spec.ts` (vitest) and
   `test/**/*.test.js` (node:test) at the root.
@@ -290,6 +303,15 @@ config/AGENTS policy text must be updated to acknowledge.
 - **Question (ADR 0007 open):** drift guard for runtime deps declared in both the
   root and the extension `package.json` — E2E "loads" check vs. an explicit
   presence assertion. Resolve at the QA gate.
+- **Question (ADR 0008 open):** for a relocated skill-pi agent dir
+  (`--agent-dir ~/other-agent`), is `$AGENT_HOME` the parent of the actual agent
+  dir (recommended, so conf.d travels with the install) or fixed `~/.skill-pi`?
+  And does a non-git project fall back to cwd for the project `conf.d/`? Confirm
+  before `project.ts` is written.
+- **Dependency (ADR 0002):** the project-scope `.skill-pi/conf.d/` write only works
+  once ADR 0002's `piConfig.configDir` + shim-retirement lands; until then the
+  resolver falls back to the shim-based project dir or `.pi/conf.d/`. Track the
+  ordering.
 
 ## Decisions (ADR)
 
@@ -299,6 +321,14 @@ config/AGENTS policy text must be updated to acknowledge.
   `node_modules` because pi type-strips and imports root-relative; no wrapper change.
   This is the packaging contract this change's dep strategy rests on, and it
   reconciles with the proposed-but-not-executed ADR 0004 (separate publication).
+- [ADR 0008 — Plugin config lives in `$AGENT_HOME/conf.d/`](../artifacts/04-adr-0008-plugin-config-confd.md):
+  extension config is one `<name>.conf` JSON file under `$AGENT_HOME/conf.d/`
+  (user, derived from `dirname(getAgentDir())` → `~/.pi` for stock pi,
+  `~/.skill-pi` for skill-pi) and `<project-root>/conf.d/` (project,
+  `.skill-pi/conf.d/` then `.pi/conf.d/` fallback). The reference's
+  `.agents/permission.settings.json` becomes `conf.d/permission.conf`. The
+  project `.pi/conf.d` fallback is a bounded, documented ADR 0002 exception —
+  the cost of "self-contained + works in stock pi."
 
 ## Terms
 

@@ -13,6 +13,7 @@ Durable, cross-change project knowledge (committed). Per-change artifacts live i
 | `04-adr-0004-extensions-as-separately-published-packages.md` | ADR 0004 — extensions as separately published pi packages (proposed) |
 | `04-adr-0006-never-modify-pi-source.md` | ADR 0006 — never modify pi source; build on its public surface (accepted) |
 | `04-adr-0007-self-contained-extensions.md` | ADR 0007 — bundled extensions are self-contained subdirs; runtime deps resolve via root (proposed) |
+| `04-adr-0008-plugin-config-confd.md` | ADR 0008 — plugin config in `$AGENT_HOME/conf.d/` + project `conf.d/`; derived from `getAgentDir()` (proposed) |
 | `06-research-findings.md` | Cross-change distilled research (carried forward from specs) |
 | `issue-tracker.md` | GitHub Issues conventions (`gh`, devopstales/skill-pi) |
 | `triage-labels.md` | Label map used by the tracker |
