@@ -34,10 +34,10 @@ How the two hard requirements work:
    in the project (shares its `.pi/`) or `SKILL_PI_WORK_DIR` to relocate shim dirs.
 
 3. **Bundled extensions always load** — the wrapper passes
-   `--extension <skill-pi>/extensions <agent-dir>/extensions`. The `extensions/` dir
-   declares its entries in a `pi.extensions` manifest in its own `package.json` (the same
-   manifest shape omegon-pi uses), so pi resolves and loads exactly the listed bundled
-   extensions on every launch regardless of what the user has installed elsewhere.
+   `--extension <skill-pi>/extensions <agent-dir>/extensions`. The `extensions/` dir is
+   auto-discovered: every top-level `*.ts`/`*.js` file and every subdirectory with an
+   `index.ts`/`index.js` is loaded on every launch, so bundled extensions load regardless
+   of what the user has installed elsewhere.
 
 ## Install
 
@@ -84,9 +84,9 @@ skill-pi/
 ## Adding your own extensions
 
 User-level (all projects): drop TypeScript extensions into `~/.skill-pi/agent/extensions/`.
-Bundled (shipped with the package): add the file to `extensions/` and list it in the
-`pi.extensions` array in `extensions/package.json` — it loads for every `skill-pi`
-invocation.
+Bundled (shipped with the package): add the file to `extensions/` — top-level `*.ts`/
+`*.js` files and subdirectories with an `index.ts`/`index.js` are auto-discovered, so no
+manifest edit is needed — it loads for every `skill-pi` invocation.
 
 Currently bundled:
 

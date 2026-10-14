@@ -348,7 +348,7 @@ export function batchUnavailable(questions: AskQuestion[]): AgentToolResult<AskB
 
 export interface AskPopupOutput {
   cancelled: boolean;
-  answers: (AskSelection | AskFreeform)[];
+  answers: (AskSelection | AskFreeform | null)[];
 }
 
 type AskPopupMode = "options" | "freeform";
@@ -431,7 +431,7 @@ export class AskTuiPopup {
   output(): AskPopupOutput {
     return {
       cancelled: false,
-      answers: this.answered.map((a) => a ?? ({ kind: "freeform", text: "(skipped)" })),
+      answers: [...this.answered],
     };
   }
 
@@ -722,7 +722,7 @@ export default function askUserExtension(pi: ExtensionAPI) {
           }
           for (let i = 0; i < params.questions.length; i++) {
             const answer = output.answers[i];
-            if (answer !== null && !(answer.kind === "freeform" && answer.text === "(skipped)")) {
+            if (answer !== null) {
               emit("ask:answered", {
                 question: params.questions[i].question,
                 kind: answer.kind,
@@ -730,12 +730,11 @@ export default function askUserExtension(pi: ExtensionAPI) {
             }
           }
           return batchResult(params.questions, {
-            answers: output.answers,
+            answers: output.answers.map((a) => a ?? ({ kind: "freeform", text: "(skipped)" })),
             question: params.questions[params.questions.length - 1],
-            answered: output.answers.map((answer, i) => ({
-              question: params.questions[i],
-              answer,
-            })),
+            answered: output.answers.map((answer, i) =>
+              answer === null ? null : { question: params.questions[i], answer },
+            ).filter((a): a is { question: AskQuestion; answer: AskSelection | AskFreeform } => a !== null),
           });
         }
         if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {

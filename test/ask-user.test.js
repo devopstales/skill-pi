@@ -1,6 +1,6 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, parseKey } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -88,6 +88,7 @@ function text(result) {
 }
 
 describe("ask_user contract", { skip: !mod }, () => {
+describe("contract", () => {
 test("registers the ask_user tool with the contract shape", () => {
   const { tool } = makePi();
   assert.equal(tool.name, "ask_user");
@@ -603,6 +604,8 @@ test("[Prompt guidelines steer the model to focused questions] snippet and guide
   assert.match(guidelines, /multiSelect/i);
 });
 
+});
+
 function makeTuiCtx() {
   const controller = new AbortController();
   let captured = null;
@@ -656,6 +659,14 @@ const KEY_SEQS = {
   delete: "\u001b[3~",
 };
 
+describe("parseKey raw sequences", { skip: !mod }, () => {
+test("maps each raw sequence in KEY_SEQS to its key name", () => {
+  for (const [name, seq] of Object.entries(KEY_SEQS)) {
+    assert.equal(parseKey(seq), name, `parseKey(${JSON.stringify(seq)})`);
+  }
+});
+});
+
 function runTui(tool, params, keyScript) {
   const tui = makeTuiCtx();
   const pending = execute(tool, params, tui.ctx);
@@ -697,23 +708,6 @@ test("[TUI single-select popup confirms a focused option] navigate to the second
   const events = eventBus.emitted.filter((e) => e.channel === "ask:answered");
   assert.equal(events.length, 1);
   assert.deepEqual(events[0].data, { question: "Which branch?", kind: "selection" });
-});
-
-test("[TUI popup number keys jump to an option] pressing number three confirms the third option immediately", async () => {
-  const { tool } = makePi();
-  const { pending } = runTui(
-    tool,
-    { question: "Which branch?", options: ["main", "beta", "dev"] },
-    ["3"],
-  );
-  const result = await pending;
-  assert.deepEqual(result.details, {
-    question: "Which branch?",
-    options: ["main", "beta", "dev"],
-    answer: { kind: "selection", selections: ["dev"] },
-    cancelled: false,
-  });
-  assert.match(text(result), /dev/);
 });
 
 test("[TUI freeform editor submits non-empty text] open the freeform row, type, and press Enter", async () => {
@@ -866,6 +860,23 @@ test("[TUI multi-select toggling is reversible before Done] toggle on, off, on a
     answer: { kind: "selection", selections: ["web"] },
     cancelled: false,
   });
+});
+
+test("[TUI popup number keys jump to an option] pressing number three confirms the third option immediately", async () => {
+  const { tool } = makePi();
+  const { pending } = runTui(
+    tool,
+    { question: "Which branch?", options: ["main", "beta", "dev"] },
+    ["3"],
+  );
+  const result = await pending;
+  assert.deepEqual(result.details, {
+    question: "Which branch?",
+    options: ["main", "beta", "dev"],
+    answer: { kind: "selection", selections: ["dev"] },
+    cancelled: false,
+  });
+  assert.match(text(result), /dev/);
 });
 
 test("[TUI batch switches pages without losing answers] answer page 1, Tab to page 2, both answers retained", async () => {
@@ -1099,6 +1110,7 @@ test("batch cancelled: TUI details equal RPC details", async () => {
 });
 });
 
+describe("multi-select and cancellation", { skip: !mod }, () => {
 test("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();
@@ -1211,5 +1223,6 @@ test("validation errors carry cancelled details and fire no events", async () =>
   assert.equal(result.isError, true);
   assert.deepEqual(result.details, { cancelled: true, answer: null });
   assert.deepEqual(eventBus.emitted, []);
+});
 });
 });
