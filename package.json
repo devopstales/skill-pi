@@ -8,8 +8,8 @@
     "node": ">=22.19.0"
   },
   "bin": {
-    "skill-pi": "./bin/skill-pi.js",
-    "skill-pi-version": "./bin/skill-pi-version.js"
+    "skill-pi": "bin/skill-pi.js",
+    "skill-pi-version": "bin/skill-pi-version.js"
   },
   "files": [
     "bin",
@@ -40,5 +40,8 @@
     "llm",
     "wrapper",
     "isolated"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
 }

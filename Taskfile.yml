@@ -48,18 +48,16 @@ tasks:
     desc: "Publish both packages to GitHub Packages (extension first, then root)"
     deps: [test]
     cmds:
-      - cmd: npm publish
-        dir: extensions/file-search
+      - cd extensions/file-search && npm publish
       - npm publish
     preconditions:
-      - test: test -n "$(npm config get //npm.pkg.github.com/:password 2>/dev/null)"
-        message: "No GitHub Packages auth found. Set //npm.pkg.github.com/:password in ~/.npmrc or the repo .npmrc"
+      - test: test -n "$(npm config get //npm.pkg.github.com/:_authToken 2>/dev/null)"
+        message: "No GitHub Packages auth found. Set GITHUB_TOKEN or //npm.pkg.github.com/:_authToken in ~/.npmrc"
 
   publish-dry-run:
     desc: "Dry-run both publishes to GitHub Packages (no upload)"
     cmds:
-      - cmd: npm publish --dry-run
-        dir: extensions/file-search
+      - cd extensions/file-search && npm publish --dry-run
       - npm publish --dry-run
 
   all:
