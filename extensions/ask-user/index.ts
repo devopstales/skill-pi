@@ -644,6 +644,13 @@ export function askTuiOutcome(
 
 export default function askUserExtension(pi: ExtensionAPI) {
   const emit: EmitFn = (channel, data) => pi.events.emit(channel, data);
+  const emitAnswer = (question: string, answer: AskSelection | AskFreeform | null) => {
+    if (answer === null) {
+      emit("ask:cancelled", { question });
+    } else {
+      emit("ask:answered", { question, kind: answer.kind });
+    }
+  };
   pi.registerTool<AskUserParamsSchema, AskDetails>({
     name: "ask_user",
     label: "Ask User",
@@ -711,11 +718,7 @@ export default function askUserExtension(pi: ExtensionAPI) {
       if (_ctx.mode === "tui" && _ctx.hasUI) {
         const output = await askTuiOutcome([q], _ctx);
         const answer = output.cancelled ? null : output.answers[0] ?? null;
-        if (answer === null) {
-          emit("ask:cancelled", { question: q.question });
-        } else {
-          emit("ask:answered", { question: q.question, kind: answer.kind });
-        }
+        emitAnswer(q.question, answer);
         return singleResult(q, answer);
       }
       if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
@@ -724,11 +727,7 @@ export default function askUserExtension(pi: ExtensionAPI) {
       const answer = q.multiSelect
         ? await askMultiSelectViaRpc(q, _ctx)
         : await askSingleViaRpc(q, _ctx);
-      if (answer === null) {
-        emit("ask:cancelled", { question: q.question });
-      } else {
-        emit("ask:answered", { question: q.question, kind: answer.kind });
-      }
+      emitAnswer(q.question, answer);
       return singleResult(q, answer);
     },
 

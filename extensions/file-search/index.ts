@@ -219,27 +219,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function* () {
           const outcome = yield* runSearch("fd", buildFdArgs(params), ctx);
-          if (outcome.noMatches) {
-            return {
-              content: [{ type: "text", text: "No files found" }],
-              details: {
-                binarySource: outcome.binarySource,
-                matchCount: 0,
-                truncated: false,
-              },
-            } satisfies AgentToolResult<FdToolDetails>;
-          }
-
-          const formatted = formatCapturedOutput(outcome.output);
-          return {
-            content: [{ type: "text", text: formatted.text }],
-            details: {
-              binarySource: outcome.binarySource,
-              matchCount: formatted.lineCount,
-              truncated: formatted.truncated,
-              fullOutputPath: formatted.fullOutputPath,
-            },
-          } satisfies AgentToolResult<FdToolDetails>;
+          return searchToolContent("fd", outcome, "matchCount") satisfies AgentToolResult<FdToolDetails>;
         }),
         signal ? { signal } : undefined,
       );
@@ -290,27 +270,7 @@ export default function fileSearchTools(pi: ExtensionAPI) {
       const exit = await Effect.runPromiseExit(
         Effect.gen(function* () {
           const outcome = yield* runSearch("rg", buildRgArgs(params), ctx);
-          if (outcome.noMatches) {
-            return {
-              content: [{ type: "text", text: "No matches found" }],
-              details: {
-                binarySource: outcome.binarySource,
-                outputLines: 0,
-                truncated: false,
-              },
-            } satisfies AgentToolResult<RgToolDetails>;
-          }
-
-          const formatted = formatCapturedOutput(outcome.output);
-          return {
-            content: [{ type: "text", text: formatted.text }],
-            details: {
-              binarySource: outcome.binarySource,
-              outputLines: formatted.lineCount,
-              truncated: formatted.truncated,
-              fullOutputPath: formatted.fullOutputPath,
-            },
-          } satisfies AgentToolResult<RgToolDetails>;
+          return searchToolContent("rg", outcome, "outputLines") satisfies AgentToolResult<RgToolDetails>;
         }),
         signal ? { signal } : undefined,
       );
@@ -351,6 +311,70 @@ export default function fileSearchTools(pi: ExtensionAPI) {
 }
 
 const PREVIEW_LINES = 20;
+
+function searchToolContent(tool: "fd" | "rg", outcome: SearchOutcome, lineCountKey: "matchCount"): FdToolContent;
+function searchToolContent(tool: "fd" | "rg", outcome: SearchOutcome, lineCountKey: "outputLines"): RgToolContent;
+function searchToolContent(
+  tool: "fd" | "rg",
+  outcome: SearchOutcome,
+  lineCountKey: "matchCount" | "outputLines",
+): FdToolContent | RgToolContent {
+  if (lineCountKey === "matchCount") {
+    if (outcome.noMatches) {
+      return {
+        content: [{ type: "text", text: "No files found" }],
+        details: { binarySource: outcome.binarySource, matchCount: 0, truncated: false },
+      };
+    }
+    const formatted = formatCapturedOutput(outcome.output);
+    return {
+      content: [{ type: "text", text: formatted.text }],
+      details: {
+        binarySource: outcome.binarySource,
+        matchCount: formatted.lineCount,
+        truncated: formatted.truncated,
+        fullOutputPath: formatted.fullOutputPath,
+      },
+    };
+  }
+
+  if (outcome.noMatches) {
+    return {
+      content: [{ type: "text", text: "No matches found" }],
+      details: { binarySource: outcome.binarySource, outputLines: 0, truncated: false },
+    };
+  }
+  const formatted = formatCapturedOutput(outcome.output);
+  return {
+    content: [{ type: "text", text: formatted.text }],
+    details: {
+      binarySource: outcome.binarySource,
+      outputLines: formatted.lineCount,
+      truncated: formatted.truncated,
+      fullOutputPath: formatted.fullOutputPath,
+    },
+  } as RgToolContent;
+}
+
+type FdToolContent = {
+  content: { type: "text"; text: string }[];
+  details: {
+    binarySource: BinarySource;
+    matchCount: number;
+    truncated: boolean;
+    fullOutputPath?: string;
+  };
+};
+
+type RgToolContent = {
+  content: { type: "text"; text: string }[];
+  details: {
+    binarySource: BinarySource;
+    outputLines: number;
+    truncated: boolean;
+    fullOutputPath?: string;
+  };
+};
 
 interface ThemeLike {
   fg(color: string, text: string): string;
