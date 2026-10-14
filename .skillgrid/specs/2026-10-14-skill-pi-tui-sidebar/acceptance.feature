@@ -59,7 +59,11 @@ Feature: Card, text, and changes modules ported
   Scenario: Changes capture degrades outside a git repo
     Given a temporary directory that is not a git repository
     When captureChanges resolves for that directory
-    Then the result is empty (0 files, 0 added, 0 deleted, no notice)
+    Then the result is empty (0 files, 0 added, 0 deleted) and does not throw
+    And the result carries a notice so the Status card can show why no changes exist
+    # Amendment (2026-10-14, code review): the original "no notice" clause is
+    # superseded by Task 3's "Non-git session shows a notice instead of counts"
+    # — the same notice field feeds that card line.
 
   @happy @p1
   Scenario: ANSI sanitization strips escapes and control chars
