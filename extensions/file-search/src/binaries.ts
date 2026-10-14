@@ -18,9 +18,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { Crypto, Data, Effect, Encoding, FileSystem, Stream } from "effect";
-import { FetchHttpClient, HttpClient } from "effect/unstable/http";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { Crypto, Data, Effect, FileSystem, Stream } from "effect";
+import { Hex } from "effect/encoding";
+import { FetchHttpClient, HttpClient } from "effect/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const execFileAsync = promisify(execFile);
 
@@ -143,10 +144,10 @@ export function currentTarget(): PlatformTarget {
   return { os: process.platform, arch: process.arch };
 }
 
-/** skill-pi package root `bin/` resolved from this module's location. */
+/** The package's own `bin/` directory, resolved from this module's location. */
 export function repositoryBinDir() {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  return join(moduleDir, "..", "..", "..", "..", "bin");
+  return join(moduleDir, "..", "bin");
 }
 
 export class UnsupportedPlatformError extends Data.TaggedError(
@@ -323,25 +324,12 @@ function downloadAsset(client: HttpClient.HttpClient, initialUrl: URL) {
   });
 }
 
-/** Real environment: probes via `--version`, installs via HTTPS + tar. */
-export const liveBinaryEnv: BinaryEnv = {
-  probe: (command, tool) =>
-    Effect.promise(async () => {
-      try {
-        const args =
-          tool === "fd" ? ["--max-results", "1", "--", ""] : ["--version"];
-        await execFileAsync(command, args, {
-          cwd: tmpdir(),
-          timeout: 5_000,
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    }),
-
-  install: (asset, destination) => {
-    const install = Effect.gen(function* () {
+function installBinary(
+  asset: ReleaseAsset,
+  destination: string,
+): Effect.Effect<void, unknown, never> {
+  return Effect.scoped(
+    Effect.gen(function* () {
       if (!URL.canParse(asset.url)) {
         return yield* Effect.fail(
           new Error(`invalid download URL: ${asset.url}`),
@@ -357,7 +345,7 @@ export const liveBinaryEnv: BinaryEnv = {
       );
 
       const digestBytes = yield* crypto.digest("SHA-256", bytes);
-      const digest = Encoding.encodeHex(digestBytes);
+      const digest = Hex.encode(digestBytes);
       if (digest !== asset.sha256) {
         return yield* Effect.fail(
           new Error(
@@ -390,7 +378,7 @@ export const liveBinaryEnv: BinaryEnv = {
 
       const extracted = join(workDir, asset.archiveDir, asset.binaryName);
       yield* fs.makeDirectory(dirname(destination), { recursive: true });
-      const uuid = yield* crypto.randomUUIDv4;
+      const uuid = yield* crypto.randomUUIDv4();
       const stagedDestination = `${destination}.${process.pid}.${uuid}.tmp`;
       yield* Effect.addFinalizer(() =>
         fs.remove(stagedDestination, { force: true }).pipe(Effect.orDie),
@@ -398,15 +386,35 @@ export const liveBinaryEnv: BinaryEnv = {
       yield* fs.copyFile(extracted, stagedDestination);
       yield* fs.chmod(stagedDestination, 0o755);
       yield* fs.rename(stagedDestination, destination);
-    });
+    }),
+  ).pipe(
+    Effect.provide(NodeServices.layer),
+    Effect.provide(NodeHttpClient.layerFetch),
+    Effect.provideService(FetchHttpClient.RequestInit, {
+      redirect: "manual",
+    }),
+  );
+}
 
-    return install.pipe(
-      Effect.scoped,
-      Effect.provide(NodeServices.layer),
-      Effect.provide(NodeHttpClient.layerFetch),
-      Effect.provideService(FetchHttpClient.RequestInit, {
-        redirect: "manual",
-      }),
+/** Real environment: probes via `--version`, installs via HTTPS + tar. */
+export const liveBinaryEnv: BinaryEnv = {
+  probe: (command, tool) =>
+    Effect.promise(async () => {
+      try {
+        const args =
+          tool === "fd" ? ["--max-results", "1", "--", ""] : ["--version"];
+        await execFileAsync(command, args, {
+          cwd: tmpdir(),
+          timeout: 5_000,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }),
+
+  install: (asset, destination) =>
+    installBinary(asset, destination).pipe(
       Effect.mapError(
         (cause) =>
           new InstallError({
@@ -414,6 +422,5 @@ export const liveBinaryEnv: BinaryEnv = {
             cause,
           }),
       ),
-    );
-  },
+    ),
 };
