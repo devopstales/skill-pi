@@ -31,6 +31,9 @@
     "tree-sitter-bash": "^0.25.1",
     "web-tree-sitter": "^0.26.8"
   },
+  "devDependencies": {
+    "node-pty": "^1.1.0"
+  },
   "scripts": {
     "test": "node --test test/*.test.js"
   },
@@ -41,7 +44,6 @@
   "keywords": [
     "pi",
     "coding-agent",
-    "llm",
     "wrapper",
     "isolated"
   ],

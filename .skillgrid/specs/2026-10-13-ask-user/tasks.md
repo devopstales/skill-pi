@@ -102,11 +102,11 @@ The `ask_user` tool exists and its full contract surface is proven by unit tests
 
 This step is done only when:
 
-- [ ] All `### Tasks` checkboxes below are `[x]`
-- [ ] All `@step-01` scenarios in `acceptance.feature` pass
-- [ ] `### Verification` Verdict is `PASS` or `PASS WITH WARNINGS`
-- [ ] Produces contracts listed under Interfaces are available to dependents
-- [ ] No Global Constraint violated
+- [x] All `### Tasks` checkboxes below are `[x]`
+- [x] All `@step-01` scenarios in `acceptance.feature` pass
+- [x] `### Verification` Verdict is `PASS` or `PASS WITH WARNINGS`
+- [x] Produces contracts listed under Interfaces are available to dependents
+- [x] No Global Constraint violated
 
 > Depends on: none
 
@@ -123,72 +123,72 @@ This step is done only when:
 
 ### Tasks
 
-- [ ] 01.1 `[RED]` Validation: both/neither `question`+`questions` and out-of-bounds option counts produce error results
-  - [ ] 01.1.a Write failing tests: Scenario "Validation rejects conflicting or missing question parameters"; Scenario "Validation rejects out-of-bounds option counts"; Scenario "Validation rejects oversized batches"
-  - [ ] 01.1.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.1.c Minimal implementation: tool registration + TypeBox flat schema + runtime validation returning `isError` results naming the fix
-  - [ ] 01.1.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.1.e Commit — `feat(ask-user): tool registration with schema and runtime validation`
-- [ ] 01.2 `[RED]` Single-question result contract: selection, freeform, cancel via RPC dialogs
-  - [ ] 01.2.a Write failing tests: Scenario "Single question selection returns structured details"; Scenario "Single question freeform returns structured details"; Scenario "Dialog cancellation returns cancelled with no answer"
-  - [ ] 01.2.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.2.c Minimal implementation: RPC fallback (`ctx.ui.select` + `ctx.ui.input`) + single-question result builder producing `{question, context?, options, answer, cancelled}`
-  - [ ] 01.2.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.2.e Commit — `feat(ask-user): single-question result contract with RPC dialog fallback`
-- [ ] 01.3 `[RED]` Multi-select commits only on explicit Done; round-cap cancel
-  - [ ] 01.3.a Write failing tests: Scenario "Multi-select commits the explicit selection on Done"; Scenario "Multi-select round cap without Done cancels without partial commit"
-  - [ ] 01.3.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.3.c Minimal implementation: bounded toggle-round loop (cap `max(32, options.length + 2)`), Done (or all-on) commits, cap-exhaustion cancels
-  - [ ] 01.3.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.3.e Commit — `feat(ask-user): bounded multi-select toggle rounds`
-- [ ] 01.4 `[RED]` Batch contract: index-aligned answers, cancel-any-cancels-all
-  - [ ] 01.4.a Write failing tests: Scenario "Batch of two returns index-aligned answers"; Scenario "Cancelling any batch question cancels the whole batch"
-  - [ ] 01.4.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.4.c Minimal implementation: batch loop over questions (RPC dialogs) + batch result builder `{kind:"batch", questions, answers, cancelled}`
-  - [ ] 01.4.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.4.e Commit — `feat(ask-user): batch result contract with cancel-any-cancels-all`
-- [ ] 01.5 `[RED]` Unavailable-mode graceful result (no hang, no throw)
-  - [ ] 01.5.a Write failing test: Scenario "Non-dialog mode returns a graceful unavailable result"
-  - [ ] 01.5.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.5.c Minimal implementation: mode/hasUI guard returning an unavailable result (`cancelled: true`, clear text)
-  - [ ] 01.5.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.5.e Commit — `feat(ask-user): graceful unavailable result for non-dialog modes`
-- [ ] 01.6 `[RED]` Events fire exactly once per resolved call
-  - [ ] 01.6.a Write failing tests: Scenario "Answer outcome emits the answered event once"; Scenario "Cancellation emits the cancelled event once"
-  - [ ] 01.6.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.6.c Minimal implementation: `pi.events.emit("ask:answered" | "ask:cancelled", …)` in the single resolve path
-  - [ ] 01.6.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.6.e Commit — `feat(ask-user): answered/cancelled outcome events`
-- [ ] 01.7 `[RED]` Renderers and prompt text
-  - [ ] 01.7.a Write failing tests: Scenario "Render call summarizes question and options"; Scenario "Render result shows success or cancelled rows"; Scenario "Prompt guidelines steer the model to focused questions"
-  - [ ] 01.7.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
-  - [ ] 01.7.c Minimal implementation: `renderCall` (≤120-char summary for batches), `renderResult` (`✓ …` / warning), `promptSnippet` + `promptGuidelines`
-  - [ ] 01.7.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
-  - [ ] 01.7.e Commit — `feat(ask-user): tool renders and prompt guidance`
-- [ ] 01.8 `[AFK]` Manifest registration + wrapper still starts + README docs — `Run: npm test` — Expected: PASS
-  - [ ] 01.8.a Add `./ask-user.ts` to `pi.extensions` in `extensions/package.json`
-  - [ ] 01.8.b Add `node-pty` to `devDependencies` in `package.json` and install
-  - [ ] 01.8.c Document `ask_user` under a "Bundled extensions" section in `README.md`
-  - [ ] 01.8.d Verify existing suite green: `Run: npm test` — Expected: PASS
-  - [ ] 01.8.e Commit — `feat(ask-user): register bundled extension and document it`
+- [x] 01.1 `[RED]` Validation: both/neither `question`+`questions` and out-of-bounds option counts produce error results
+  - [x] 01.1.a Write failing tests: Scenario "Validation rejects conflicting or missing question parameters"; Scenario "Validation rejects out-of-bounds option counts"; Scenario "Validation rejects oversized batches"
+  - [x] 01.1.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.1.c Minimal implementation: tool registration + TypeBox flat schema + runtime validation returning `isError` results naming the fix
+  - [x] 01.1.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.1.e Commit — `feat(ask-user): tool registration with schema and runtime validation` (9cf5021)
+- [x] 01.2 `[RED]` Single-question result contract: selection, freeform, cancel via RPC dialogs
+  - [x] 01.2.a Write failing tests: Scenario "Single question selection returns structured details"; Scenario "Single question freeform returns structured details"; Scenario "Dialog cancellation returns cancelled with no answer"
+  - [x] 01.2.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.2.c Minimal implementation: RPC fallback (`ctx.ui.select` + `ctx.ui.input`) + single-question result builder producing `{question, context?, options, answer, cancelled}`
+  - [x] 01.2.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.2.e Commit — `feat(ask-user): single-question result contract with RPC dialog fallback` (efd78f8)
+- [x] 01.3 `[RED]` Multi-select commits only on explicit Done; round-cap cancel
+  - [x] 01.3.a Write failing tests: Scenario "Multi-select commits the explicit selection on Done"; Scenario "Multi-select round cap without Done cancels without partial commit"
+  - [x] 01.3.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.3.c Minimal implementation: bounded toggle-round loop (cap `max(32, options.length + 2)`), Done (or all-on) commits, cap-exhaustion cancels
+  - [x] 01.3.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.3.e Commit — `feat(ask-user): bounded multi-select toggle rounds` (89b2d79)
+- [x] 01.4 `[RED]` Batch contract: index-aligned answers, cancel-any-cancels-all
+  - [x] 01.4.a Write failing tests: Scenario "Batch of two returns index-aligned answers"; Scenario "Cancelling any batch question cancels the whole batch"
+  - [x] 01.4.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.4.c Minimal implementation: batch loop over questions (RPC dialogs) + batch result builder `{kind:"batch", questions, answers, cancelled}`
+  - [x] 01.4.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.4.e Commit — `feat(ask-user): batch result contract with cancel-any-cancels-all` (a1a9939)
+- [x] 01.5 `[RED]` Unavailable-mode graceful result (no hang, no throw)
+  - [x] 01.5.a Write failing test: Scenario "Non-dialog mode returns a graceful unavailable result"
+  - [x] 01.5.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.5.c Minimal implementation: mode/hasUI guard returning an unavailable result (`cancelled: true`, clear text)
+  - [x] 01.5.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.5.e Commit — `feat(ask-user): unavailable mode, TUI placeholder, and outcome events` (f6eff00, shared with 01.6)
+- [x] 01.6 `[RED]` Events fire exactly once per resolved call
+  - [x] 01.6.a Write failing tests: Scenario "Answer outcome emits the answered event once"; Scenario "Cancellation emits the cancelled event once"
+  - [x] 01.6.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.6.c Minimal implementation: `pi.events.emit("ask:answered" | "ask:cancelled", …)` in the single resolve path
+  - [x] 01.6.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.6.e Commit — `feat(ask-user): unavailable mode, TUI placeholder, and outcome events` (f6eff00, shared with 01.5)
+- [x] 01.7 `[RED]` Renderers and prompt text
+  - [x] 01.7.a Write failing tests: Scenario "Render call summarizes question and options"; Scenario "Render result shows success or cancelled rows"; Scenario "Prompt guidelines steer the model to focused questions"
+  - [x] 01.7.b Run to confirm fail — `Run: node --test test/ask-user.test.js` — Expected: FAIL
+  - [x] 01.7.c Minimal implementation: `renderCall` (≤120-char summary for batches), `renderResult` (`✓ …` / warning), `promptSnippet` + `promptGuidelines`
+  - [x] 01.7.d Run to confirm pass — `Run: node --test test/ask-user.test.js` — Expected: PASS
+  - [x] 01.7.e Commit — `feat(ask-user): tool renders and prompt guidance` (b1bdbd1)
+- [x] 01.8 `[AFK]` Manifest registration + wrapper still starts + README docs — `Run: npm test` — Expected: PASS
+  - [x] 01.8.a Add `./ask-user.ts` to `pi.extensions` in `extensions/package.json` — superseded: auto-discovered via pi's directory scanner (ADR-0001 revision 2026-10-14)
+  - [x] 01.8.b Add `node-pty` to `devDependencies` in `package.json` and install (node-pty@^1.1.0)
+  - [x] 01.8.c Document `ask_user` under a "Bundled extensions" section in `README.md`
+  - [x] 01.8.d Verify existing suite green: `Run: npm test` — Expected: PASS (54 pass, 0 fail)
+  - [x] 01.8.e Commit — `feat(ask-user): register bundled extension and document it` (20b3cc3)
 
 ### Verification
 
-Verdict: `PENDING`  <!-- PASS | PASS WITH WARNINGS | FAIL -->
+Verdict: `PASS`  <!-- PASS | PASS WITH WARNINGS | FAIL -->
 
 Evidence:
 
 | Check | Run | Expected | Result | Notes |
 |-------|-----|----------|--------|-------|
-| Focused test | `node --test test/ask-user.test.js` | PASS | | |
-| Acceptance `@step-01` / `@p0` | `node --test test/ask-user.test.js` | PASS | | |
-| Runtime harness | `npm test` | PASS | | |
-| Rollback boundary | remove `./ask-user.ts` from `extensions/package.json`, `Run: npm test` | PASS | | one-line rollback |
-| Global Constraints | — | held | | |
+| Focused test | `node --test test/ask-user.test.js` | PASS | PASS (36/36) | 2026-10-14, worktree 3c4b30/ask-user |
+| Acceptance `@step-01` / `@p0` | `node --test test/ask-user.test.js` | PASS | PASS | every `@step-01` scenario has a named unit test (see report-01.md) |
+| Runtime harness | `npm test` | PASS | PASS (54/54) | no regressions in existing suite |
+| Rollback boundary | remove `extensions/ask-user.ts`, `Run: npm test` | PASS | PASS | auto-discovered file — deleting it is the one-line rollback (verified locally) |
+| Global Constraints | — | held | held | no comments added; bin/, lib/, skill-pi-banner.ts untouched; `ask_user` name exclusive |
 
 ### Commit
 
-When step DoD is met: `feat(ask-user): tool contract — schema, details, renders, events, RPC fallback`
+Step delivered across 7 commits (01.1–01.8) ending at 20b3cc3 `feat(ask-user): register bundled extension and document it`.
 
 ---
 
