@@ -55,6 +55,7 @@ it("sanitizeTerminalText: strips SGR, OSC, and control chars", () => {
   const raw = "\x1b[1;31mred\x1b[0m \x1b]0;title\x07 tab";
   const out = sanitizeTerminalText(raw);
   assert.equal(out, "red  tab");
+  assert.equal(sanitizeTerminalText("safe\x1b]52;c;Zm9vtext"), "safe");
 });
 
 const fakeTheme: CardTheme = {
