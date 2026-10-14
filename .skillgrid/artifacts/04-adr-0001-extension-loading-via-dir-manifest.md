@@ -1,9 +1,10 @@
-# Load bundled extensions via a dir-level pi manifest
+# Load bundled extensions via explicit enumeration + --no-extensions
 
 ---
 status: "accepted"
 date: 2026-10-13
 supersedes: none
+updated: 2026-10-14
 ---
 
 ## Context and Problem Statement
@@ -13,39 +14,65 @@ requirements are (1) a separate global config/auth under `~/.skill-pi/agent` and
 (2) bundled extensions that load on every launch regardless of the user's stock pi
 install. The second requirement is the subject of this decision.
 
-Earlier the wrapper passed `--extension <skill-pi>/extensions` and relied on pi
-auto-discovering every `*.ts` file in that directory. We changed extension loading
-to follow the same mechanism as `omegon-pi`, which declares its bundled extensions in
-a `pi.extensions` array in `package.json`.
+An earlier revision of this ADR chose a dir-level `pi.extensions` manifest in
+`extensions/package.json` (the `omegon-pi` shape), on the assumption that pi's
+`resolveExtensionEntries(dir)` needed a manifest to resolve the `extensions/`
+directory. That assumption was wrong: traced against pi 1.2.0
+(`dist/bundle/chunks/chunk-TJXZSVTD.js`), `resolveExtensionEntries` reads a manifest
+*only if one is present* — otherwise it falls back to `index.ts`/`index.js`, and
+`collectAutoExtensionEntries` does full directory auto-discovery (top-level
+`*.ts`/`*.js` plus subdirectory index entry points). So the manifest was not load-
+bearing; it was an extra registration surface that had to be kept in sync by hand.
 
-Reference: `styrene-lab/omegon-pi` (package.json `pi.extensions`),
-`@earendil-works/pi-coding-agent@1.2.0`.
-Original change: `.skillgrid/archive/2026-10-13-extension-loading-via-dir-manifest/change.md`.
+We also verified that `--no-extensions` does **not** suppress CLI `--extension`
+flags — it suppresses the *package-scope* discovery (settings packages and
+auto-discovered agent/project dirs), which is exactly the isolation we want.
 
 ## Considered Options
 
-- Dir-level manifest in `extensions/package.json` (`pi.extensions` array)
-- Repo-root `package.json` `pi.extensions` + `PI_PACKAGE_DIR` env override
-- Keep directory auto-discovery (no manifest)
+- Dir-level `pi.extensions` manifest in `extensions/package.json` (the prior decision)
+- Wrapper enumerates extension files explicitly (`collectExtensionFiles`) + `--no-extensions`
+- Keep pi's directory auto-discovery (no flag, no manifest)
 
 ## Decision Outcome
 
-Chosen option: "dir-level manifest in `extensions/package.json`", because
-pi's `resolveExtensionEntries(dir)` reads the *directory's own* `package.json`
-(verified in pi 1.2.0 `dist/bundle/chunks/chunk-TJXZSVTD.js`), so a root manifest is
-never consulted when the flag points at `extensions/`. Declaring the list in the
-`extensions/` dir matches `omegon-pi`'s shape and gives an explicit, ordered list
-instead of alphabetical auto-discovery.
+Chosen option: **wrapper enumerates extension files explicitly and passes each as an
+`--extension` flag, with `--no-extensions` to suppress pi's package-scope discovery.**
 
-The wrapper continues to pass `--extension <skill-pi>/extensions --extension
-<agent-dir>/extensions`. The agent-dir argument keeps auto-discovery (no manifest),
-so user-dropped `~/.skill-pi/agent/extensions/*.ts` files load without registration.
+The wrapper (`bin/skill-pi.js`) scans two source directories with
+`collectExtensionFiles`:
+
+- `<skill-pi>/extensions` (bundled, always loaded)
+- `<agent-dir>/extensions` (user-dropped, zero-config)
+
+`collectExtensionFiles` picks up top-level `*.ts`/`*.js` files (alphabetical) and
+subdirectories carrying an `index.ts`/`index.js` entry point. Each resolved file is
+passed as an explicit `--extension` flag. The wrapper then appends `--no-extensions`,
+which suppresses pi's package-scope discovery (settings `packages` + auto-discovered
+agent/project dirs) while leaving the CLI flags above intact.
 
 ### Consequences
 
-- Good, because extension load set is explicit and ordered; adding an extension is a
-  one-line manifest edit documented in `README.md`.
-- Good, because the drop-file user-extension workflow stays zero-config.
-- Bad, because a new extension file that is not listed silently doesn't load
-  (mitigated: documented in `README.md`; the explicit list is the feature).
-- No `PI_PACKAGE_DIR` env var is set; the wrapper only sets `PI_CODING_AGENT_DIR`.
+- Good, because adding a bundled extension is now: drop the file in `extensions/` (or a
+  subdirectory with an `index.ts`) — no manifest edit, no `package.json` churn.
+- Good, because `--no-extensions` makes isolation explicit and robust: a user-installed
+  pi package in `<agent-dir>/settings.json` can no longer auto-load into skill-pi.
+- Good, because the load set is deterministic and visible in the wrapper, not spread
+  across a manifest file plus pi's internal resolver.
+- Bad, because the enumeration logic (symlink resolution, index entry points) is now
+  wrapper-owned; if pi's entry-point conventions change we must follow them in
+  `collectExtensionFiles` rather than inherit them for free.
+- Note: `--no-extensions` suppresses all package-scope provider packages, so
+  `lib/config.js` seeds **no** default packages (a seeded package would be
+  loaded-then-suppressed — dead weight). Cloud providers arrive via the
+  unified-providers extension (2026-10-14-unified-providers); local providers
+  (e.g. Ollama) are user-dropped into `<agent-dir>/extensions/` or declared in
+  `<agent-dir>/models.json`, and load via the explicit enumeration above.
+
+### Rejected: dir-level manifest (prior revision)
+
+The `extensions/package.json` `pi.extensions` array was the prior decision. It was
+correct that it *worked* (pi reads the dir's own `package.json`), but it was not
+required — pi would have auto-discovered the same files. Keeping it meant a second
+source of truth for "which bundled extensions load," which drifted from reality the
+moment a file was added without a manifest edit. Removed.
