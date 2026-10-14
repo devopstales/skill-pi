@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { agentDirFor, ensureAgentDir } from "../lib/config.js";
+import { agentDirFor, ensureAgentDir, defaultPackages, seedDefaultPackages } from "../lib/config.js";
 import { importAuth } from "../lib/auth.js";
 
 test("agentDirFor honors SKILL_PI_AGENT_DIR", () => {
@@ -23,6 +23,45 @@ test("ensureAgentDir seeds settings, auth, and subdirs", () => {
   assert.ok(existsSync(join(dir, "prompts")));
   assert.ok(existsSync(join(dir, "themes")));
   assert.ok(existsSync(join(dir, "bin")));
+});
+
+test("ensureAgentDir seeds default packages into settings", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-pkgs-"));
+  ensureAgentDir(dir);
+  const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
+  assert.ok(Array.isArray(settings.packages), "fresh settings must register default packages");
+  for (const pkg of defaultPackages) {
+    assert.ok(settings.packages.includes(pkg), `missing default package ${pkg}`);
+  }
+});
+
+test("seedDefaultPackages is additive and idempotent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-pkgs2-"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "settings.json"), '{"quietStartup":true,"packages":["npm:custom-provider"]}');
+  seedDefaultPackages(dir);
+  seedDefaultPackages(dir);
+  const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
+  assert.ok(settings.packages.includes("npm:custom-provider"), "must keep existing packages");
+  for (const pkg of defaultPackages) {
+    assert.ok(settings.packages.includes(pkg), `missing default package ${pkg}`);
+  }
+  assert.equal(settings.quietStartup, true, "must preserve unrelated settings");
+  assert.equal(
+    settings.packages.filter((p) => p === defaultPackages[0]).length,
+    1,
+    "idempotent: a default package appears exactly once",
+  );
+});
+
+test("seedDefaultPackages leaves existing settings file untouched when complete", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-pkgs3-"));
+  const existing = { quietStartup: true, packages: [...defaultPackages] };
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + "\n");
+  const before = readFileSync(settingsPath, "utf8");
+  seedDefaultPackages(dir);
+  assert.equal(readFileSync(settingsPath, "utf8"), before, "no rewrite when already complete");
 });
 
 test("ensureAgentDir does not overwrite existing settings", () => {

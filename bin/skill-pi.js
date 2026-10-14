@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { agentDirFor, ensureAgentDir } from "../lib/config.js";
 import { resolveShimCwd } from "../lib/shim.js";
-import { brandPreloadPath } from "../lib/brand.js";
+import { brandOverlayDir } from "../lib/brand.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bundledExtensionFiles = [join(pkgRoot, "extensions")];
@@ -100,13 +100,20 @@ Pass everything after the project (or after --) straight through to pi:
 `);
 }
 
-function locatePiCli() {
+function resolvePiCli() {
   const cli = join(piPackageDir(), "dist", "bundle", "cli.js");
-  if (!existsSync(cli)) fail(`pi CLI bundle not found at ${cli}; run npm install first`);
+  if (!existsSync(cli)) {
+    fail(
+      `bundled pi CLI not found at ${cli}; the skill-pi install is incomplete. ` +
+        "Run `npm install` in the skill-pi project.",
+    );
+  }
   return cli;
 }
 
 async function main() {
+  const cli = resolvePiCli();
+
   const args = parseArgs(process.argv.slice(2));
 
   if (args.version) {
@@ -123,6 +130,8 @@ async function main() {
   const agentDir = agentDirFor(args.agentDir);
   ensureAgentDir(agentDir);
 
+  const overlay = brandOverlayDir(agentDir);
+
   let cwd = args.project;
   if (!args.noShim) {
     cwd = resolveShimCwd(cwd);
@@ -133,16 +142,16 @@ async function main() {
     if (existsSync(file)) extensionFlags.push("--extension", file);
   }
 
-  const cli = locatePiCli();
   const spawn = spawnSync(
     process.execPath,
-    ["-r", brandPreloadPath(), cli, ...extensionFlags, ...args.passthrough],
+    [cli, ...extensionFlags, ...args.passthrough],
     {
       cwd,
       stdio: "inherit",
       env: {
         ...process.env,
         PI_CODING_AGENT_DIR: agentDir,
+        PI_PACKAGE_DIR: overlay,
       },
     },
   );

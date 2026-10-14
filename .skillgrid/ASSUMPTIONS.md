@@ -16,7 +16,7 @@ Durable project understanding. Tiers: `## VERIFIED` (checked against code), `## 
 
 ## LOCKED
 
-Highest sequence in use: 0005
+Highest sequence in use: 0006
 
 | ADR | Decision | Status | Path |
 |-----|----------|--------|------|
@@ -25,6 +25,7 @@ Highest sequence in use: 0005
 | 0003 | `Taskfile.yml` is the canonical automation surface for build/install/test/pack/publish; `package.json` scripts are shims only | accepted | `.skillgrid/artifacts/04-adr-0003-taskfile-as-automation-standard.md` |
 | 0004 | Extensions are separately published, independently versioned pi packages (`@skill-pi/pi-*`); wrapper ships them as workspace deps | superseded (scope) by ADR-0005 | `.skillgrid/artifacts/04-adr-0004-extensions-as-separately-published-packages.md` |
 | 0005 | Package naming under `@devopstales`: wrapper `@devopstales/skill-pi`, extensions `@devopstales/pi-<name>` | accepted | `.skillgrid/artifacts/04-adr-0005-package-naming-devopstales-scope.md` |
+| 0006 | Never modify pi source — build on top of its public surface (env, CLI flags, settings, `pi.extensions` manifest); no fork, no runtime patch, no post-install edit | accepted | `.skillgrid/artifacts/04-adr-0006-never-modify-pi-source.md` |
 
 ## Open Questions
 
