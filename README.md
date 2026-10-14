@@ -99,7 +99,10 @@ Currently bundled:
   `ask:cancelled` events fire for hosts that want to track prompt outcomes. In
   non-dialog modes (e.g. `--print`) it returns a graceful "unavailable" result instead
   of hanging.
-- **`skill-pi-banner`** — a `session_start` notification confirming the isolated session.
+- **`skill-pi-tui`** — the TUI surface: a `session_start` header (logo, tagline,
+  session stats grid) confirming the isolated session, plus a fullscreen
+  right-side sidebar (terminals ≥ 140 columns) with a live Status card
+  (project path, git branch, session name, uncommitted change counts).
 - **`file-search`** — first-class `fd` (find files) and `rg` (search content) tools. On
   session start it resolves a usable binary per tool: a system `fd`/`fdfind`/`rg` is
   preferred silently, then a fallback in the package `bin/` (silently), and only when
