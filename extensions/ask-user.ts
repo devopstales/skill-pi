@@ -155,10 +155,10 @@ export function renderAskCall(
     `${q.question} (${q.options.join(", ")})`;
   let plain: string;
   if (params.questions) {
-    plain = `Ask (${params.questions.length} questions): ${params.questions
+    const full = `Ask (${params.questions.length} questions): ${params.questions
       .map(describe)
       .join(", ")}`;
-    if (plain.length > 120) plain = `${plain.slice(0, 117)}…`;
+    plain = full.length > 120 ? `${full.slice(0, 119)}…` : full;
   } else {
     plain = `Ask: ${describe({ question: params.question ?? "", options: params.options ?? [] })}`;
   }

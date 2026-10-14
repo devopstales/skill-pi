@@ -465,6 +465,143 @@ test("unavailable mode and validation errors fire no events", async () => {
   assert.deepEqual(eventBus.emitted, []);
 });
 
+test("[Render call summarizes question and options] single call shows question and options", () => {
+  const { tool } = makePi();
+  const component = tool.renderCall(
+    { question: "Which branch?", options: ["main", "dev"] },
+    theme,
+    {},
+  );
+  assert.ok(component instanceof Text);
+  const rendered = component.render(120).join("");
+  assert.match(rendered, /Which branch/);
+  assert.match(rendered, /main/);
+  assert.match(rendered, /dev/);
+});
+
+test("[Render call summarizes question and options] batch call is truncated to 120 chars", () => {
+  const { tool } = makePi();
+  const long = (n) => `question ${n} with a fairly long label to fill space up`;
+  const component = tool.renderCall(
+    {
+      questions: [
+        { question: long(1), options: ["opt-a", "opt-b"] },
+        { question: long(2), options: ["opt-c", "opt-d"] },
+        { question: long(3), options: ["opt-e", "opt-f"] },
+        { question: long(4), options: ["opt-g", "opt-h"] },
+      ],
+    },
+    theme,
+    {},
+  );
+  const rendered = component.render(200).join("").trimEnd();
+  const summary = rendered.replace(/^ask_user /, "");
+  assert.equal(summary.length, 120, "batch summary truncated to exactly 120 chars");
+  assert.ok(rendered.endsWith("…"), "truncation marker present");
+  assert.match(rendered, /Ask \(4 questions\):/);
+});
+
+test("[Render result shows success or cancelled rows] answered single selection shows number and label", () => {
+  const { tool } = makePi();
+  const component = tool.renderResult(
+    {
+      content: [{ type: "text", text: "User selected: beta" }],
+      details: {
+        question: "Which branch?",
+        options: ["main", "beta", "dev"],
+        answer: { kind: "selection", selections: ["beta"] },
+        cancelled: false,
+      },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    {},
+  );
+  const rendered = component.render(80).join("");
+  assert.match(rendered, /✓ 2\. beta/);
+});
+
+test("[Render result shows success or cancelled rows] freeform shows the custom text", () => {
+  const { tool } = makePi();
+  const component = tool.renderResult(
+    {
+      content: [{ type: "text", text: "User answer: custom answer" }],
+      details: {
+        question: "Describe",
+        options: ["A", "B"],
+        answer: { kind: "freeform", text: "custom answer" },
+        cancelled: false,
+      },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    {},
+  );
+  assert.match(component.render(80).join(""), /✓ custom answer/);
+});
+
+test("[Render result shows success or cancelled rows] cancelled shows a warning row", () => {
+  const { tool } = makePi();
+  const component = tool.renderResult(
+    {
+      content: [{ type: "text", text: "The user declined." }],
+      details: { question: "Q?", options: ["a", "b"], answer: null, cancelled: true },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    {},
+  );
+  assert.match(component.render(80).join(""), /✗ cancelled/);
+});
+
+test("[Render result shows success or cancelled rows] batch answered and cancelled rows", () => {
+  const { tool } = makePi();
+  const answered = tool.renderResult(
+    {
+      content: [{ type: "text", text: "Batch answered: a; c" }],
+      details: {
+        kind: "batch",
+        questions: [
+          { question: "Q1?", options: ["a", "b"] },
+          { question: "Q2?", options: ["c", "d"] },
+        ],
+        answers: [
+          { kind: "selection", selections: ["a"] },
+          { kind: "selection", selections: ["c"] },
+        ],
+        cancelled: false,
+      },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    {},
+  );
+  assert.match(answered.render(80).join(""), /✓ 2 answers collected/);
+  const cancelled = tool.renderResult(
+    {
+      content: [{ type: "text", text: "declined" }],
+      details: { kind: "batch", questions: [], answers: null, cancelled: true },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    {},
+  );
+  assert.match(cancelled.render(80).join(""), /✗ cancelled \(batch\)/);
+});
+
+test("[Prompt guidelines steer the model to focused questions] snippet and guidelines", () => {
+  const { tool } = makePi();
+  assert.equal(
+    tool.promptSnippet,
+    "Use ask_user to ask the user a focused decision question with 2–5 options.",
+  );
+  const guidelines = tool.promptGuidelines.join("\n");
+  assert.match(guidelines, /ONE focused/i);
+  assert.match(guidelines, /2–5 mutually exclusive options/);
+  assert.match(guidelines, /questions.*2–4/s);
+  assert.match(guidelines, /multiSelect/i);
+});
+
 test("TUI mode returns the step-02 placeholder until the popup lands", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue } = makeCtx({ mode: "tui", hasUI: true });
