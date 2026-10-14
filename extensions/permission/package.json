@@ -1,9 +1,33 @@
 {
-  "name": "permission",
-  "private": true,
+  "name": "@devopstales/pi-permission",
+  "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Opencode-style permission gate for pi tool calls (allow/deny/ask/always rules, conf.d persistence). Runtime deps (@pierre/diffs, @pierre/theme, web-tree-sitter, tree-sitter-bash) resolve from the skill-pi root node_modules; the deps/devDeps below are the standalone toolchain (check/test) and are not installed by skill-pi.",
+  "description": "Opencode-style permission gate for pi tool calls (allow/deny/ask/always rules, conf.d persistence).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "coding-agent",
+    "permission",
+    "security"
+  ],
+  "files": [
+    "index.ts",
+    "*.ts",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "check": "tsc --noEmit -p .",
     "test": "vitest run",
@@ -15,9 +39,11 @@
     "tree-sitter-bash": "^0.25.1",
     "web-tree-sitter": "^0.26.8"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@earendil-works/pi-coding-agent": "^1.2.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }
