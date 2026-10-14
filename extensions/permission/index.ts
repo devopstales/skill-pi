@@ -28,7 +28,7 @@ import type { DerivedSkillAllowState, Mode, ParsedRule, PermissionSettings, Runt
 import { BashArity } from "./bash-arity.js";
 import { extractBashCommands } from "./bash-parser.js";
 import { getExtensionSettingsPaths, loadExtensionSettings, resolveProjectConfDir } from "./project.js";
-import { buildHardRejectedReason } from "./rejection.js";
+import { buildHardRejectedReason, resolvePermissionRejection } from "./rejection.js";
 import { showPermissionReviewDialog } from "./review-dialog.js";
 import {
   buildEditPermissionPreview,
@@ -132,10 +132,19 @@ export default function (pi: ExtensionAPI) {
         }
 
         if (confirmation === "reject") {
+          const rejection = await resolvePermissionRejection(
+            ctx,
+            PERMISSION_PROMPT_REJECT,
+            event.toolName,
+            argValue,
+          );
+          if (rejection.kind === "back") {
+            continue;
+          }
           ctx.abort();
           return {
             block: true,
-            reason: buildHardRejectedReason(event.toolName, argValue),
+            reason: rejection.reason,
           };
         }
       }
@@ -159,17 +168,34 @@ export default function (pi: ExtensionAPI) {
           continue;
         }
 
-        ctx.abort();
-        return {
-          block: true,
-          reason: buildHardRejectedReason(event.toolName, argValue),
-        };
+        if (confirmation === "reject") {
+          const rejection = await resolvePermissionRejection(
+            ctx,
+            PERMISSION_PROMPT_REJECT,
+            event.toolName,
+            argValue,
+          );
+          if (rejection.kind === "back") {
+            continue;
+          }
+          ctx.abort();
+          return {
+            block: true,
+            reason: rejection.reason,
+          };
+        }
       }
 
-      ctx.abort();
+      const rejection = await resolvePermissionRejection(ctx, promptResult, event.toolName, argValue);
+      if (rejection.kind === "back") {
+        continue;
+      }
+      if (rejection.kind === "hard") {
+        ctx.abort();
+      }
       return {
         block: true,
-        reason: buildHardRejectedReason(event.toolName, argValue),
+        reason: rejection.reason,
       };
     }
   });
