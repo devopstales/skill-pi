@@ -327,6 +327,162 @@ test("batch validation rejects out-of-bounds options on any question", async () 
   assert.equal(text(result), "ask_user: each question needs 2–5 options, got 1");
 });
 
+test("[Non-dialog mode returns a graceful unavailable result] print mode", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue } = makeCtx({ mode: "print", hasUI: false });
+  selectQueue.push("a");
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["a", "b"] },
+    ctx,
+  );
+  assert.equal(result.isError, undefined);
+  assert.equal(text(result), "ask_user is unavailable outside interactive modes");
+  assert.deepEqual(result.details, {
+    question: "Which branch?",
+    options: ["a", "b"],
+    answer: null,
+    cancelled: true,
+  });
+});
+
+test("[Non-dialog mode returns a graceful unavailable result] batch in json mode", async () => {
+  const { tool } = makePi();
+  const { ctx } = makeCtx({ mode: "json", hasUI: false });
+  const result = await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["a", "b"] },
+        { question: "Q2?", options: ["c", "d"] },
+      ],
+    },
+    ctx,
+  );
+  assert.equal(text(result), "ask_user is unavailable outside interactive modes");
+  assert.equal(result.details.kind, "batch");
+  assert.equal(result.details.cancelled, true);
+  assert.equal(result.details.answers, null);
+});
+
+test("[Non-dialog mode returns a graceful unavailable result] rpc mode without UI", async () => {
+  const { tool } = makePi();
+  const { ctx } = makeCtx({ mode: "rpc", hasUI: false });
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["a", "b"] },
+    ctx,
+  );
+  assert.equal(text(result), "ask_user is unavailable outside interactive modes");
+  assert.equal(result.details.cancelled, true);
+});
+
+test("[Answer outcome emits the answered event once] selection emits ask:answered", async () => {
+  const { tool, eventBus } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push("beta");
+  await execute(tool, { question: "Which branch?", options: ["main", "beta"] }, ctx);
+  const events = eventBus.emitted.filter((e) => e.channel === "ask:answered");
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].data, {
+    question: "Which branch?",
+    kind: "selection",
+  });
+});
+
+test("[Answer outcome emits the answered event once] freeform emits ask:answered with kind freeform", async () => {
+  const { tool, eventBus } = makePi();
+  const { ctx, selectQueue, inputQueue } = makeCtx();
+  selectQueue.push(FREEFORM_OPTION);
+  inputQueue.push("custom answer");
+  await execute(tool, { question: "Describe", options: ["A", "B"] }, ctx);
+  const events = eventBus.emitted.filter((e) => e.channel === "ask:answered");
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].data, { question: "Describe", kind: "freeform" });
+});
+
+test("[Answer outcome emits the answered event once] batch answered emits once per question in order", async () => {
+  const { tool, eventBus } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push("opt1", "x");
+  await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["opt1", "opt2"] },
+        { question: "Q2?", options: ["x", "y"] },
+      ],
+    },
+    ctx,
+  );
+  const events = eventBus.emitted.filter((e) => e.channel === "ask:answered");
+  assert.equal(events.length, 2);
+  assert.deepEqual(
+    events.map((e) => e.data.question),
+    ["Q1?", "Q2?"],
+  );
+});
+
+test("[Cancellation emits the cancelled event once] dialog cancel emits ask:cancelled", async () => {
+  const { tool, eventBus } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push(undefined);
+  await execute(tool, { question: "Which branch?", options: ["a", "b"] }, ctx);
+  const events = eventBus.emitted.filter((e) => e.channel === "ask:cancelled");
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].data, { question: "Which branch?" });
+  assert.equal(eventBus.emitted.filter((e) => e.channel === "ask:answered").length, 0);
+});
+
+test("[Cancellation emits the cancelled event once] batch cancel emits once for the cancelled question only", async () => {
+  const { tool, eventBus } = makePi();
+  const { ctx, selectQueue } = makeCtx();
+  selectQueue.push("opt1", undefined);
+  await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["opt1", "opt2"] },
+        { question: "Q2?", options: ["x", "y"] },
+      ],
+    },
+    ctx,
+  );
+  assert.deepEqual(
+    eventBus.emitted.filter((e) => e.channel === "ask:answered").map((e) => e.data.question),
+    ["Q1?"],
+  );
+  const cancelled = eventBus.emitted.filter((e) => e.channel === "ask:cancelled");
+  assert.equal(cancelled.length, 1);
+  assert.deepEqual(cancelled[0].data, { question: "Q2?" });
+});
+
+test("unavailable mode and validation errors fire no events", async () => {
+  const { tool, eventBus } = makePi();
+  const unavailable = makeCtx({ mode: "print", hasUI: false });
+  await execute(tool, { question: "Q?", options: ["a", "b"] }, unavailable.ctx);
+  await execute(tool, { question: "Q?" }, makeCtx().ctx);
+  assert.deepEqual(eventBus.emitted, []);
+});
+
+test("TUI mode returns the step-02 placeholder until the popup lands", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue } = makeCtx({ mode: "tui", hasUI: true });
+  selectQueue.push("a");
+  const result = await execute(
+    tool,
+    { question: "Which branch?", options: ["a", "b"] },
+    ctx,
+  );
+  assert.equal(text(result), "ask_user: TUI popup not implemented yet (step 02)");
+  assert.deepEqual(result.details, {
+    question: "Which branch?",
+    options: ["a", "b"],
+    answer: null,
+    cancelled: true,
+  });
+});
+
 test("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();

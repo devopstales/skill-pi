@@ -201,6 +201,11 @@ export function renderAskResult(
 
 export const FREEFORM_OPTION = "✎ Type something…";
 export const DONE_OPTION = "Done";
+export const UNAVAILABLE_TEXT = "ask_user is unavailable outside interactive modes";
+
+interface EmitFn {
+  (channel: string, data: unknown): void;
+}
 
 export async function askSingleViaRpc(q: AskQuestion, ctx: ExtensionToolContext) {
   const dialogOptions =
@@ -254,22 +259,34 @@ export async function askMultiSelectViaRpc(
   return null;
 }
 
+interface BatchOutcome {
+  answers: (AskSelection | AskFreeform)[] | null;
+  question: AskQuestion;
+  answered: { question: AskQuestion; answer: AskSelection | AskFreeform }[];
+}
+
 export async function askBatchViaRpc(
   questions: AskQuestion[],
   ctx: ExtensionToolContext,
-): Promise<{ answers: (AskSelection | AskFreeform)[] | null; question: AskQuestion }> {
+): Promise<BatchOutcome> {
   const answers: (AskSelection | AskFreeform)[] = [];
+  const answered: { question: AskQuestion; answer: AskSelection | AskFreeform }[] = [];
   for (const q of questions) {
     const answer = q.multiSelect
       ? await askMultiSelectViaRpc(q, ctx)
       : await askSingleViaRpc(q, ctx);
-    if (answer === null) return { answers: null, question: q };
+    if (answer === null) return { answers: null, question: q, answered };
     answers.push(answer);
+    answered.push({ question: q, answer });
   }
-  return { answers, question: questions[questions.length - 1] };
+  return { answers, question: questions[questions.length - 1], answered };
 }
 
-export function batchResult(questions: AskQuestion[], outcome: { answers: (AskSelection | AskFreeform)[] | null; question: AskQuestion }): AgentToolResult<AskBatchDetails> {
+export function batchPlaceholder(questions: AskQuestion[]): AskBatchDetails {
+  return { kind: "batch", questions, answers: null, cancelled: true };
+}
+
+export function batchResult(questions: AskQuestion[], outcome: BatchOutcome): AgentToolResult<AskBatchDetails> {
   const details: AskBatchDetails = {
     kind: "batch",
     questions,
@@ -315,7 +332,22 @@ export function singleResult(q: AskQuestion, answer: AskSelection | AskFreeform 
   };
 }
 
+export function singleUnavailable(q: AskQuestion): AgentToolResult<AskSingleDetails> {
+  return {
+    content: [{ type: "text", text: UNAVAILABLE_TEXT }],
+    details: { question: q.question, options: q.options, answer: null, cancelled: true },
+  };
+}
+
+export function batchUnavailable(questions: AskQuestion[]): AgentToolResult<AskBatchDetails> {
+  return {
+    content: [{ type: "text", text: UNAVAILABLE_TEXT }],
+    details: { kind: "batch", questions, answers: null, cancelled: true },
+  };
+}
+
 export default function askUserExtension(pi: ExtensionAPI) {
+  const emit: EmitFn = (channel, data) => pi.events.emit(channel, data);
   pi.registerTool<AskUserParamsSchema, AskDetails>({
     name: "ask_user",
     label: "Ask User",
@@ -335,7 +367,24 @@ export default function askUserExtension(pi: ExtensionAPI) {
       const error = validateParams(params);
       if (error) return validationError(error);
       if (params.questions) {
+        if (_ctx.mode === "tui" && _ctx.hasUI) {
+          return {
+            content: [
+              { type: "text", text: "ask_user: TUI popup not implemented yet (step 02)" },
+            ],
+            details: batchPlaceholder(params.questions),
+          };
+        }
+        if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
+          return batchUnavailable(params.questions);
+        }
         const outcome = await askBatchViaRpc(params.questions, _ctx);
+        for (const { question, answer } of outcome.answered) {
+          emit("ask:answered", { question: question.question, kind: answer.kind });
+        }
+        if (outcome.answers === null) {
+          emit("ask:cancelled", { question: outcome.question.question });
+        }
         return batchResult(params.questions, outcome);
       }
       const q: AskQuestion = {
@@ -344,9 +393,23 @@ export default function askUserExtension(pi: ExtensionAPI) {
         multiSelect: params.multiSelect,
         allowFreeform: params.allowFreeform,
       };
+      if (_ctx.mode === "tui" && _ctx.hasUI) {
+        return {
+          content: [{ type: "text", text: "ask_user: TUI popup not implemented yet (step 02)" }],
+          details: { question: q.question, options: q.options, answer: null, cancelled: true },
+        };
+      }
+      if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
+        return singleUnavailable(q);
+      }
       const answer = q.multiSelect
         ? await askMultiSelectViaRpc(q, _ctx)
         : await askSingleViaRpc(q, _ctx);
+      if (answer === null) {
+        emit("ask:cancelled", { question: q.question });
+      } else {
+        emit("ask:answered", { question: q.question, kind: answer.kind });
+      }
       return singleResult(q, answer);
     },
 
