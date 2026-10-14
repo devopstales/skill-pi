@@ -60,6 +60,12 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   const cache = sidebarCache(tui);
   const cleanups: Array<() => void> = [];
   const roots = new Set<LayoutRoot>();
+  // ponytail: the footer container (pi's setFooter mount point) has no layout
+  // node of its own — the fullscreen layout engine renders its children's lines
+  // directly, which breaks the rail's row alignment. Give it a vstack node with
+  // no entries (renders empty natively) and rebuild it each tick from the live
+  // children so the rail owns its content.
+  const docked = new Set<Component>();
   let stopped = false;
   let failed = false;
   let railLines: string[] = [];
@@ -176,33 +182,45 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
       return false;
     }
   };
+  const dock = (component: Component & { [NODE]?: () => LayoutNode }): LayoutNode => {
+    if (typeof component[NODE] === "function") {
+      const node = component[NODE]!();
+      if (node.type === "vstack" || node.type === "hstack") return node;
+    }
+    const children = (component as { children?: unknown[] }).children;
+    if (Array.isArray(children) && children.length > 0) {
+      const entries: StackLayoutEntry[] = [];
+      for (const child of children) {
+        if (!child || typeof child !== "object") continue;
+        entries.push({ component: child as Component, basis: 0, grow: 0, shrink: 1, minSize: 0 });
+      }
+      if (entries.length > 0) return { type: "vstack", entries, gap: 0, align: "stretch" };
+    }
+    return { type: "vstack", entries: [], gap: 0, align: "stretch" };
+  };
+  const dockContainer = (container: Component) => {
+    if (docked.has(container)) return;
+    docked.add(container);
+    const target = container as Component & { [NODE]?: () => LayoutNode };
+    const descriptor = Object.getOwnPropertyDescriptor(target, NODE);
+    target[NODE] = () => dock(target);
+    cleanups.push(() => {
+      if (docked.delete(container)) {
+        if (descriptor) Object.defineProperty(target, NODE, descriptor);
+        else Reflect.deleteProperty(target, NODE);
+      }
+    });
+  };
   const attach = () => {
     if (stopped || failed) return;
     if (host.mode !== "fullscreen") { state.active = false; return; }
     try {
       const root = host.layoutRoot;
       if (!root || typeof root[NODE] !== "function") { state.active = false; return; }
-      if (roots.has(root)) return;
-      const original = root[NODE]!;
+      let original = root[NODE]!;
+      if ((root as unknown as { [NODE]?: unknown })[NODE] === dock) original = (root as unknown as { [NODE]: () => LayoutNode })[NODE]!;
       const descriptor = Object.getOwnPropertyDescriptor(root, NODE);
-      const docks = new WeakMap<Component, VStack>();
-      const reclaimFooterRow = (node: LayoutNode): LayoutNode => {
-        if (node.type !== "vstack" || !node.entries?.length) return node;
-        const entries = node.entries as Array<{ component: Component & { [NODE]?: () => LayoutNode } }>;
-        const dock = entries[entries.length - 1]!.component;
-        if (typeof dock[NODE] !== "function") return node;
-        let wrapped = docks.get(dock);
-        if (!wrapped) {
-          const inner = dock[NODE]!();
-          if (inner.type !== "vstack" || !inner.entries?.length) return node;
-          const last = inner.entries.length - 1;
-          wrapped = new VStack(inner.entries.map((entry, index) => index === last ? { ...(entry as StackLayoutEntry), minSize: 0 } : entry as StackLayoutEntry), { gap: inner.gap, align: inner.align });
-          docks.set(dock, wrapped);
-        }
-        return { ...node, entries: entries.map((entry, index) => index === entries.length - 1 ? { ...entry, component: wrapped! } : entry) };
-      };
-      const nativeLayout = () => placement() === "hidden" ? reclaimFooterRow(original.call(root)) : original.call(root);
-      const left = { render: () => [], invalidate() {}, [NODE]: () => reclaimFooterRow(original.call(root)) };
+      const left = { render: () => [], invalidate() {}, [NODE]: () => original.call(root) };
       const hstackHost: Component & { [NODE](): LayoutNode } = {
         render: () => [],
         invalidate() {},
@@ -217,8 +235,7 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
         if (current.presentation?.scrollTop === scroll.scrollTop) return current.presentation.output;
         return (current.presentation = { scrollTop: scroll.scrollTop, output: hstackHost[NODE]() }).output;
       };
-      root[NODE] = replacement;
-      roots.add(root);
+      if (root[NODE] !== replacement) root[NODE] = replacement;
       tui.requestRender();
       cleanups.push(() => {
         if (root[NODE] !== replacement) return;
