@@ -48,17 +48,26 @@ export function loadExtensionSettings<T>(
   merge: (a: Partial<T>, b: Partial<T>) => Partial<T>,
 ): Partial<T> {
   const paths = getExtensionSettingsPaths(name, cwd);
+  const root = resolveProjectRoot(cwd);
   const g = loadJsonSafe<T>(paths.global);
+  const skillPiPath = path.join(root, ".skill-pi", "conf.d", `${name}.conf`);
+  const piPath = path.join(root, ".pi", "conf.d", `${name}.conf`);
+  const skillPi = loadJsonSafe<T>(skillPiPath);
+  const pi = fs.existsSync(skillPiPath) ? {} : loadJsonSafe<T>(piPath);
   const p = loadJsonSafe<T>(paths.project);
   const l = loadJsonSafe<T>(paths.local);
-  return merge(merge(g, p), l);
+  const skillPiAndPi = merge(skillPi, pi);
+  const withUser = merge(g, skillPiAndPi);
+  const withProjectConf = merge(withUser, p);
+  return merge(withProjectConf, l);
 }
 
 export function loadJsonSafe<T>(filePath: string): Partial<T> {
   if (!fs.existsSync(filePath)) return {};
   const raw = fs.readFileSync(filePath, "utf-8");
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Invalid JSON in ${filePath}: ${message}`);
