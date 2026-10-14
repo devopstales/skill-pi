@@ -68,6 +68,7 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   const docked = new Set<Component>();
   let stopped = false;
   let failed = false;
+  let preparing = false;
   let railLines: string[] = [];
   let prepared: PreparedRail | undefined;
   const sectionCache = new Map<string, SectionCacheEntry>();
@@ -126,26 +127,28 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
       prepared = undefined;
       return false;
     }
-    const railEligible = width >= SIDEBAR_BREAKPOINT && placement() !== "bottom" && placement() !== "hidden";
-    if (!railEligible) {
-      prepared = undefined;
-      return false;
-    }
-    const style = cardStyle();
-    const parts = [...state.parts.entries()];
-    const digests = parts.map(([, rail]) => railDigest(rail));
-    const prev = prepared;
-    const unchanged = prev !== undefined &&
-      prev.revision === cache.revision &&
-      prev.width === width && prev.mode === host.mode && prev.cardStyle === style && prev.root === root &&
-      prev.parts.length === parts.length && prev.parts.every(([key, part], index) => parts[index]?.[0] === key && parts[index]?.[1] === part) &&
-      prev.digests.length === digests.length && prev.digests.every((digest, index) => digest === digests[index]);
-    if (unchanged) {
-      railLines = prev.lines;
-      state.active = prev.active;
-      return prev.active;
-    }
+    if (preparing) return prepared?.active ?? false;
+    preparing = true;
     try {
+      const railEligible = width >= SIDEBAR_BREAKPOINT && placement() !== "bottom" && placement() !== "hidden";
+      if (!railEligible) {
+        prepared = undefined;
+        return false;
+      }
+      const style = cardStyle();
+      const parts = [...state.parts.entries()];
+      const digests = parts.map(([, rail]) => railDigest(rail));
+      const prev = prepared;
+      const unchanged = prev !== undefined &&
+        prev.revision === cache.revision &&
+        prev.width === width && prev.mode === host.mode && prev.cardStyle === style && prev.root === root &&
+        prev.parts.length === parts.length && prev.parts.every(([key, part], index) => parts[index]?.[0] === key && parts[index]?.[1] === part) &&
+        prev.digests.length === digests.length && prev.digests.every((digest, index) => digest === digests[index]);
+      if (unchanged) {
+        railLines = prev.lines;
+        state.active = prev.active;
+        return prev.active;
+      }
       const contentWidth = scroll.getContentWidth(RAIL_WIDTH);
       const sections = ["footer", "agents", "todo"].filter((key) => key !== "todo" || state.visibility?.todo !== false).map((key) => {
         const component = state.parts.get(key);
@@ -180,6 +183,8 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
     } catch {
       failed = true;
       return false;
+    } finally {
+      preparing = false;
     }
   };
   const dock = (component: Component & { [NODE]?: () => LayoutNode }): LayoutNode => {
@@ -211,15 +216,18 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
       }
     });
   };
+  const trueOriginals = new Map<LayoutRoot, () => LayoutNode>();
   const attach = () => {
     if (stopped || failed) return;
     if (host.mode !== "fullscreen") { state.active = false; return; }
     try {
       const root = host.layoutRoot;
       if (!root || typeof root[NODE] !== "function") { state.active = false; return; }
-      let original = root[NODE]!;
-      if ((root as unknown as { [NODE]?: unknown })[NODE] === dock) original = (root as unknown as { [NODE]: () => LayoutNode })[NODE]!;
-      const descriptor = Object.getOwnPropertyDescriptor(root, NODE);
+      let original = trueOriginals.get(root);
+      if (!original) {
+        original = root[NODE]!;
+        trueOriginals.set(root, original);
+      }
       const left = { render: () => [], invalidate() {}, [NODE]: () => original.call(root) };
       const hstackHost: Component & { [NODE](): LayoutNode } = {
         render: () => [],
@@ -235,13 +243,16 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
         if (current.presentation?.scrollTop === scroll.scrollTop) return current.presentation.output;
         return (current.presentation = { scrollTop: scroll.scrollTop, output: hstackHost[NODE]() }).output;
       };
-      if (root[NODE] !== replacement) root[NODE] = replacement;
+      if (root[NODE] !== replacement) {
+        root[NODE] = replacement;
+        const descriptor = Object.getOwnPropertyDescriptor(root, NODE);
+        cleanups.push(() => {
+          if (root[NODE] !== replacement) return;
+          if (descriptor) Object.defineProperty(root, NODE, descriptor);
+          else Reflect.deleteProperty(root, NODE);
+        });
+      }
       tui.requestRender();
-      cleanups.push(() => {
-        if (root[NODE] !== replacement) return;
-        if (descriptor) Object.defineProperty(root, NODE, descriptor);
-        else Reflect.deleteProperty(root, NODE);
-      });
     } catch {
       failed = true;
       state.active = false;
