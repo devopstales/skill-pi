@@ -12,7 +12,7 @@ import {
 } from "./constants.js";
 import type { Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "./models.js";
 import { extractBashCommands } from "./bash-parser.js";
-import { getExtensionSettingsPaths, loadExtensionSettings } from "./project.js";
+import { loadExtensionSettings } from "./project.js";
 import { buildHardRejectedReason } from "./rejection.js";
 
 const EXTENSION = "permission";
@@ -192,8 +192,4 @@ function isPermissionPromptChoice(value: string | undefined): value is Permissio
     value === PERMISSION_PROMPT_REJECT ||
     value === PERMISSION_PROMPT_REJECT_WITH_FEEDBACK
   );
-}
-
-export function getPersistentApprovalSettingsPath(cwd: string): string {
-  return getExtensionSettingsPaths(EXTENSION, cwd).project;
 }
