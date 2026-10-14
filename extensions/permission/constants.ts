@@ -22,5 +22,3 @@ export const APPROVAL_CONFIRM_BACK = "Back";
 export const APPROVAL_CONFIRM_REJECT = "Reject";
 
 export const APPROVAL_CONFIRM_CHOICES = [APPROVAL_CONFIRM_APPROVE, APPROVAL_CONFIRM_BACK, APPROVAL_CONFIRM_REJECT] as const;
-
-export type ApprovalConfirmChoice = (typeof APPROVAL_CONFIRM_CHOICES)[number];

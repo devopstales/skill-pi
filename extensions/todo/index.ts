@@ -40,7 +40,6 @@ import {
 import { buildTheme, type TodoTheme } from "./src/theme.ts";
 import { invalidateSidebar } from "../skill-pi-tui/src/sidebar-layout.ts";
 import { sidebarPart, sidebarState } from "../skill-pi-tui/src/sidebar.ts";
-import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 
 const COLLAPSE_KEY_DEFAULT = "ctrl+shift+t";
 const REMIND_AFTER_TOOL_TURNS = 4;

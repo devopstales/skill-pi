@@ -1,7 +1,6 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GitStatus } from "./git.ts";
-import { emptyGitStatus } from "./git.ts";
 import { finiteOrZero, formatProviderLabel } from "./utils.ts";
 
 export interface FooterState {
@@ -71,15 +70,6 @@ export function getUsageTotals(ctx: ExtensionContext): UsageTotals {
 
 export function invalidateUsageCache(): void {
 	usageCache = undefined;
-}
-
-export function createInitialState(): FooterState {
-	return {
-		git: emptyGitStatus(),
-			sessionStartEpoch: Date.now(),
-		workingSince: undefined,
-		lastDoneIn: undefined,
-	};
 }
 
 export interface ModelMeta {

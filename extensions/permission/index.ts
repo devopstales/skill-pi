@@ -12,7 +12,7 @@ import { STATUS_REJECTED } from "./constants.js";
 import type { DerivedSkillAllowState, Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "./models.js";
 import { extractBashCommands } from "./bash-parser.js";
 import { loadExtensionSettings } from "./project.js";
-import { handleToolCallPermission, persistApprovalRules, getApprovalRules } from "./tool-call.js";
+import { handleToolCallPermission, persistApprovalRules } from "./tool-call.js";
 
 export { persistApprovalRules, getApprovalRules } from "./tool-call.js";
 
