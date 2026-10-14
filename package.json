@@ -43,5 +43,8 @@
   ],
   "allowScripts": {
     "msgpackr-extract@3.0.4": true
+  },
+  "devDependencies": {
+    "node-pty": "^1.1.0"
   }
 }

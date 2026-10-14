@@ -90,6 +90,14 @@ invocation.
 
 Currently bundled:
 
+- **`ask-user`** — the `ask_user` tool: pauses the agent to collect one focused
+  decision (2–5 options, single choice or multi-select, optional freeform answer) or a
+  batch of 2–4 independent decisions. In the TUI the question is shown as a popup; in
+  RPC mode it falls back to select/input dialogs. The answer comes back as a structured
+  tool result (`selection`, `freeform`, or `cancelled`), and `ask:answered` /
+  `ask:cancelled` events fire for hosts that want to track prompt outcomes. In
+  non-dialog modes (e.g. `--print`) it returns a graceful "unavailable" result instead
+  of hanging.
 - **`skill-pi-banner`** — a `session_start` notification confirming the isolated session.
 - **`file-search`** — first-class `fd` (find files) and `rg` (search content) tools. On
   session start it resolves a usable binary per tool: a system `fd`/`fdfind`/`rg` is
