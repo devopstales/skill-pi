@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 
 let mod;
 try {
-  mod = require("../extensions/ask-user.ts");
+  mod = require("../extensions/ask-user/index.ts");
 } catch {
   mod = null;
 }
