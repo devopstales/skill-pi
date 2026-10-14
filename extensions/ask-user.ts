@@ -3,7 +3,7 @@ import type {
   ExtensionAPI,
   ExtensionToolContext,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, parseKey } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 interface AskQuestion {
@@ -346,6 +346,349 @@ export function batchUnavailable(questions: AskQuestion[]): AgentToolResult<AskB
   };
 }
 
+export interface AskPopupOutput {
+  cancelled: boolean;
+  answers: (AskSelection | AskFreeform)[];
+}
+
+type AskPopupMode = "options" | "freeform";
+
+export class AskTuiPopup {
+  private readonly questions: AskQuestion[];
+  private page = 0;
+  private mode: AskPopupMode = "options";
+  private focus = 0;
+  private text = "";
+  private toggled = new Set<string>();
+  private answered: (AskSelection | AskFreeform | null)[];
+  private warned = false;
+  private finished = false;
+
+  constructor(questions: AskQuestion[]) {
+    this.questions = questions;
+    this.answered = questions.map(() => null);
+  }
+
+  render(width: number): string[] {
+    const title =
+      this.page === this.questions.length
+        ? "Review"
+        : `Ask ${this.page + 1}/${this.questions.length}`;
+    const footer: string[] = [];
+    if (this.mode === "freeform") {
+      footer.push(`${this.text}█  Esc back  Enter submit`);
+    } else if (this.page === this.questions.length) {
+      const unanswered = this.answered.filter((a) => a === null).length;
+      if (unanswered > 0) {
+        footer.push(`⚠ ${unanswered} question${unanswered > 1 ? "s" : ""} unanswered`);
+      }
+      footer.push(`Page ${this.page}/${this.questions.length}  Tab →  Enter submit`);
+      footer.push("Esc cancel");
+    } else {
+      const q = this.questions[this.page];
+      footer.push(
+        q.multiSelect
+          ? `↑↓ navigate  1-${q.options.length} toggle  Enter toggle/Done  Esc cancel`
+          : `↑↓ navigate  1-${q.options.length} select  Esc cancel`,
+      );
+    }
+    const inner = Math.max(1, width - 4);
+    const lines: string[] = [boxTitle(title, width)];
+    const body: string[] = [];
+    if (this.page === this.questions.length) {
+      body.push(...this.reviewRows());
+    } else {
+      const q = this.questions[this.page];
+      body.push(q.question, "");
+      body.push(...this.questionRows(q));
+    }
+    for (const line of body) lines.push(boxRow(line, inner));
+    lines.push(boxRow("", inner));
+    for (const line of footer) lines.push(boxRow(line, inner));
+    lines.push("└" + "─".repeat(Math.max(0, width - 2)) + "┘");
+    return lines;
+  }
+
+  handleInput(key: string): void {
+    if (this.finished) return;
+    if (this.mode === "freeform") return this.handleEditorInput(key);
+    if (key === "escape") {
+      this.finished = true;
+      return;
+    }
+    if (this.page === this.questions.length) return this.handleReviewInput(key);
+    this.handleQuestionInput(key);
+  }
+
+  get finishedFlag(): boolean {
+    return this.finished;
+  }
+
+  get editorMode(): boolean {
+    return this.mode === "freeform";
+  }
+
+  output(): AskPopupOutput {
+    return {
+      cancelled: false,
+      answers: this.answered.map((a) => a ?? ({ kind: "freeform", text: "(skipped)" })),
+    };
+  }
+
+  private questionRows(q: AskQuestion): string[] {
+    if (q.multiSelect) {
+      const rows = q.options.map((option, i) =>
+        rowLine(`${this.toggled.has(option) ? "[x]" : "[ ]"} ${i + 1}. ${option}`, this.focus === i),
+      );
+      rows.push(rowLine(`✓ ${DONE_OPTION}`, this.focus === q.options.length));
+      return rows;
+    }
+    const rows = q.options.map((option, i) => rowLine(`${i + 1}. ${option}`, this.focus === i));
+    if (q.allowFreeform !== false) {
+      rows.push(rowLine(FREEFORM_OPTION, this.focus === q.options.length));
+    }
+    return rows;
+  }
+
+  private reviewRows(): string[] {
+    return this.questions.map((q, i) => {
+      const a = this.answered[i];
+      const value = a
+        ? a.kind === "freeform"
+          ? a.text
+          : a.selections.join(", ")
+        : "(skipped)";
+      return rowLine(`${i + 1}. ${q.question}  →  ${value}`, this.focus === i);
+    });
+  }
+
+  private focusCount(): number {
+    if (this.page === this.questions.length) return this.questions.length;
+    const q = this.questions[this.page];
+    if (q.multiSelect) return q.options.length + 1;
+    return q.options.length + (q.allowFreeform === false ? 0 : 1);
+  }
+
+  private moveFocus(delta: number): void {
+    const count = this.focusCount();
+    this.focus = (this.focus + delta + count) % count;
+  }
+
+  private handleQuestionInput(key: string): void {
+    const q = this.questions[this.page];
+    const rows = this.questionRows(q);
+    const freeformIndex = rows.length - 1;
+    if (key === "up") return this.moveFocus(-1);
+    if (key === "down") return this.moveFocus(1);
+    if (key === "tab") {
+      this.page = this.questions.length;
+      this.focus = 0;
+      this.mode = "options";
+      this.warned = false;
+      return;
+    }
+    if (/^[1-9]$/.test(key)) {
+      const n = Number(key);
+      if (n > rows.length) return;
+      if (q.multiSelect) {
+        if (n <= q.options.length) this.toggleOption(n - 1);
+      } else if (n - 1 === freeformIndex) {
+        this.openFreeform();
+      } else {
+        this.answerPage({ kind: "selection", selections: [q.options[n - 1]] });
+      }
+      return;
+    }
+    if (key === "enter") {
+      if (this.focus >= rows.length) return;
+      if (q.multiSelect) {
+        if (this.focus === q.options.length) this.commitMulti();
+        else this.toggleOption(this.focus);
+        return;
+      }
+      if (this.focus === freeformIndex) {
+        this.openFreeform();
+      } else {
+        this.answerPage({ kind: "selection", selections: [q.options[this.focus]] });
+      }
+      return;
+    }
+    if (q.allowFreeform === false) return;
+    if (this.focus === freeformIndex) {
+      this.openFreeform();
+      return;
+    }
+    if (!q.multiSelect && key.length === 1) {
+      this.openFreeform();
+      this.text = key;
+    }
+  }
+
+  private openFreeform(): void {
+    this.mode = "freeform";
+  }
+
+  private toggleOption(index: number): void {
+    const q = this.questions[this.page];
+    const option = q.options[index];
+    if (this.toggled.has(option)) this.toggled.delete(option);
+    else this.toggled.add(option);
+    if (this.toggled.size === q.options.length) this.commitMulti();
+  }
+
+  private commitMulti(): void {
+    this.answerPage({ kind: "selection", selections: [...this.toggled] });
+    this.toggled = new Set();
+  }
+
+  private answerPage(answer: AskSelection | AskFreeform): void {
+    this.answered[this.page] = answer;
+    if (this.questions.length === 1) {
+      this.finished = true;
+      return;
+    }
+    this.page += 1;
+    this.focus = 0;
+  }
+
+  private handleEditorInput(key: string): void {
+    if (key === "escape") {
+      this.mode = "options";
+      this.text = "";
+      return;
+    }
+    if (key === "backspace") {
+      this.text = this.text.slice(0, -1);
+      return;
+    }
+    if (key === "enter") {
+      if (this.text.length === 0) {
+        this.mode = "options";
+        return;
+      }
+      this.answerPage({ kind: "freeform", text: this.text });
+      this.text = "";
+      this.mode = "options";
+      return;
+    }
+    if (key === "space") this.text += " ";
+    else if (key.length === 1) this.text += key;
+  }
+
+  private handleReviewInput(key: string): void {
+    if (key === "up") return this.moveFocus(-1);
+    if (key === "down") return this.moveFocus(1);
+    if (key === "tab" || key === "shift+tab") {
+      this.page = 0;
+      this.focus = 0;
+      this.mode = "options";
+      this.warned = false;
+      return;
+    }
+    if (/^[1-9]$/.test(key) && Number(key) <= this.questions.length) {
+      this.page = Number(key) - 1;
+      this.focus = 0;
+      this.mode = "options";
+      this.warned = false;
+      return;
+    }
+    if (key === "enter") {
+      if (this.answered.some((a) => a === null)) {
+        if (!this.warned) {
+          this.warned = true;
+          return;
+        }
+      }
+      this.finished = true;
+    }
+  }
+}
+
+function rowLine(label: string, focused: boolean): string {
+  return `${focused ? "▶" : " "} ${label}`;
+}
+
+function boxTitle(title: string, width: number): string {
+  const label = `─ ${title} `;
+  const fill = Math.max(0, width - label.length - 1);
+  return `┌${label}${"─".repeat(fill)}┐`;
+}
+
+function boxRow(line: string, inner: number): string {
+  const clipped = line.slice(0, inner);
+  return `│ ${clipped.padEnd(inner, " ")} │`;
+}
+
+interface AskTuiComponent {
+  render(width: number): string[];
+  handleInput(data: string): void;
+  invalidate(): void;
+  dispose(): void;
+  cancel(): void;
+}
+
+function makeTuiPopup(
+  questions: AskQuestion[],
+  onSettled: (output: AskPopupOutput) => void,
+): AskTuiComponent {
+  const popup = new AskTuiPopup(questions);
+  let settled = false;
+  const settle = (output: AskPopupOutput) => {
+    if (settled) return;
+    settled = true;
+    onSettled(output);
+  };
+  return {
+    render: (width: number) => popup.render(width),
+    handleInput: (data: string) => {
+      const key = parseKey(data);
+      if (!key) return;
+      if (key === "escape" && !popup.editorMode) {
+        settle({ cancelled: true, answers: [] });
+        return;
+      }
+      popup.handleInput(key);
+      if (popup.finishedFlag) settle(popup.output());
+    },
+    invalidate: () => undefined,
+    dispose: () => undefined,
+    cancel: () => settle({ cancelled: true, answers: [] }),
+  };
+}
+
+export function askTuiOutcome(
+  questions: AskQuestion[],
+  ctx: ExtensionToolContext,
+): Promise<AskPopupOutput> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (output: AskPopupOutput) => {
+      if (settled) return;
+      settled = true;
+      ctx.signal?.removeEventListener("abort", onAbort);
+      resolve(output);
+    };
+    const onAbort = () => finish({ cancelled: true, answers: [] });
+    if (ctx.signal) {
+      if (ctx.signal.aborted) {
+        finish({ cancelled: true, answers: [] });
+        return;
+      }
+      ctx.signal.addEventListener("abort", onAbort, { once: true });
+    }
+    void ctx.ui.custom((_tui, _theme, _keybindings, customDone) => {
+      const component = makeTuiPopup(questions, (output) => {
+        customDone(output);
+        finish(output);
+      });
+      if (ctx.signal) {
+        ctx.signal.addEventListener("abort", () => component.cancel(), { once: true });
+      }
+      return component;
+    });
+  });
+}
+
 export default function askUserExtension(pi: ExtensionAPI) {
   const emit: EmitFn = (channel, data) => pi.events.emit(channel, data);
   pi.registerTool<AskUserParamsSchema, AskDetails>({
@@ -368,12 +711,32 @@ export default function askUserExtension(pi: ExtensionAPI) {
       if (error) return validationError(error);
       if (params.questions) {
         if (_ctx.mode === "tui" && _ctx.hasUI) {
-          return {
-            content: [
-              { type: "text", text: "ask_user: TUI popup not implemented yet (step 02)" },
-            ],
-            details: batchPlaceholder(params.questions),
-          };
+          const output = await askTuiOutcome(params.questions, _ctx);
+          if (output.cancelled) {
+            emit("ask:cancelled", { question: params.questions[params.questions.length - 1].question });
+            return batchResult(params.questions, {
+              answers: null,
+              question: params.questions[params.questions.length - 1],
+              answered: [],
+            });
+          }
+          for (let i = 0; i < params.questions.length; i++) {
+            const answer = output.answers[i];
+            if (answer !== null && !(answer.kind === "freeform" && answer.text === "(skipped)")) {
+              emit("ask:answered", {
+                question: params.questions[i].question,
+                kind: answer.kind,
+              });
+            }
+          }
+          return batchResult(params.questions, {
+            answers: output.answers,
+            question: params.questions[params.questions.length - 1],
+            answered: output.answers.map((answer, i) => ({
+              question: params.questions[i],
+              answer,
+            })),
+          });
         }
         if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
           return batchUnavailable(params.questions);
@@ -394,10 +757,14 @@ export default function askUserExtension(pi: ExtensionAPI) {
         allowFreeform: params.allowFreeform,
       };
       if (_ctx.mode === "tui" && _ctx.hasUI) {
-        return {
-          content: [{ type: "text", text: "ask_user: TUI popup not implemented yet (step 02)" }],
-          details: { question: q.question, options: q.options, answer: null, cancelled: true },
-        };
+        const output = await askTuiOutcome([q], _ctx);
+        const answer = output.cancelled ? null : output.answers[0] ?? null;
+        if (answer === null) {
+          emit("ask:cancelled", { question: q.question });
+        } else {
+          emit("ask:answered", { question: q.question, kind: answer.kind });
+        }
+        return singleResult(q, answer);
       }
       if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
         return singleUnavailable(q);
