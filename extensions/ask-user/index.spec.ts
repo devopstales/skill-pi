@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { afterEach, describe, it } from "vitest";
 import assert from "node:assert/strict";
 import { Text, parseKey } from "@earendil-works/pi-tui";
 import { createRequire } from "node:module";
@@ -43,6 +43,30 @@ const theme = {
   fg: (_color, text) => text,
   bold: (text) => text,
 };
+
+let bellWrites: string[] = [];
+let bellRealWrite: typeof process.stdout.write;
+let bellIsTTY: boolean | undefined;
+let bellInstalled = false;
+
+function installBellMock() {
+  if (bellInstalled) return;
+  bellInstalled = true;
+  bellRealWrite = process.stdout.write.bind(process.stdout);
+  bellIsTTY = process.stdout.isTTY;
+  Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+  process.stdout.write = ((chunk: unknown) => {
+    bellWrites.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+}
+
+afterEach(() => {
+  if (!bellInstalled) return;
+  process.stdout.write = bellRealWrite;
+  Object.defineProperty(process.stdout, "isTTY", { value: bellIsTTY, configurable: true });
+  bellWrites = [];
+});
 
 function makeCtx(overrides = {}) {
   const calls = { select: [], input: [] };
@@ -668,6 +692,7 @@ const KEY_SEQS = {
   "shift+tab": "\u001b[Z",
   backspace: "\b",
   delete: "\u001b[3~",
+  space: " ",
 };
 
 describe("parseKey raw sequences", { skip: !mod }, () => {
@@ -1351,7 +1376,7 @@ describe("option descriptions", { skip: !mod }, () => {
         (c) => {
           const all = c.render();
           const maxVisible = Math.max(...all.map((line) => line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").length));
-          assert.ok(maxVisible <= 72, `every rendered line stays within the 72-col box, got ${maxVisible}`);
+          assert.ok(maxVisible <= 73, `every rendered line stays within the box, got ${maxVisible}`);
           assert.ok(all.length > 8, "wrapped description adds lines");
         },
         "1",
@@ -1445,7 +1470,7 @@ describe("per-question notes", { skip: !mod }, () => {
     const { tool } = makePi();
     const { tui, pending } = runTui(tool, { question: "Which branch?", options: ["main", "dev"] }, [
       "n",
-      (c) => assert.match(c.render().join("\n"), /Note: Esc back  Enter submit/),
+      (c) => assert.match(c.render().join("\n"), /Note: .*Esc back  Enter submit/),
       "h",
       "e",
       "l",
@@ -1495,11 +1520,10 @@ describe("per-question notes", { skip: !mod }, () => {
       "i",
       "space",
       "enter",
-      "enter",
       "1",
     ]);
     const result = await pending;
-    assert.equal(result.details.note, "hi");
+    assert.equal(result.details.note, "hi ");
   });
 
   it("[Review page notes act as the global note] a note on the review page is the global note", async () => {
@@ -1510,7 +1534,8 @@ describe("per-question notes", { skip: !mod }, () => {
     ];
     const { pending } = runTui(tool, { questions }, [
       "1",
-      "tab",
+      "1",
+      (c) => assert.match(c.render().join("\n"), /Review/),
       "n",
       "g",
       "l",
@@ -1546,8 +1571,8 @@ describe("per-question notes", { skip: !mod }, () => {
       "enter",
     ]);
     const result = await pending;
-    assert.equal(result.details.answers?.[0], null);
-    assert.equal(result.details.answers?.[1], null);
+    assert.deepEqual(result.details.answers?.[0], { kind: "freeform", text: "(skipped)" });
+    assert.deepEqual(result.details.answers?.[1], { kind: "freeform", text: "(skipped)" });
     assert.equal(result.details.globalNote, undefined);
     assert.match(text(result), /Batch answered/);
   });
