@@ -1,10 +1,10 @@
 schema: skillgrid/state/v1
 pipeline:
-  current_phase: "brainstorm"
+  current_phase: "slicing"
   current_change: "2026-10-14-permission-extension"
   status: in_progress
 progress:
   completed_changes: 1
   blocked_changes: 0
 constraints_ref: .skillgrid/ASSUMPTIONS.md
-notes: "In-flight: 2026-10-14-permission-extension at brainstorm gate (briefing written, awaiting user approval before writing-blueprints). Parked: 2026-10-14-unified-providers at blueprint gate (blueprint committed; slicing + execution not started). 2026-10-13-ask-user remains at its user gate (slicing done, execution not started)."
+notes: "In-flight: 2026-10-14-permission-extension at slicing gate (briefing + blueprint + tasks.md written + committed; execution not started; 5 tickets / 4 waves / stacked-to-main). Parked: 2026-10-14-unified-providers at blueprint gate (blueprint committed; slicing + execution not started). 2026-10-13-ask-user remains at its user gate (slicing done, execution not started)."
