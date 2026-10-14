@@ -10,8 +10,9 @@ tasks:
   install:
     desc: "Install skill-pi globally (npm link) and verify"
     cmds:
+      - npm install
       - npm ci
-      - npm link
+      - npm link --force
       - 'echo "skill-pi installed: $(which skill-pi)"'
       - 'echo "agent dir: {{.AGENT_DIR}}"'
       - 'echo "work dir:  {{.WORK_DIR}}"'
