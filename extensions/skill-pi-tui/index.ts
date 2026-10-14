@@ -11,6 +11,7 @@ import { installSidebar } from "./src/sidebar-layout.ts";
 import { sidebarPart } from "./src/sidebar.ts";
 import { renderStatusCard } from "./src/status-card.ts";
 import { captureChanges, emptyChanges, type ChangesModel } from "./src/changes.ts";
+import { sanitizeTerminalText } from "./src/text.ts";
 
 const LOGO = [
   " ███████╗██╗  ██╗██╗██╗     ██╗     ██████╗  ██████╗ ██╗██████╗  ",
@@ -47,11 +48,11 @@ interface BannerStats {
 
 function gitBranch(cwd: string): string {
   try {
-    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const branch = sanitizeTerminalText(execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
-    }).trim();
+    }).trim());
     return branch || "(detached)";
   } catch {
     return "(not a git repo)";
@@ -184,8 +185,9 @@ function refreshChanges() {
 
 function buildTheme(theme: Theme) {
   // ponytail: card theme accepts free color names ("success"/"error"/"accent"/
-  // "muted"/"border"/"dim") not in pi's ThemeColor union — the pi Theme fg
-  // falls back to the default fg for unknown tokens, matching old2 behavior.
+  // "muted"/"border"/"dim") that pi's ThemeColor union types as the known
+  // tokens; pi's Theme.fg resolves them at runtime (and throws on a truly
+  // unknown token — the card's fgSafe degrades that to the text role).
   return { fg: (color: ThemeColor, text: string) => theme.fg(color, text), bold: (text: string) => theme.bold(text) };
 }
 

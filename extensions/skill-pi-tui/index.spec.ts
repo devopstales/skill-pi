@@ -6,6 +6,9 @@ import { execFileSync } from "node:child_process";
 import { captureChanges, emptyChanges } from "./src/changes.ts";
 import { sanitizeTerminalText } from "./src/text.ts";
 import { renderCard, CARD_TONE, type CardTheme } from "./src/card.ts";
+import { renderStatusCard, type StatusCardModel } from "./src/status-card.ts";
+import { SIDEBAR_BREAKPOINT, invalidateSidebar } from "./src/sidebar-layout.ts";
+import { sidebarState, sidebarPart } from "./src/sidebar.ts";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -81,10 +84,6 @@ function visibleWidthCheck(line: string): boolean {
   const plain = line.replace(/\x1b\[[0-9;]*m/g, "");
   return [...plain].length <= 50;
 }
-
-import { renderStatusCard, type StatusCardModel } from "./src/status-card.ts";
-import { SIDEBAR_BREAKPOINT, invalidateSidebar } from "./src/sidebar-layout.ts";
-import { sidebarState, sidebarPart } from "./src/sidebar.ts";
 
 it("renderStatusCard: project + changes groups at width 48", () => {
   const model: StatusCardModel = {
