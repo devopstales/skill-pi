@@ -46,12 +46,11 @@ function rpcProbe(project, env) {
   });
 }
 
-test("rpc mode runs pi from the shim dir", async () => {
+test("rpc mode runs pi from the real project dir (no shim)", async () => {
   const project = mkdtempSync(join(tmpdir(), "skillpi-rpc-proj-"));
   writeFileSync(join(project, "AGENTS.md"), "test project");
   const out = await rpcProbe(project, {
     SKILL_PI_AGENT_DIR: mkdtempSync(join(tmpdir(), "skillpi-rpc-agent-")),
-    SKILL_PI_WORK_DIR: mkdtempSync(join(tmpdir(), "skillpi-rpc-work-")),
   });
   const parsed = JSON.parse(out.split("\n").find((l) => l.includes("get_state")));
   assert.equal(parsed.success, true);
