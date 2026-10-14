@@ -11,10 +11,11 @@ const PI_CLI = join(
   repoRoot,
   "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
 );
+const EXTENSIONS_DIR = join(repoRoot, "extensions");
 const OLLAMA_URL = "http://localhost:11434";
 const MODEL = process.env.E2E_MODEL ?? "qwen2.5:1.5b";
 const POPUP_TIMEOUT_MS = 90_000;
-const SETTLE_TIMEOUT_MS = 15_000;
+const SETTLE_TIMEOUT_MS = 20_000;
 
 let spawn;
 let ptyAvailable = false;
@@ -43,7 +44,10 @@ async function preflight() {
 }
 
 function stripAnsi(s) {
-  return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").replace(/\x1b[()][0-9A-B]/g, "");
+  return s
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+    .replace(/\x1b[()][0-9A-B]/g, "")
+    .replace(/\x1b\][^\x07]*\x07/g, "");
 }
 
 async function makeAgentDir() {
@@ -76,7 +80,14 @@ async function makeProjectDir() {
 function spawnSession(agentDir, projectDir, prompt) {
   const pty = spawn(
     process.execPath,
-    [PI_CLI, "--print", "--model", `ollama/${MODEL}`, prompt],
+    [
+      PI_CLI,
+      "--extension",
+      EXTENSIONS_DIR,
+      "--model",
+      `ollama/${MODEL}`,
+      prompt,
+    ],
     {
       name: "xterm-256color",
       cols: 120,
@@ -113,9 +124,9 @@ async function waitForSettle(session, timeoutMs = SETTLE_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 400));
-    const tail = session.getPlain().slice(-4000);
-    if (/(✓|✗)/.test(tail) && !/Type something/.test(tail)) return true;
+    const tail = session.getPlain().slice(-6000);
     if (/unavailable outside interactive/i.test(tail)) return true;
+    if (!/Type something/.test(tail) && /(✓|✗)/.test(tail)) return true;
   }
   return false;
 }
@@ -153,7 +164,7 @@ describe_("ask_user E2E", {}, async () => {
       session = spawnSession(agentDir, projectDir, SINGLE_PROMPT);
       const found = await waitForPopup(session);
       if (!found) {
-        t.skip("popup not detected within timeout");
+        t.skip("popup not detected within timeout: model did not call ask_user (small local models are not deterministic)");
         return;
       }
       session.pty.write("\x1b[B");
@@ -166,7 +177,7 @@ describe_("ask_user E2E", {}, async () => {
       }
       const plain = session.getPlain();
       assert.match(plain, /✓/);
-      assert.doesNotMatch(plain.slice(-4000), /✗/);
+      assert.doesNotMatch(plain.slice(-6000), /✗/);
     } finally {
       await teardown(agentDir, projectDir, session);
     }
@@ -180,7 +191,7 @@ describe_("ask_user E2E", {}, async () => {
       session = spawnSession(agentDir, projectDir, FREEFORM_PROMPT);
       const found = await waitForPopup(session);
       if (!found) {
-        t.skip("popup not detected within timeout");
+        t.skip("popup not detected within timeout: model did not call ask_user (small local models are not deterministic)");
         return;
       }
       session.pty.write("\x1b[B\x1b[B\x1b[B\x1b[B");
@@ -210,7 +221,7 @@ describe_("ask_user E2E", {}, async () => {
       session = spawnSession(agentDir, projectDir, SINGLE_PROMPT);
       const found = await waitForPopup(session);
       if (!found) {
-        t.skip("popup not detected within timeout");
+        t.skip("popup not detected within timeout: model did not call ask_user (small local models are not deterministic)");
         return;
       }
       session.pty.write("\x1b");
@@ -234,7 +245,7 @@ describe_("ask_user E2E", {}, async () => {
       session = spawnSession(agentDir, projectDir, BATCH_PROMPT);
       const found = await waitForPopup(session);
       if (!found) {
-        t.skip("batch popup not detected within timeout");
+        t.skip("batch popup not detected within timeout: model did not emit a batch ask_user call (small local models are not deterministic)");
         return;
       }
       session.pty.write("\x1b[B\r");
@@ -246,7 +257,7 @@ describe_("ask_user E2E", {}, async () => {
       session.pty.write("\r");
       await new Promise((r) => setTimeout(r, 300));
       session.pty.write("\r");
-      const settled = await waitForSettle(session, 20_000);
+      const settled = await waitForSettle(session, 25_000);
       if (!settled) {
         t.skip("batch settle not detected within timeout");
         return;
