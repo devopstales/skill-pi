@@ -11,14 +11,10 @@ tasks:
     desc: "Install skill-pi globally (npm link) and verify"
     cmds:
       - npm ci
-      - node --test "test/*.test.js"
-      - node bin/skill-pi.js --version
       - npm link
       - 'echo "skill-pi installed: $(which skill-pi)"'
       - 'echo "agent dir: {{.AGENT_DIR}}"'
       - 'echo "work dir:  {{.WORK_DIR}}"'
-    status:
-      - 'test -x "$(which skill-pi 2>/dev/null || echo /nonexistent)"'
 
   uninstall:
     desc: "Uninstall skill-pi (--force to also wipe ~/.skill-pi)"
@@ -49,22 +45,22 @@ tasks:
       - npm pack
 
   publish:
-    desc: "Publish to npm (usage: task publish -- --dry-run | -- --access public)"
+    desc: "Publish both packages to GitHub Packages (extension first, then root)"
     deps: [test]
     cmds:
-      - npm publish {{.PUBLISH_ARGS}}
-    vars:
-      PUBLISH_ARGS:
-        sh: |
-          for a in "$@"; do
-            case "$a" in
-              --dry-run|--access) echo "$a";;
-              --access=*) echo "$a";;
-            esac
-          done
+      - cmd: npm publish
+        dir: extensions/file-search
+      - npm publish
     preconditions:
-      - test: test -n "$(npm config get //registry.npmjs.org/:_authToken 2>/dev/null)"
-        message: "No npm auth token found. Run: npm login"
+      - test: test -n "$(npm config get //npm.pkg.github.com/:password 2>/dev/null)"
+        message: "No GitHub Packages auth found. Set //npm.pkg.github.com/:password in ~/.npmrc or the repo .npmrc"
+
+  publish-dry-run:
+    desc: "Dry-run both publishes to GitHub Packages (no upload)"
+    cmds:
+      - cmd: npm publish --dry-run
+        dir: extensions/file-search
+      - npm publish --dry-run
 
   all:
     desc: "Clean, install, test"

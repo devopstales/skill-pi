@@ -1,5 +1,5 @@
 {
-  "name": "skill-pi",
+  "name": "@devopstales/skill-pi",
   "version": "0.1.0",
   "description": "A pi-based coding agent with bundled extensions, fully isolated from stock pi installs.",
   "license": "MIT",
@@ -23,9 +23,9 @@
   ],
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
-    "@effect/platform-node": "4.0.0-beta.101",
-    "@effect/platform-node-shared": "4.0.0-beta.101",
-    "effect": "4.0.0-beta.101"
+    "@effect/platform-node": "^4.0.4",
+    "@effect/platform-node-shared": "^4.0.4",
+    "effect": "^4.0.4"
   },
   "scripts": {
     "test": "node --test test/*.test.js"

@@ -33,16 +33,17 @@ How the two hard requirements work:
    Your project's own `.pi/` directory is never used. Use `--no-shim` to run pi directly
    in the project (shares its `.pi/`) or `SKILL_PI_WORK_DIR` to relocate shim dirs.
 
-3. **Bundled extensions always load** — the wrapper passes
-   `--extension <skill-pi>/extensions <agent-dir>/extensions`. The `extensions/` dir
-   declares its entries in a `pi.extensions` manifest in its own `package.json` (the same
-   manifest shape omegon-pi uses), so pi resolves and loads exactly the listed bundled
-   extensions on every launch regardless of what the user has installed elsewhere.
+3. **Bundled extensions always load** — the wrapper enumerates `<skill-pi>/extensions`
+   and `~/.skill-pi/agent/extensions/` itself (top-level `*.ts`/`*.js` plus subdirectory
+   `index.ts`/`index.js`) and passes each file as an explicit `--extension` flag to pi.
+   It also passes `--no-extensions`, which suppresses pi's package-scope discovery
+   (settings packages and auto-discovered dirs) so nothing the user installed elsewhere
+   leaks in — while the explicit `--extension` flags above still load.
 
 ## Install
 
 ```sh
-npm install -g skill-pi
+npm install -g @devopstales/skill-pi
 ```
 
 ## First run
@@ -84,24 +85,25 @@ skill-pi/
 ## Adding your own extensions
 
 User-level (all projects): drop TypeScript extensions into `~/.skill-pi/agent/extensions/`.
-Bundled (shipped with the package): add the file to `extensions/` and list it in the
-`pi.extensions` array in `extensions/package.json` — it loads for every `skill-pi`
-invocation.
+Bundled (shipped with the package): add the file to `extensions/` (or a subdirectory with
+an `index.ts`) — the wrapper discovers it on the next launch; no manifest or registration
+step.
 
 Currently bundled:
 
 - **`skill-pi-banner`** — a `session_start` notification confirming the isolated session.
 - **`file-search`** — first-class `fd` (find files) and `rg` (search content) tools. On
   session start it resolves a usable binary per tool: a system `fd`/`fdfind`/`rg` is
-  preferred silently, then a fallback in the package root `bin/` (silently), and only when
+  preferred silently, then a fallback in the package `bin/` (silently), and only when
   neither exists does it download an official release into `bin/` (the one case that
-  notifies). Inspired by the `file-search` extension in
-  [davis7dotsh/my-pi-setup](https://github.com/davis7dotsh/my-pi-setup) (MIT).
+  notifies). Also published standalone as
+  [`@devopstales/pi-file-search`](https://github.com/devopstales/skill-pi/tree/main/extensions/file-search)
+  for pi users outside skill-pi.
 
 ## Upgrading
 
 `skill-pi` depends on `@earendil-works/pi-coding-agent` through normal npm semver.
-`npm install -g skill-pi@latest` updates the wrapper *and* the pi version in one step.
+`npm install -g @devopstales/skill-pi@latest` updates the wrapper *and* the pi version in one step.
 There is no `pi update` interaction: the two installs are independent packages.
 
 ## Limitations
