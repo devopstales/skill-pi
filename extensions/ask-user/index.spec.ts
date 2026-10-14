@@ -604,6 +604,17 @@ it("[Prompt guidelines steer the model to focused questions] snippet and guideli
   assert.match(guidelines, /multiSelect/i);
 });
 
+it("[Recommendation convention steers the model] guidelines and description carry the recommended-option convention", () => {
+  const { tool } = makePi();
+  const guidelines = tool.promptGuidelines.join("\n");
+  assert.match(guidelines, /recommend/i);
+  assert.match(guidelines, /first option/i);
+  assert.match(guidelines, /\(Recommended\)/);
+  assert.match(tool.description, /recommend/i);
+  assert.match(tool.description, /first option/i);
+  assert.match(tool.description, /\(Recommended\)/);
+});
+
 });
 
 function makeTuiCtx() {

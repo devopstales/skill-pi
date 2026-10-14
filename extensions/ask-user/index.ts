@@ -55,6 +55,7 @@ export const ASK_PROMPT_GUIDELINES = [
   "Use the `questions` batch (2–4 questions) only for independent decisions that can be answered in order; each batch question still needs 2–5 options.",
   "Set `multiSelect: true` when the user may pick more than one option; otherwise options are single-choice.",
   "Freeform answers are offered automatically unless `allowFreeform` is false.",
+  "If you recommend a specific option, make it the first option and append (Recommended) to its label.",
 ];
 
 function askUserParams() {
@@ -695,7 +696,7 @@ export default function askUserExtension(pi: ExtensionAPI) {
     name: "ask_user",
     label: "Ask User",
     description:
-      "Pause and ask the user a focused decision question with 2–5 options (single choice or multi-select), optionally with a freeform answer, or a batch of 2–4 independent questions. The user's answer comes back as a structured result; a cancelled prompt returns cancelled=true.",
+      "Pause and ask the user a focused decision question with 2–5 options (single choice or multi-select), optionally with a freeform answer, or a batch of 2–4 independent questions. The user's answer comes back as a structured result; a cancelled prompt returns cancelled=true. If you recommend a specific option, make it the first option in the list and add (Recommended) at the end of the label.",
     promptSnippet: ASK_PROMPT_SNIPPET,
     promptGuidelines: ASK_PROMPT_GUIDELINES,
     parameters: askUserParams(),
