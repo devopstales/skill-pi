@@ -4,7 +4,7 @@ pipeline:
   current_change: "2026-10-14-skill-pi-tui-sidebar"
   status: in_progress
 progress:
-  completed_changes: 1
+  completed_changes: 2
   blocked_changes: 0
 constraints_ref: .skillgrid/ASSUMPTIONS.md
-notes: "Current: 2026-10-14-skill-pi-tui-sidebar at blueprint gate. In-flight: 2026-10-14-permission-extension at slicing gate. Parked: 2026-10-14-unified-providers at blueprint gate. Completed: 2026-10-13-ask-user (merged to main)."
+notes: "Current: 2026-10-14-skill-pi-tui-sidebar at blueprint gate. In-flight: 2026-10-14-permission-extension at slicing gate. Parked: 2026-10-14-unified-providers at blueprint gate. Completed: 2026-10-13-ask-user (shipped, archived), 2026-10-13-package-naming (shipped, archived)."
