@@ -20,17 +20,18 @@ State: `.skillgrid/state.yaml` (dynamic) — where the project is right now (pha
 | Specs (briefing, blueprint, tasks) | `.skillgrid/specs/` |
 | Execution ledger | `.skillgrid/sdd/` (gitignored) |
 
-**Domain model:** read the vocabulary + ADRs under `.skillgrid/artifacts/` (index: `README.md`) and `.skillgrid/ASSUMPTIONS.md` (§ LOCKED) before designing or implementing.
+**Domain model:** read the vocabulary + ADRs under `.skillgrid/artifacts/` (index: `README.md`) before designing or implementing.
 
 **Rules & standards:** operational rules are owned by this file's `### Rules` section (the real source — edit there). Shared standards are referenced, never inlined — each loads via the skills that apply it.
 
-- **Dependency policy** — Production deps: `@earendil-works/pi-coding-agent` + bundled-extension runtime deps (`@pierre/*`, `web-tree-sitter`, `tree-sitter-bash`); dev deps for tests only.
 - **Coding conventions** — reference `.agents/skills/_shared/rules/code-standards.md` for detailed coding conventions.
 - **Testing conventions** — reference `.agents/skills/_shared/references/strict-tdd.md` for the TDD cycle and testing conventions.
 - **Commits & verification** — reference `.agents/skills/_shared/rules/commits.md` for the commit contract, `.agents/skills/_shared/rules/verification-ladder.md` for the verification ladder, and `.agents/skills/_shared/planning/rigor-tiers.md` for rigor tiers.
 - **Memory, code index & web cache** — reference the `skillgrid:mnemonic` skill (shared rules: `.agents/skills/_shared/rules/mnemonic-memory.md`, `.agents/skills/_shared/rules/mnemonic-artifacts.md`, `.agents/skills/_shared/rules/mnemonic-code-indexing.md`).
 
 ### Rules
+
+*Operational rules only — the real source of truth is this section (edit here). Design decisions do not live here; they are ADRs in `.skillgrid/ASSUMPTIONS.md` § `LOCKED` → `.skillgrid/artifacts/04-adr-NNNN-slug.md`.*
 
 - No comments in code unless asked.
 - Keep changes minimal and scoped.
@@ -40,7 +41,7 @@ State: `.skillgrid/state.yaml` (dynamic) — where the project is right now (pha
 
 ### Issue Tracker
 
-GitHub — reference `.agents/skills/_shared/rules/ticketing/github.md` for conventions.
+Backlog.md — reference `.agents/skills/_shared/rules/ticketing/` (backlogmd, github, gitlab, jira CLI + formatting standards) for ticketing conventions.
 
 ### Memory
 
