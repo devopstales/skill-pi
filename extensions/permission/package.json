@@ -1,0 +1,24 @@
+{
+  "name": "permission",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Opencode-style permission gate for pi tool calls (allow/deny/ask/always rules, conf.d persistence). Runtime deps (@pierre/diffs, @pierre/theme, web-tree-sitter, tree-sitter-bash) resolve from the skill-pi root node_modules; the deps/devDeps below are the standalone toolchain (check/test) and are not installed by skill-pi.",
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@pierre/diffs": "^1.1.15",
+    "@pierre/theme": "^0.0.29",
+    "tree-sitter-bash": "^0.25.1",
+    "web-tree-sitter": "^0.26.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

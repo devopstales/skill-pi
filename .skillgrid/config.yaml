@@ -71,7 +71,7 @@ agents:
     - "The wrapper only sets PI_CODING_AGENT_DIR; never set PI_PACKAGE_DIR"
   dependency_policies:
     - "Thin wrapper only — no fork of pi; pi behavior changes come via npm semver"
-    - "Production deps: @earendil-works/pi-coding-agent only; dev deps for tests only"
+    - "Production deps: @earendil-works/pi-coding-agent + bundled-extension runtime deps (@pierre/*, web-tree-sitter, tree-sitter-bash); dev deps for tests only"
   architecture_constraints:
     - "No comments in code unless asked"
     - "Keep changes minimal and scoped"

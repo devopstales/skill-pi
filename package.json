@@ -25,7 +25,11 @@
     "@earendil-works/pi-coding-agent": "^1.2.0",
     "@effect/platform-node": "^4.0.4",
     "@effect/platform-node-shared": "^4.0.4",
-    "effect": "^4.0.4"
+    "@pierre/diffs": "^1.1.15",
+    "@pierre/theme": "^0.0.29",
+    "effect": "^4.0.4",
+    "tree-sitter-bash": "^0.25.1",
+    "web-tree-sitter": "^0.26.8"
   },
   "scripts": {
     "test": "node --test test/*.test.js"

@@ -99,6 +99,11 @@ Currently bundled:
   notifies). Also published standalone as
   [`@devopstales/pi-file-search`](https://github.com/devopstales/skill-pi/tree/main/extensions/file-search)
   for pi users outside skill-pi.
+- **`permission`** — an opencode-style permission gate for tool calls: allow/deny/ask
+  rules resolved per call (strictest wins, bash commands AST-parsed), an interactive
+  allow/reject prompt with an `edit`/`write` diff review, `Allow always` rules persisted
+  to `conf.d/permission.conf`, and a `/permission-toggle-auto-accept` auto-accept toggle
+  (status line reflects on/off; optional `keybindings.autoAcceptEdits` shortcut).
 
 ## Upgrading
 
