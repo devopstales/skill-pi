@@ -61,6 +61,9 @@ test("pi help output is branded skill-pi (loader hooks active)", () => {
   const home = mkdtempSync(join(tmpdir(), "skillpi-hint-home-"));
   const r = run(["/tmp", "--", "--help"], { HOME: home });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /^skill-pi - AI coding assistant/m);
+  // Mid-line anchors (no `^`): pi may emit ANSI style codes before "skill-pi"
+  // depending on TTY state, which would defeat a line-start match. The intent
+  // is "brand is skill-pi, not pi", which these patterns still enforce.
+  assert.match(r.stdout, /skill-pi - AI coding assistant/);
   assert.doesNotMatch(r.stdout, /^pi - AI coding assistant/m);
 });
