@@ -253,6 +253,80 @@ test("[Single question freeform returns structured details] empty freeform input
   assert.match(text(result), /declined/);
 });
 
+test("[Batch of two returns index-aligned answers] answers in asked order", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, inputQueue } = makeCtx();
+  selectQueue.push("opt1", "✎ Type something…");
+  inputQueue.push("custom");
+  const result = await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["opt1", "opt2"] },
+        { question: "Q2?", options: ["x", "y"] },
+      ],
+    },
+    ctx,
+  );
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(result.details, {
+    kind: "batch",
+    questions: [
+      { question: "Q1?", options: ["opt1", "opt2"] },
+      { question: "Q2?", options: ["x", "y"] },
+    ],
+    answers: [
+      { kind: "selection", selections: ["opt1"] },
+      { kind: "freeform", text: "custom" },
+    ],
+    cancelled: false,
+  });
+});
+
+test("[Cancelling any batch question cancels the whole batch] second question cancelled", async () => {
+  const { tool } = makePi();
+  const { ctx, selectQueue, calls } = makeCtx();
+  selectQueue.push("opt1", undefined);
+  const result = await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["opt1", "opt2"] },
+        { question: "Q2?", options: ["x", "y"] },
+      ],
+    },
+    ctx,
+  );
+  assert.equal(calls.select.length, 2);
+  assert.deepEqual(result.details, {
+    kind: "batch",
+    questions: [
+      { question: "Q1?", options: ["opt1", "opt2"] },
+      { question: "Q2?", options: ["x", "y"] },
+    ],
+    answers: null,
+    cancelled: true,
+  });
+  assert.match(text(result), /declined/);
+});
+
+test("batch validation rejects out-of-bounds options on any question", async () => {
+  const { tool } = makePi();
+  const { ctx } = makeCtx();
+  const result = await execute(
+    tool,
+    {
+      questions: [
+        { question: "Q1?", options: ["opt1", "opt2"] },
+        { question: "Q2?", options: ["x"] },
+      ],
+    },
+    ctx,
+  );
+  assert.equal(result.isError, true);
+  assert.equal(text(result), "ask_user: each question needs 2–5 options, got 1");
+});
+
 test("[Multi-select commits the explicit selection on Done] commits only the toggled set", async () => {
   const { tool } = makePi();
   const { ctx, selectQueue, calls } = makeCtx();

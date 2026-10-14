@@ -254,6 +254,44 @@ export async function askMultiSelectViaRpc(
   return null;
 }
 
+export async function askBatchViaRpc(
+  questions: AskQuestion[],
+  ctx: ExtensionToolContext,
+): Promise<{ answers: (AskSelection | AskFreeform)[] | null; question: AskQuestion }> {
+  const answers: (AskSelection | AskFreeform)[] = [];
+  for (const q of questions) {
+    const answer = q.multiSelect
+      ? await askMultiSelectViaRpc(q, ctx)
+      : await askSingleViaRpc(q, ctx);
+    if (answer === null) return { answers: null, question: q };
+    answers.push(answer);
+  }
+  return { answers, question: questions[questions.length - 1] };
+}
+
+export function batchResult(questions: AskQuestion[], outcome: { answers: (AskSelection | AskFreeform)[] | null; question: AskQuestion }): AgentToolResult<AskBatchDetails> {
+  const details: AskBatchDetails = {
+    kind: "batch",
+    questions,
+    answers: outcome.answers,
+    cancelled: outcome.answers === null,
+  };
+  return {
+    content: [
+      {
+        type: "text",
+        text:
+          outcome.answers === null
+            ? `The user declined at "${outcome.question.question}"; the whole batch was cancelled, so proceed without these decisions.`
+            : `Batch answered: ${outcome.answers
+                .map((a) => (a.kind === "freeform" ? a.text : a.selections.join(", ")))
+                .join("; ")}`,
+      },
+    ],
+    details,
+  };
+}
+
 export function singleResult(q: AskQuestion, answer: AskSelection | AskFreeform | null): AgentToolResult<AskSingleDetails> {
   const details: AskSingleDetails = {
     question: q.question,
@@ -296,6 +334,10 @@ export default function askUserExtension(pi: ExtensionAPI) {
     ): Promise<AgentToolResult<AskDetails>> {
       const error = validateParams(params);
       if (error) return validationError(error);
+      if (params.questions) {
+        const outcome = await askBatchViaRpc(params.questions, _ctx);
+        return batchResult(params.questions, outcome);
+      }
       const q: AskQuestion = {
         question: params.question!,
         options: params.options!,
