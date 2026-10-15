@@ -123,6 +123,28 @@ Currently bundled:
   Published standalone as
   [`@devopstales/pi-todo`](https://github.com/devopstales/skill-pi/tree/main/extensions/todo).
 
+## Choosing a model
+
+Pi's model selector has two distinct actions:
+
+| Key | What it does | Persists across launches? |
+|---|---|---|
+| **Enter** | Switch the current session's model | No — session-only |
+| **ctrl+s** (`app.models.save`) | Switch model **and** save as default | Yes — writes `defaultProvider` + `defaultModel` to `~/.skill-pi/agent/settings.json` |
+
+The `/model <name>` command always uses the session-only path (`persist: false`).
+
+If your model change "reverts" on the next launch, you pressed Enter. Press **ctrl+s** in the selector instead. The status line confirms: `Default model: <provider>/<model>` (persisted) vs `Model: <model>` (session-only).
+
+### Settings.json quarantine
+
+On every launch, `skill-pi` validates `~/.skill-pi/agent/settings.json` against pi's own
+`SettingsSchema`. If the file is unparseable or schema-invalid, it is copied to
+`settings.json.bak` and reseeded with defaults. This guards against a class of silent
+failure where pi's `SettingsManager` sets `globalSettingsLoadError` at startup and then
+skips every subsequent settings write (including model-default persistence), with no
+visible error in the TUI.
+
 ## Upgrading
 
 `skill-pi` depends on `@earendil-works/pi-coding-agent` through normal npm semver.
