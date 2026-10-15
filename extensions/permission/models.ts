@@ -29,6 +29,11 @@ export interface DerivedSkillAllowState {
   sources: SkillAllowSource[];
 }
 
+export interface DerivedExtensionAllowState {
+  cacheKey: string;
+  tools: string[];
+}
+
 export interface RuntimeSessionState {
   modeOverrides: Map<string, Mode>;
   approvalRules: Set<string>;

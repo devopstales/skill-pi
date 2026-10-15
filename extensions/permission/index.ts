@@ -7,11 +7,19 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   type SlashCommandInfo,
+  type ToolInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 
 import { STATUS_REJECTED } from "./constants.js";
-import type { DerivedSkillAllowState, Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "./models.js";
+import type {
+  DerivedExtensionAllowState,
+  DerivedSkillAllowState,
+  Mode,
+  ParsedRule,
+  PermissionSettings,
+  RuntimeSessionState,
+} from "./models.js";
 import { extractBashCommands } from "./bash-parser.js";
 import { loadExtensionSettings, resolveProjectRoot } from "./project.js";
 import { handleToolCallPermission, persistApprovalRules } from "./tool-call.js";
@@ -28,6 +36,7 @@ type LocalSkillCommandInfo = SlashCommandInfo & { source: "skill" };
 const LOCAL_SKILL_SCOPES = new Set<LocalSkillScope>(["user", "project"]);
 
 let cachedDerivedSkillAllowState: DerivedSkillAllowState | undefined;
+let cachedDerivedExtensionAllowState: DerivedExtensionAllowState | undefined;
 
 export default function (pi: ExtensionAPI) {
   const initSettings = loadSettings(process.cwd());
@@ -54,12 +63,14 @@ export default function (pi: ExtensionAPI) {
       const overrides = Object.fromEntries(sessionState.modeOverrides);
       const sessionApprovedRules = Array.from(sessionState.approvalRules);
       const effectiveSettings = mergeSessionApprovalRules(persistedSettings, sessionApprovedRules);
+      const derivedExtensionAllowState = getDerivedExtensionAllowState(pi);
       const output = JSON.stringify(
         {
           settings: persistedSettings,
           effectiveSettings,
           derivedSkillAllowRules: derivedSkillAllowState.rules,
           skillRuleSources: derivedSkillAllowState.sources,
+          derivedExtensionAllowTools: derivedExtensionAllowState.tools,
           sessionApprovedRules,
           sessionOverrides: overrides,
         },
@@ -77,9 +88,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const sessionState = getSessionState(ctx);
     const derivedSkillAllowState = getDerivedSkillAllowState(pi);
+    const derivedExtensionAllowState = getDerivedExtensionAllowState(pi);
     const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules);
     const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>) ?? "";
-    const mode = await resolveMode(settings, event.toolName, argValue, sessionState);
+    const mode = await resolveMode(settings, event.toolName, argValue, sessionState, derivedExtensionAllowState);
 
     if (mode === "allow") {
       return undefined;
@@ -169,6 +181,39 @@ function buildSkillAllowCacheKey(skills: LocalSkillCommandInfo[]): string {
 
 function isLocalSkillCommand(command: SlashCommandInfo): command is LocalSkillCommandInfo {
   return command.source === "skill" && LOCAL_SKILL_SCOPES.has(command.sourceInfo.scope);
+}
+
+function isSyntheticToolPath(pathValue: string): boolean {
+  return !pathValue.startsWith("/");
+}
+
+function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
+  return tools
+    .map((tool) => `${tool.name}:${tool.sourceInfo.path}:${tool.namespace?.name ?? ""}`)
+    .sort()
+    .join("\n");
+}
+
+export function getDerivedExtensionAllowState(pi: ExtensionAPI): DerivedExtensionAllowState {
+  const tools = pi
+    .getAllTools()
+    .filter((tool) => !tool.namespace && !isSyntheticToolPath(tool.sourceInfo.path))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const cacheKey = buildExtensionAllowCacheKey(tools);
+  if (cachedDerivedExtensionAllowState && cachedDerivedExtensionAllowState.cacheKey === cacheKey) {
+    return cachedDerivedExtensionAllowState;
+  }
+
+  cachedDerivedExtensionAllowState = {
+    cacheKey,
+    tools: [...new Set(tools.map((tool) => tool.name))],
+  };
+  return cachedDerivedExtensionAllowState;
+}
+
+export function resetDerivedExtensionAllowStateCacheForTest(): void {
+  cachedDerivedExtensionAllowState = undefined;
 }
 
 export function getDerivedSkillAllowState(pi: ExtensionAPI): DerivedSkillAllowState {
@@ -364,6 +409,7 @@ export function resolveSingleMode(
   toolName: string,
   argValue: string,
   sessionState: RuntimeSessionState,
+  extensionAllow: DerivedExtensionAllowState = { cacheKey: "", tools: [] },
 ): Mode {
   const override = sessionState.modeOverrides.get(toolName);
   if (override) return override;
@@ -381,6 +427,8 @@ export function resolveSingleMode(
   if (ASK_BY_DEFAULT.has(toolName)) return "ask";
   if (ALLOW_BY_DEFAULT.has(toolName)) return "allow";
 
+  if (extensionAllow.tools.includes(toolName)) return "allow";
+
   return "ask";
 }
 
@@ -389,9 +437,10 @@ export async function resolveMode(
   toolName: string,
   argValue: string,
   sessionState: RuntimeSessionState,
+  extensionAllow: DerivedExtensionAllowState = { cacheKey: "", tools: [] },
 ): Promise<Mode> {
   if (toolName !== "bash" || !argValue) {
-    return resolveSingleMode(settings, toolName, argValue, sessionState);
+    return resolveSingleMode(settings, toolName, argValue, sessionState, extensionAllow);
   }
 
   const commands = await extractBashCommands(argValue);
@@ -400,7 +449,7 @@ export async function resolveMode(
   let worst: Mode = "allow";
 
   for (const command of commands) {
-    const mode = resolveSingleMode(settings, toolName, command.text, sessionState);
+    const mode = resolveSingleMode(settings, toolName, command.text, sessionState, extensionAllow);
     if (mode === "deny") return "deny";
     if (mode === "ask") worst = "ask";
   }
