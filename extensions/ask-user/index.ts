@@ -5,7 +5,61 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Text, parseKey } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { validateParams, type AskQuestion } from "./validate.ts";
+
+export interface AskOption {
+  label: string;
+  description: string;
+}
+
+export type AskOptionInput = string | AskOption;
+
+interface AskQuestion {
+  question: string;
+  options: string[];
+  descriptions?: string[];
+  multiSelect?: boolean;
+  allowFreeform?: boolean;
+}
+
+interface AskUserParams {
+  question?: string;
+  questions?: RawQuestion[];
+  options?: AskOptionInput[];
+  multiSelect?: boolean;
+  allowFreeform?: boolean;
+}
+
+interface RawQuestion {
+  question: string;
+  options: AskOptionInput[];
+  multiSelect?: boolean;
+  allowFreeform?: boolean;
+}
+
+function toQuestion(raw: RawQuestion): AskQuestion {
+  const options: string[] = [];
+  const descriptions: string[] = [];
+  for (const opt of raw.options ?? []) {
+    if (typeof opt === "string") {
+      options.push(opt);
+      descriptions.push("");
+    } else {
+      options.push(opt.label);
+      descriptions.push(opt.description);
+    }
+  }
+  return {
+    question: raw.question,
+    options,
+    descriptions,
+    multiSelect: raw.multiSelect,
+    allowFreeform: raw.allowFreeform,
+  };
+}
+
+function toQuestions(raw: RawQuestion[]): AskQuestion[] {
+  return raw.map(toQuestion);
+}
 
 export interface AskSelection {
   kind: "selection";
@@ -21,6 +75,7 @@ export interface AskSingleDetails {
   question: string;
   options: string[];
   answer: AskSelection | AskFreeform | null;
+  note?: string;
   cancelled: boolean;
 }
 
@@ -28,6 +83,8 @@ export interface AskBatchDetails {
   kind: "batch";
   questions: AskQuestion[];
   answers: (AskSelection | AskFreeform)[] | null;
+  notes?: (string | undefined)[];
+  globalNote?: string;
   cancelled: boolean;
 }
 
@@ -41,6 +98,7 @@ export const ASK_PROMPT_GUIDELINES = [
   "Use the `questions` batch (2–4 questions) only for independent decisions that can be answered in order; each batch question still needs 2–5 options.",
   "Set `multiSelect: true` when the user may pick more than one option; otherwise options are single-choice.",
   "Freeform answers are offered automatically unless `allowFreeform` is false.",
+  "If you recommend a specific option, make it the first option and append (Recommended) to its label.",
 ];
 
 function askUserParams() {
@@ -91,6 +149,50 @@ function askUserParams() {
 }
 
 export type AskUserParamsSchema = ReturnType<typeof askUserParams>;
+
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = 5;
+const MIN_BATCH = 2;
+const MAX_BATCH = 4;
+
+function validateOptions(options: AskOptionInput[] | undefined): string | undefined {
+  const count = options?.length ?? 0;
+  if (count < MIN_OPTIONS || count > MAX_OPTIONS) {
+    return `ask_user: each question needs ${MIN_OPTIONS}–${MAX_OPTIONS} options, got ${count}`;
+  }
+  for (const opt of options ?? []) {
+    if (typeof opt === "string") continue;
+    if (typeof opt.label !== "string" || opt.label.length === 0) {
+      return "ask_user: each option needs a string label";
+    }
+    if (typeof opt.description !== "string" || opt.description.length === 0) {
+      return `ask_user: option ${opt.label} needs a non-empty description`;
+    }
+  }
+  return undefined;
+}
+
+function validateParams(params: AskUserParams): string | undefined {
+  const single = params.question !== undefined;
+  const batch = params.questions !== undefined;
+  if (single && batch) {
+    return "ask_user: provide exactly one of `question` or `questions`, not both";
+  }
+  if (!single && !batch) {
+    return "ask_user: provide `question` (single) or `questions` (batch), one of the two is required";
+  }
+  if (batch) {
+    if (params.questions!.length < MIN_BATCH || params.questions!.length > MAX_BATCH) {
+      return `ask_user: a batch needs ${MIN_BATCH}–${MAX_BATCH} questions, got ${params.questions!.length}`;
+    }
+    for (const q of params.questions!) {
+      const error = validateOptions(q.options);
+      if (error) return error;
+    }
+    return undefined;
+  }
+  return validateOptions(params.options);
+}
 
 function validationError(message: string): AgentToolResult<AskDetails> {
   return {
@@ -302,6 +404,8 @@ export function batchUnavailable(questions: AskQuestion[]): AgentToolResult<AskB
 export interface AskPopupOutput {
   cancelled: boolean;
   answers: (AskSelection | AskFreeform | null)[];
+  notes: (string | null)[];
+  globalNote: string | null;
 }
 
 type AskPopupMode = "options" | "freeform";
@@ -312,14 +416,18 @@ export class AskTuiPopup {
   private mode: AskPopupMode = "options";
   private focus = 0;
   private text = "";
+  private note = "";
   private toggled = new Set<string>();
   private answered: (AskSelection | AskFreeform | null)[];
+  private notes: (string | null)[];
+  private globalNote: string | null = null;
   private warned = false;
   private finished = false;
 
   constructor(questions: AskQuestion[]) {
     this.questions = questions;
     this.answered = questions.map(() => null);
+    this.notes = questions.map(() => null);
   }
 
   render(width: number): string[] {
@@ -365,6 +473,7 @@ export class AskTuiPopup {
   handleInput(key: string): void {
     if (this.finished) return;
     if (this.mode === "freeform") return this.handleEditorInput(key);
+    if (this.mode === "note") return this.handleNoteInput(key);
     if (key === "escape") {
       this.finished = true;
       return;
@@ -385,6 +494,8 @@ export class AskTuiPopup {
     return {
       cancelled: false,
       answers: [...this.answered],
+      notes: [...this.notes],
+      globalNote: this.globalNote,
     };
   }
 
@@ -644,18 +755,11 @@ export function askTuiOutcome(
 
 export default function askUserExtension(pi: ExtensionAPI) {
   const emit: EmitFn = (channel, data) => pi.events.emit(channel, data);
-  const emitAnswer = (question: string, answer: AskSelection | AskFreeform | null) => {
-    if (answer === null) {
-      emit("ask:cancelled", { question });
-    } else {
-      emit("ask:answered", { question, kind: answer.kind });
-    }
-  };
   pi.registerTool<AskUserParamsSchema, AskDetails>({
     name: "ask_user",
     label: "Ask User",
     description:
-      "Pause and ask the user a focused decision question with 2–5 options (single choice or multi-select), optionally with a freeform answer, or a batch of 2–4 independent questions. The user's answer comes back as a structured result; a cancelled prompt returns cancelled=true.",
+      "Pause and ask the user a focused decision question with 2–5 options (single choice or multi-select), optionally with a freeform answer, or a batch of 2–4 independent questions. The user's answer comes back as a structured result; a cancelled prompt returns cancelled=true. If you recommend a specific option, make it the first option in the list and add (Recommended) at the end of the label.",
     promptSnippet: ASK_PROMPT_SNIPPET,
     promptGuidelines: ASK_PROMPT_GUIDELINES,
     parameters: askUserParams(),
@@ -670,56 +774,65 @@ export default function askUserExtension(pi: ExtensionAPI) {
       const error = validateParams(params);
       if (error) return validationError(error);
       if (params.questions) {
+        const questions = toQuestions(params.questions);
         if (_ctx.mode === "tui" && _ctx.hasUI) {
-          const output = await askTuiOutcome(params.questions, _ctx);
+          const output = await askTuiOutcome(questions, _ctx);
           if (output.cancelled) {
-            emit("ask:cancelled", { question: params.questions[params.questions.length - 1].question });
-            return batchResult(params.questions, {
+            emit("ask:cancelled", { question: questions[questions.length - 1].question });
+            return batchResult(questions, {
               answers: null,
-              question: params.questions[params.questions.length - 1],
+              question: questions[questions.length - 1],
               answered: [],
+              globalNote: output.globalNote ?? undefined,
             });
           }
-          for (let i = 0; i < params.questions.length; i++) {
+          for (let i = 0; i < questions.length; i++) {
             const answer = output.answers[i];
             if (answer !== null) {
               emit("ask:answered", {
-                question: params.questions[i].question,
+                question: questions[i].question,
                 kind: answer.kind,
               });
             }
           }
-          return batchResult(params.questions, {
+          return batchResult(questions, {
             answers: output.answers.map((a) => a ?? ({ kind: "freeform", text: "(skipped)" })),
-            question: params.questions[params.questions.length - 1],
+            question: questions[questions.length - 1],
+            notes: output.notes.map((n) => n ?? undefined),
+            globalNote: output.globalNote ?? undefined,
             answered: output.answers.map((answer, i) =>
-              answer === null ? null : { question: params.questions[i], answer },
+              answer === null ? null : { question: questions[i], answer },
             ).filter((a): a is { question: AskQuestion; answer: AskSelection | AskFreeform } => a !== null),
           });
         }
         if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
-          return batchUnavailable(params.questions);
+          return batchUnavailable(questions);
         }
-        const outcome = await askBatchViaRpc(params.questions, _ctx);
+        const outcome = await askBatchViaRpc(questions, _ctx);
         for (const { question, answer } of outcome.answered) {
           emit("ask:answered", { question: question.question, kind: answer.kind });
         }
         if (outcome.answers === null) {
           emit("ask:cancelled", { question: outcome.question.question });
         }
-        return batchResult(params.questions, outcome);
+        return batchResult(questions, outcome);
       }
-      const q: AskQuestion = {
+      const rawSingle: RawQuestion = {
         question: params.question!,
-        options: params.options!,
+        options: params.options ?? [],
         multiSelect: params.multiSelect,
         allowFreeform: params.allowFreeform,
       };
+      const q = toQuestion(rawSingle);
       if (_ctx.mode === "tui" && _ctx.hasUI) {
         const output = await askTuiOutcome([q], _ctx);
         const answer = output.cancelled ? null : output.answers[0] ?? null;
-        emitAnswer(q.question, answer);
-        return singleResult(q, answer);
+        if (answer === null) {
+          emit("ask:cancelled", { question: q.question });
+        } else {
+          emit("ask:answered", { question: q.question, kind: answer.kind });
+        }
+        return singleResult(q, answer, output.notes[0] ?? undefined);
       }
       if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
         return singleUnavailable(q);
@@ -727,7 +840,11 @@ export default function askUserExtension(pi: ExtensionAPI) {
       const answer = q.multiSelect
         ? await askMultiSelectViaRpc(q, _ctx)
         : await askSingleViaRpc(q, _ctx);
-      emitAnswer(q.question, answer);
+      if (answer === null) {
+        emit("ask:cancelled", { question: q.question });
+      } else {
+        emit("ask:answered", { question: q.question, kind: answer.kind });
+      }
       return singleResult(q, answer);
     },
 

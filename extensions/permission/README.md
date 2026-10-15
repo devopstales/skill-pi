@@ -29,7 +29,7 @@ Additional guards:
 
 ## Config
 
-Rules live in `<project>/.skill-pi/conf.d/permission.conf` (project) and `~/.skill-pi/conf.d/permission.conf` (user). "Allow always" persists to the user-level file. Schema:
+Rules live in `<project>/.skill-pi/conf.d/permission.conf` (project) and `~/.skill-pi/conf.d/permission.conf` (user). Schema:
 
 ```json
 {

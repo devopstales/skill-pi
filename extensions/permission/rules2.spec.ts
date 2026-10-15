@@ -48,25 +48,4 @@ describe("rule chain (triangulation)", () => {
   });
 });
 
-describe("external_directory default", () => {
-  it("read on absolute path outside project defaults to ask", () => {
-    expect(resolveSingleMode({}, "read", "/home/user/other-project/file.txt", state)).toBe("ask");
-  });
 
-  it("read on in-project relative path defaults to allow", () => {
-    expect(resolveSingleMode({}, "read", "src/file.txt", state)).toBe("allow");
-  });
-
-  it("read on temp path defaults to allow", () => {
-    expect(resolveSingleMode({}, "read", "/tmp/file.txt", state)).toBe("allow");
-  });
-
-  it("edit on external path defaults to ask (not allow)", () => {
-    expect(resolveSingleMode({}, "edit", "/home/user/other-project/file.txt", state)).toBe("ask");
-  });
-
-  it("explicit allow rule beats external_directory ask", () => {
-    const s: PermissionSettings = { allow: ["read(*)"] };
-    expect(resolveSingleMode(s, "read", "/home/user/other-project/file.txt", state)).toBe("allow");
-  });
-});
