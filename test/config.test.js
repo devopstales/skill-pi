@@ -14,9 +14,9 @@ test("agentDirFor honors SKILL_PI_AGENT_DIR", () => {
   delete process.env.SKILL_PI_AGENT_DIR;
 });
 
-test("ensureAgentDir seeds settings, auth, and subdirs", () => {
+test("ensureAgentDir seeds settings, auth, and subdirs", async () => {
   const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-"));
-  ensureAgentDir(dir);
+  await ensureAgentDir(dir);
   assert.ok(existsSync(join(dir, "settings.json")));
   assert.ok(existsSync(join(dir, "auth.json")));
   assert.ok(existsSync(join(dir, "sessions")));
@@ -25,9 +25,9 @@ test("ensureAgentDir seeds settings, auth, and subdirs", () => {
   assert.ok(existsSync(join(dir, "bin")));
 });
 
-test("ensureAgentDir seeds an empty packages array into settings", () => {
+test("ensureAgentDir seeds an empty packages array into settings", async () => {
   const dir = mkdtempSync(join(tmpdir(), "skillpi-seed-pkgs-"));
-  ensureAgentDir(dir);
+  await ensureAgentDir(dir);
   const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"));
   assert.ok(Array.isArray(settings.packages), "fresh settings must have a packages array");
   assert.equal(settings.packages.length, 0, "no default provider packages are seeded");
@@ -55,14 +55,65 @@ test("seedDefaultPackages leaves existing settings file untouched when complete"
   assert.equal(readFileSync(settingsPath, "utf8"), before, "no rewrite when already complete");
 });
 
-test("ensureAgentDir does not overwrite existing settings", () => {
+test("ensureAgentDir does not overwrite existing settings", async () => {
   const dir = mkdtempSync(join(tmpdir(), "skillpi-seed2-"));
   writeFileSync(join(dir, "settings.json"), '{"quietStartup": false}');
-  ensureAgentDir(dir);
+  await ensureAgentDir(dir);
   assert.equal(
     JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).quietStartup,
     false,
   );
+});
+
+test("ensureAgentDir quarantines unparseable settings.json and reseeds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-corrupt-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(settingsPath, '{"quietStartup": true,');
+  await ensureAgentDir(dir);
+  assert.ok(existsSync(join(dir, "settings.json.bak")), "corrupt file preserved as .bak");
+  assert.equal(
+    readFileSync(join(dir, "settings.json.bak"), "utf8"),
+    '{"quietStartup": true,',
+    "bak keeps the original bytes",
+  );
+  const fresh = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.equal(fresh.quietStartup, true, "fresh seed keeps seeded shape");
+});
+
+test("ensureAgentDir quarantines schema-invalid settings.json and reseeds", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-badshape-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(settingsPath, JSON.stringify({ quietStartup: "yes" }));
+  await ensureAgentDir(dir);
+  assert.ok(existsSync(join(dir, "settings.json.bak")));
+  const fresh = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.notEqual(fresh.quietStartup, "yes", "schema-invalid value must be replaced by the seed");
+});
+
+test("ensureAgentDir keeps a valid settings.json untouched", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-valid-"));
+  const settingsPath = join(dir, "settings.json");
+  const valid = {
+    quietStartup: true,
+    defaultModel: "qwen3.8-uncensored",
+    defaultProvider: "vllm",
+    packages: ["npm:pi-ollama"],
+  };
+  writeFileSync(settingsPath, JSON.stringify(valid, null, 2) + "\n");
+  const before = readFileSync(settingsPath, "utf8");
+  await ensureAgentDir(dir);
+  assert.equal(readFileSync(settingsPath, "utf8"), before, "valid file byte-identical after ensure");
+  assert.ok(!existsSync(join(dir, "settings.json.bak")));
+});
+
+test("ensureAgentDir quarantines a valid-object settings.json with wrong field types", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-badtype-"));
+  const settingsPath = join(dir, "settings.json");
+  writeFileSync(settingsPath, JSON.stringify({ defaultModel: 42 }));
+  await ensureAgentDir(dir);
+  assert.ok(existsSync(join(dir, "settings.json.bak")));
+  const fresh = JSON.parse(readFileSync(settingsPath, "utf8"));
+  assert.notEqual(fresh.defaultModel, 42);
 });
 
 test("importAuth copies auth.json and models.json", () => {

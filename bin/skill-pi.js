@@ -183,7 +183,7 @@ async function main() {
   }
 
   const agentDir = agentDirFor(args.agentDir);
-  ensureAgentDir(agentDir);
+  await ensureAgentDir(agentDir);
 
   const overlay = brandOverlayDir(agentDir);
 
