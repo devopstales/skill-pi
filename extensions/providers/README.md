@@ -24,6 +24,22 @@ wrapper through `extensions/package.json` → `pi.extensions: ["./providers/inde
 3. If it needs new runtime deps, add them to `extensions/package.json`
    (dir-level manifest, hoisted by the root `npm install`).
 
+## `SKILL_PI_DISABLE_PROVIDERS` seam contract
+
+`SKILL_PI_DISABLE_PROVIDERS` is a comma-separated list of provider ids that the
+unified entry (`index.ts`) omits from registration.
+
+| Id | Effect when listed |
+|----|--------------------|
+| `opencode-zen` | `registerZen` is skipped: no `opencode-zen` provider, no free-tier event handlers |
+| `antigravity` | `registerAntigravity` is skipped: no `antigravity` provider, no `/antigravity*` commands, no session handlers |
+
+The seam only gates the two OAuth providers. The vendored pi-free base is
+**always on** — it registers before the seam is consulted and cannot be
+disabled by this variable. Unset or empty (and empty segments, e.g.
+`"antigravity,"`) disable nothing. The contract is pinned by
+`test/providers.seam.test.js`.
+
 ## Provenance
 
 | Vendored path | Upstream | Version | License | ADR-0002 edits |

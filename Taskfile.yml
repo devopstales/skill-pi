@@ -41,9 +41,14 @@ tasks:
       - node --test "test/**/*.test.js"
 
   providers:test:
-    desc: "Run unified providers extension tests"
+    desc: "Run unified providers extension tests (e2e skipped unless SKILL_PI_E2E=1)"
     cmds:
-      - node --test "test/providers.*.test.js"
+      - node --test test/providers.load.test.js test/providers.seam.test.js test/providers.free-filter.test.js test/providers.separation.test.js test/providers.e2e.test.js
+
+  providers:e2e:
+    desc: "Run unified providers E2E smoke against a real pi session (local only)"
+    cmds:
+      - SKILL_PI_E2E=1 node --test test/providers.e2e.test.js
 
   providers:load:
     desc: "Load the pi-free base in a real skill-pi --print session (door check part 2)"
