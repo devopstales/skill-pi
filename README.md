@@ -125,8 +125,10 @@ Currently bundled:
   `alt+shift+up/down` scrolls; a stale warning appears after several untouched turns.
   Published standalone as
   [`@devopstales/pi-todo`](https://github.com/devopstales/skill-pi/tree/main/extensions/todo).
-- **`providers`** — model-provider extensions, currently the vendored
-  [`pi-free`](https://github.com/apmantza/pi-free) package
+- **`providers`** — model-provider extensions: the vendored
+  [`pi-free`](https://github.com/apmantza/pi-free) package plus the `opencode-zen`
+  and `antigravity` OAuth providers behind the `SKILL_PI_DISABLE_PROVIDERS`
+  seam
   ([`extensions/providers/README.md`](extensions/providers/README.md),
   [`pi-free/README.md`](extensions/providers/pi-free/README.md)). Registers native
   providers (Kilo, Cline, LLM7, ZenMux, DeepInfra, Novita, GMI Cloud, Agnes AI, …) and
@@ -140,7 +142,7 @@ Currently bundled:
   the mode rail is a footer status line. Core lifecycle forked from
   [janvitos/pi-plan-build](https://github.com/janvitos/pi-plan-build) (MIT);
   composer, 64-column panel, per-mode model memory, and the question tool are
-  replaced by the sidebar integration and `ask_user`. `Alt+M` / `Tab` toggle
+  replaced by the sidebar integration and `ask_user`. `Alt+M` toggles
   modes; `--plan` / `--build` set the start mode; config at
   `~/.skill-pi/agent/skill-pi-plan-build.json`. See
   [`extensions/plan-build/README.md`](extensions/plan-build/README.md).

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, Text } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { formatInstruction } from "./utils.ts";
-import { pendingOrError, statusCall, noticeTracker, TRANSCRIPT_PADDING } from "./tool-presentation.ts";
+import { noticeTracker, TRANSCRIPT_PADDING } from "./tool-presentation.ts";
 
 const QUESTION_NOTICE_ENTRY_TYPE = "skill-pi-plan-question-notice";
 const QUESTION_CANCELLED_MESSAGE = "You chose not to answer the question(s). Awaiting your instructions.";
@@ -15,5 +15,3 @@ export function registerQuestionNotice(pi: ExtensionAPI) {
 	});
 	return notices;
 }
-
-export { pendingOrError, statusCall, noticeTracker, Container };

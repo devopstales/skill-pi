@@ -19,9 +19,9 @@ Adds an explicit **Plan / Build** mode toggle on top of pi's normal agent loop:
   (`plan_complete` / `/plan done`) or abandon it (`/plan abandon`) before
   starting another. History is preserved in the transcript.
 - **Clean-session handoff** — `plan_exit` → "Start fresh and implement" opens a
-  linked child session, copies the plan file, restores the model/thinking level,
-  and kicks off implementation with a self-contained prompt. The source session
-  records a `transferred` terminal state.
+  linked child session with the plan file, the selected model/thinking level,
+  and a self-contained implementation prompt. The source session records a
+  `transferred` terminal state.
 - **Step-by-step execution** — the plan's `## Implementation Steps` section is
   parsed into a state machine. The user says "Proceed" (or the agent calls
   `plan_step_control start`) to begin a step; `plan_step_complete` closes it;
@@ -70,9 +70,6 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
 
 - `--plan` / `--build` — start a new session in the given mode.
 - `Alt+M` — cycle Plan ↔ Build (global).
-- `Tab` (in the editor) — cycle Plan ↔ Build when autocomplete is closed.
-  This replaces the file-completion trigger; disable via `/plan-settings` if
-  that's a problem.
 
 ## Configuration
 
@@ -85,8 +82,7 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
   "showPlanTitle": true,
   "stableToolCatalog": true,
   "shortcuts": {
-    "toggleMode": ["alt+m"],
-    "toggleModeInEditor": ["tab"]
+    "toggleMode": ["alt+m"]
   }
 }
 ```

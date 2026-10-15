@@ -19,7 +19,6 @@ const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
 
 export interface ShortcutConfig {
 	toggleMode: KeyId[];
-	toggleModeInEditor: KeyId[];
 }
 
 export interface LoadedShortcutConfig {
@@ -33,18 +32,17 @@ export interface LoadedShortcutConfig {
 
 const DEFAULT_CONFIG: ShortcutConfig = {
 	toggleMode: ["alt+m"],
-	toggleModeInEditor: ["tab"],
 };
 
 export const SHORTCUT_PRESETS: Record<string, ShortcutConfig> = {
 	"Tab + Alt+M": DEFAULT_CONFIG,
-	"Alt+M only": { toggleMode: ["alt+m"], toggleModeInEditor: [] },
-	"Disabled": { toggleMode: [], toggleModeInEditor: [] },
+	"Alt+M only": { toggleMode: ["alt+m"] },
+	"Disabled": { toggleMode: [] },
 };
 
 export function shortcutPresetLabel(config: ShortcutConfig): string {
 	return Object.entries(SHORTCUT_PRESETS).find(([, preset]) =>
-		(["toggleMode", "toggleModeInEditor"] as const).every((action) =>
+		(["toggleMode"] as const).every((action) =>
 			config[action].length === preset[action].length && config[action].every((key) => preset[action].includes(key)),
 		),
 	)?.[0] ?? "Custom";
@@ -53,7 +51,6 @@ export function shortcutPresetLabel(config: ShortcutConfig): string {
 function cloneDefaultConfig(): ShortcutConfig {
 	return {
 		toggleMode: [...DEFAULT_CONFIG.toggleMode],
-		toggleModeInEditor: [...DEFAULT_CONFIG.toggleModeInEditor],
 	};
 }
 
@@ -88,7 +85,6 @@ function parseShortcutList(value: unknown, name: keyof ShortcutConfig): {
 	if (name === "toggleMode" && value.includes("tab")) {
 		return {
 			shortcuts: [...DEFAULT_CONFIG[name]],
-			warning: "put tab in shortcuts.toggleModeInEditor, not shortcuts.toggleMode, to preserve open-menu autocomplete",
 		};
 	}
 	return { shortcuts: [...new Set(value)] };
@@ -113,15 +109,11 @@ function parseShortcuts(value: unknown): {
 	const toggleMode = source.toggleMode === undefined
 		? { shortcuts: [...DEFAULT_CONFIG.toggleMode] }
 		: parseShortcutList(source.toggleMode, "toggleMode");
-	const toggleModeInEditor = source.toggleModeInEditor === undefined
-		? { shortcuts: [...DEFAULT_CONFIG.toggleModeInEditor] }
-		: parseShortcutList(source.toggleModeInEditor, "toggleModeInEditor");
-	const warnings = [toggleMode.warning, toggleModeInEditor.warning].filter((warning): warning is string => warning !== undefined);
+	const warnings = [toggleMode.warning].filter((warning): warning is string => warning !== undefined);
 
 	return {
 		config: {
 			toggleMode: toggleMode.shortcuts,
-			toggleModeInEditor: toggleModeInEditor.shortcuts,
 		},
 		...(warnings.length > 0 ? { warning: warnings.join("; ") } : {}),
 	};

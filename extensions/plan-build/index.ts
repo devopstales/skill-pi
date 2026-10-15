@@ -245,9 +245,7 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 		if (current.savedPlanState !== "saved" || current.plans.attached?.plan.task?.title) return;
 		try {
 			current.savedPlanHeading = extractPlanTitle(fs.readFileSync(currentPlanPath(current), "utf8"));
-		} catch {
-			// An unreadable saved plan must not break the card.
-		}
+		} catch { /* unreadable saved plan must not break the card */ }
 	}
 
 	function inspectPlanFileState(file: string): "saved" | "absent" | "unavailable" {
@@ -754,13 +752,13 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 				return;
 			}
 			const shortcutSelection = await ctx.ui.select(
-				`Plan/Build shortcuts — active: ${shortcutPresetLabel(shortcutConfig)} (global: ${shortcutConfig.toggleMode.join(", ") || "none"}; editor: ${shortcutConfig.toggleModeInEditor.join(", ") || "none"})`,
+				`Plan/Build shortcuts — active: ${shortcutPresetLabel(shortcutConfig)} (global: ${shortcutConfig.toggleMode.join(", ") || "none"})`,
 				[...Object.keys(SHORTCUT_PRESETS), customOption],
 			);
 			if (!shortcutSelection) return;
 			if (shortcutSelection === customOption) {
 				ctx.ui.notify(
-					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"toggleMode":["ctrl+alt+m"],"toggleModeInEditor":["tab"]}}. Use [] to disable an action. Put Tab only in toggleModeInEditor; it switches modes when autocomplete is closed instead of requesting file completion.`,
+					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"toggleMode":["ctrl+alt+m"]}}. Use [] to disable the shortcut.`,
 					"info",
 				);
 				return;
@@ -1073,6 +1071,8 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "plan_exit",
+		// Upstream port: plan_exit renders its own transcript rows (review +
+		// approval result) without pi's default tool-call padding box.
 		renderShell: "self",
 		label: "Exit Plan Mode",
 		description: PLAN_EXIT_DESCRIPTION,
