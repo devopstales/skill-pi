@@ -1,5 +1,3 @@
-import type { FileDiffMetadata } from "@pierre/diffs";
-
 export type PierreAppearance = "dark" | "light";
 
 export interface PermissionDiffSnapshot {
@@ -33,12 +31,6 @@ export interface PermissionDiffSummary {
   firstChangedLine: number | undefined;
   addedLines: number;
   removedLines: number;
-}
-
-export interface PermissionPierrePayload {
-  snapshot: PermissionDiffSnapshot;
-  metadata: FileDiffMetadata;
-  highlighted: HighlightedDiffSet;
 }
 
 export interface DiffSpan {

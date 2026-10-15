@@ -281,4 +281,4 @@ None.
 
 ## Human Override
 
-**Human decision (fill in):** <accept / accept-with-open-items / reject> — <name> — <date>
+**Human decision:** accept-with-open-items — paladm — 2026-10-14 (open items: E2E interaction skips due to model capability; live TUI smoke deferred; `PI_PACKAGE_DIR` models.json issue tracked separately)

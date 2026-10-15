@@ -399,22 +399,16 @@ class PermissionReviewDialog implements Component {
   private renderBorder(width: number, kind: "top" | "middle" | "bottom"): string {
     if (this.fullscreen) {
       const bodyWidth = Math.max(1, width - 2);
-      if (kind === "middle") {
-        return this.renderFullscreenLine("", bodyWidth);
-      }
       return this.renderFullscreenLine("", bodyWidth);
     }
 
     const innerWidth = Math.max(1, width - 2);
-
     if (kind === "top") {
       return `${this.theme.fg("border", "┌")}${this.theme.fg("border", "─".repeat(innerWidth))}${this.theme.fg("border", "┐")}`;
     }
-
     if (kind === "bottom") {
       return `${this.theme.fg("border", "└")}${this.theme.fg("border", "─".repeat(innerWidth))}${this.theme.fg("border", "┘")}`;
     }
-
     return `${this.theme.fg("border", "├")}${this.theme.fg("border", "─".repeat(innerWidth))}${this.theme.fg("border", "┤")}`;
   }
 

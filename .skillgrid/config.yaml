@@ -42,11 +42,11 @@ quality:
 # --- Security Scan ---
 security:
   trivy:
-    command: ""
+    command: "trivy fs"
     target: "."
     severities: "CRITICAL"
-    scan_types: "vuln"
-    fail_on: ""
+    scan_types: "vuln,secret,misconfig"
+    fail_on: "CRITICAL"
 
 # --- Commands ---
 commands:

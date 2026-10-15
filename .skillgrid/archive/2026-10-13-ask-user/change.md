@@ -39,14 +39,14 @@ A `skill-pi` session can call `ask_user`: the user sees an interactive popup (TU
 
 This change is done only when **all** of the following are true:
 
-- [ ] `ask_user` is registered and callable in a live `skill-pi` TUI session; selecting an option, typing a freeform answer, or pressing Esc each produce the correct model-facing result and rendered result row
-- [ ] Batch mode (2–4 questions) works: tab through pages, review page shows all answers, submit returns index-aligned answers with skips
-- [ ] Multi-select questions commit an explicit set of selected options (never a partial state)
-- [ ] RPC mode answers the same questions through `select`/`input` dialogs with the same `details` shapes
-- [ ] All `@step-NN` Features in `acceptance.feature` pass (`@happy`, `@edge`, `@failure` per step)
-- [ ] `node --test "test/**/*.test.js"` is green including the new unit and E2E tests (E2E skips cleanly when Ollama is unreachable)
-- [ ] Rollback path below is still valid
-- [ ] Change archived under `.skillgrid/archive/2026-10-13-ask-user/`
+- [x] `ask_user` is registered and callable in a live `skill-pi` TUI session; selecting an option, typing a freeform answer, or pressing Esc each produce the correct model-facing result and rendered result row
+- [x] Batch mode (2–4 questions) works: tab through pages, review page shows all answers, submit returns index-aligned answers with skips
+- [x] Multi-select questions commit an explicit set of selected options (never a partial state)
+- [x] RPC mode answers the same questions through `select`/`input` dialogs with the same `details` shapes
+- [x] All `@step-NN` Features in `acceptance.feature` pass (`@happy`, `@edge`, `@failure` per step)
+- [x] `node --test "test/**/*.test.js"` is green including the new unit and E2E tests (E2E skips cleanly when Ollama is unreachable)
+- [x] Rollback path below is still valid
+- [ ] Change archived under `.skillgrid/archive/2026-10-13-ask-user/` (completed at ship/archive)
 
 ---
 

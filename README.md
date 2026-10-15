@@ -99,7 +99,10 @@ Currently bundled:
   `ask:cancelled` events fire for hosts that want to track prompt outcomes. In
   non-dialog modes (e.g. `--print`) it returns a graceful "unavailable" result instead
   of hanging.
-- **`skill-pi-banner`** — a `session_start` notification confirming the isolated session.
+- **`skill-pi-tui`** — the TUI surface: a `session_start` header (logo, tagline,
+  session stats grid) confirming the isolated session, plus a fullscreen
+  right-side sidebar (terminals ≥ 140 columns) with a live Status card
+  (project path, git branch, session name, uncommitted change counts).
 - **`file-search`** — first-class `fd` (find files) and `rg` (search content) tools. On
   session start it resolves a usable binary per tool: a system `fd`/`fdfind`/`rg` is
   preferred silently, then a fallback in the package `bin/` (silently), and only when
@@ -112,6 +115,13 @@ Currently bundled:
   allow/reject prompt with an `edit`/`write` diff review, `Allow always` rules persisted
   to `conf.d/permission.conf`, and a `/permission-toggle-auto-accept` auto-accept toggle
   (status line reflects on/off; optional `keybindings.autoAcceptEdits` shortcut).
+- **`todo`** — a `todo` tool (`write`/`add`/`update`/`clear`/`list`) that gives the model
+  a task list you can see, drawn as a card in the `skill-pi-tui` sidebar (widget above the
+  editor on narrow terminals). The open snapshot is mirrored into the transcript, so the
+  list survives `/reload`, compaction, and branch navigation. `ctrl+shift+t` collapses,
+  `alt+shift+up/down` scrolls; a stale warning appears after several untouched turns.
+  Published standalone as
+  [`@devopstales/pi-todo`](https://github.com/devopstales/skill-pi/tree/main/extensions/todo).
 
 ## Upgrading
 

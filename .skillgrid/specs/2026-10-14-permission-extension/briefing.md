@@ -167,7 +167,7 @@ config/AGENTS policy text must be updated to acknowledge.
      `acceptance.feature`
 
 7. **R7 — Extension loads via the wrapper with no wrapper change; tsc clean.**
-   - **Current:** `file-search` + `skill-pi-banner` load; no permission
+   - **Current:** `file-search` + `skill-pi-tui` load; no permission
      extension.
    - **Target:** `extensions/permission/index.ts` is enumerated by the existing
      `collectExtensionFiles`; `tsc --noEmit -p extensions/permission` passes;
