@@ -51,6 +51,8 @@ Chain strategy: stacked-to-main
 
 ### TICKET-01 — Vendor the pi-free base and prove it loads (tracer thread)
 
+- **Tracker ID:** TASK-4.1
+
 - **Scope:** Vendor the entire `pi-free@2.8.4` `dist/` tree as-is into `extensions/providers/pi-free/` (+ `package.json` manifest with `main: ./dist/index.js`, `LICENSE`, `CHANGELOG.md`); create the `pi-free/base.js` re-export shim; create the first-version composition entry `extensions/providers/index.ts` (`await base(pi)` only); add the `./providers/index.ts` registration to `extensions/package.json` `pi.extensions` and the runtime deps re-derived from the actual import graph (RED-driven, NOT guessed); add `test/providers.load.test.js` (stub ExtensionAPI capturing `registerProvider`/`registerCommand`/`on`/`registerTool`) + `task providers:test` in `Taskfile.yml`. Per blueprint Task 1. **DOOR CHECK part 1:** if the base does not load under skill-pi's jiti + hoisted deps, STOP before TICKET-02+.
 - **Acceptance:** `node --test test/providers.load.test.js` GREEN: (a) `base(stubPi)` returns without throwing, (b) `registerProvider` called ≥ 20 times, (c) `registerCommand` called for `toggle-free` and `pi-free-health`; the entry `import` of `extensions/providers/index.ts` succeeds; `grep -rhoE 'from "[^./][^"]*"' extensions/providers/pi-free/dist/**/*.js | sort -u` deps are all declared in `extensions/package.json` and hoisted into root `node_modules`; `find extensions/providers/pi-free/dist -name '*.js' | wc -l` matches the tarball's 165 count.
 - **SATISFIES:** `happy path unified-extension-loads-base`, `edge base-setup-failure-degrades-not-kills`, `failure base-missing-dep-fails-loudly`
@@ -64,6 +66,8 @@ Chain strategy: stacked-to-main
 
 ### TICKET-02 — Prove the base loads in a real skill-pi session (door check)
 
+- **Tracker ID:** TASK-4.2
+
 - **Scope:** Add `task providers:load` to `Taskfile.yml`: launch `skill-pi --print "reply with the word ok"` against a throwaway `--agent-dir` (`$TMPDIR/skill-pi-providers-<ts>`), capture stdout+stderr, and assert (a) exit 0, (b) the pi-free `logStartupSummary` marker appears (confirm exact text from `extensions/providers/pi-free/dist/lib/startup-timing.js`), (c) no `ERR_MODULE_NOT_FOUND`. Per blueprint Task 2. **DOOR CHECK part 2:** a rejected provider setup in the real session is a *finding* (name it + reason in the log), not a silent pass.
 - **Acceptance:** `task providers:load` exits 0 with the startup summary marker present and zero `ERR_MODULE_NOT_FOUND` lines; if any provider setup rejected, the log names it (recorded in the task output).
 - **SATISFIES:** `happy path base-runs-in-real-session`, `failure base-real-session-provider-setup-rejected`
@@ -74,6 +78,8 @@ Chain strategy: stacked-to-main
 - **Fails-when:** `task providers:load` exits non-zero, OR the startup summary marker is absent from the captured log, OR the log contains `ERR_MODULE_NOT_FOUND`
 
 ### TICKET-03 — Add the opencode-zen provider (OAuth, device flow)
+
+- **Tracker ID:** TASK-4.3
 
 - **Scope:** Vendor `opencode-zen-oauth@1.2.6` `src/{auth,models,free-tier,v2-gate}.ts` verbatim into `extensions/providers/zen/` (+ `LICENSE`); create `extensions/providers/zen/provider.ts` lifting the upstream `src/extension.ts` body into a named `registerZen(pi)` (keeps `id: "opencode-zen"`, the `withFreeTierGate`/`freeModelProtocol` helpers, the two `pi.on` handlers, and `pi.registerProvider(provider)`); wire `registerZen(pi)` into `index.ts` after `await base(pi)`; extend `test/providers.seam.test.js` (RED first): `registerZen(stubPi)` → `registerProvider` once with `id === "opencode-zen"`, `on` called for `before_agent_start` and `message_end`. Per blueprint Task 3.
 - **Acceptance:** `node --test test/providers.seam.test.js` GREEN for the zen seam assertions; the vendored `zen/` files are byte-identical to upstream `src/` (spot-check via `diff` on at least `models.ts` and `auth.ts` exports: `INFERENCE_URL`, `MODELS`, `modelFromZen`, `type ZenApi` / `UA`, `fetchZenModels`, `loginZen`, `refreshZenToken`, `type ZenCredential`).
@@ -86,6 +92,8 @@ Chain strategy: stacked-to-main
 
 ### TICKET-04 — Add the antigravity provider (OAuth, multi-account, custom stream)
 
+- **Tracker ID:** TASK-4.4
+
 - **Scope:** Vendor the full `pi-agy@0.6.1` `src/**` tree verbatim into `extensions/providers/antigravity/src/` (+ `LICENSE`); create `extensions/providers/antigravity/provider.ts` lifting upstream `index.ts`'s default `function (pi)` into a named `registerAntigravity(pi)` (keeps `PROVIDER_ID`/`PROVIDER_NAME`, model/endpoint constants, the `emitCommandOutput`/`withUsage` helpers, the account pool, `session_start`/`session_shutdown`, and the 4 `/antigravity*` commands); wire `registerAntigravity(pi)` into `index.ts` after `registerZen(pi)`; ensure `undici` is a declared + hoisted dep (add + `npm install` if Task 1 didn't catch it); extend `test/providers.seam.test.js` (RED first): `registerAntigravity(stubPi)` → `registerProvider` with `PROVIDER_ID`, `registerCommand` for `antigravity`/`antigravity.usage`/`antigravity.models`/`antigravity.doctor`, `on` for `session_start`/`session_shutdown`. Per blueprint Task 4.
 - **Acceptance:** `node --test test/providers.seam.test.js` GREEN for both the zen AND antigravity seam assertions; the upstream `index.ts` imports (`./src/auth/index.js`, etc.) resolve under jiti (the seam test is the proof); `undici` appears in `extensions/package.json` `dependencies` and in root `node_modules/undici`.
 - **SATISFIES:** `happy path antigravity-provider-registers`
@@ -96,6 +104,8 @@ Chain strategy: stacked-to-main
 - **Fails-when:** `node --test test/providers.seam.test.js` exits non-zero, OR the antigravity seam assertions are not green
 
 ### TICKET-05 — Centralize registration behind the per-provider enable seam
+
+- **Tracker ID:** TASK-4.5
 
 - **Scope:** In `extensions/providers/index.ts`, resolve `SKILL_PI_DISABLE_PROVIDERS` (comma-separated ids) into a `Set<string>`; register each OAuth provider **only if** not in the set (the pi-free base is always on); the seam is the single decision point — `index.ts` must NOT call `registerZen`/`registerAntigravity` directly outside the gated branch. Extend `test/providers.seam.test.js` (RED first): default (no env) → both register; `SKILL_PI_DISABLE_PROVIDERS=antigravity` → zen registers, antigravity does not; `=opencode-zen` → antigravity registers, zen does not; `=opencode-zen,antigravity` → neither registers, base still does. Per blueprint Task 5.
 - **Acceptance:** `node --test test/providers.seam.test.js` GREEN for all four seam variants (default-on, disable-zen, disable-antigravity, disable-both); `grep -n 'registerZen\|registerAntigravity' extensions/providers/index.ts` shows the calls only inside the `isEnabled`-gated branches.
@@ -108,6 +118,8 @@ Chain strategy: stacked-to-main
 
 ### TICKET-06 — Verify free-filter survival + ADR-0002 state confinement
 
+- **Tracker ID:** TASK-4.6
+
 - **Scope:** (a) `test/providers.free-filter.test.js` — run the full entry against a stub `pi` that captures every `registerProvider` id + its `filterModels`; assert the final registry contains `opencode-zen` and `antigravity` and that their filter behavior is the upstream's, not pi-free's; if a provider IS wiped, apply the minimal fix in `index.ts` (register after the filter pass, or re-register after `applyGlobalFilter`) and re-run. (b) `test/providers.separation.test.js` — set `PI_CODING_AGENT_DIR` to a temp dir, run the entry against a stub `pi`, trigger a state write path (Antigravity account store init OR pi-free's telemetry `getTelemetryPath`); assert NO file appears under `~/.pi` and the state file IS under the temp agent dir. (c) Grep the vendored code for literal `~/.pi/agent` / `HOME` / `os.homedir` / `/home/` paths; record every hit in `extensions/providers/README.md` (provenance table) as either (a) resolves through pi's credential store (safe) or (b) a confirmed hardcoded write (fix minimally + record). Per blueprint Tasks 6 + 7.
 - **Acceptance:** `node --test test/providers.free-filter.test.js test/providers.separation.test.js` GREEN; `grep -rn "\.pi/agent\|os.homedir\|/home/" extensions/providers/` hits are all recorded in the README provenance table with their classification; any confirmed hardcoded write is fixed (minimal edit, recorded).
 - **SATISFIES:** `happy path oauth-providers-survive-free-filter`, `failure oauth-provider-wiped-by-filter`, `happy path state-confined-to-agent-dir`, `failure hardcoded-home-write-detected`
@@ -118,6 +130,8 @@ Chain strategy: stacked-to-main
 - **Fails-when:** either of the two new test files exits non-zero, OR a confirmed hardcoded write is found but not recorded + fixed in the README
 
 ### TICKET-07 — E2E smoke + provenance docs + full-suite wiring (L4)
+
+- **Tracker ID:** TASK-4.7
 
 - **Scope:** (a) `test/providers.e2e.test.js` — `t.skip()` unless `process.env.SKILL_PI_E2E === "1"`; otherwise shell out to `skill-pi --print "reply with exactly: ok" --agent-dir <temp>` and assert exit 0 + assistant message contains "ok"; then grep the startup/transcript for the `antigravity` and `opencode-zen` provider markers. (b) `task providers:e2e` in `Taskfile.yml` — `SKILL_PI_E2E=1 node --test test/providers.e2e.test.js`. (c) `extensions/providers/README.md` — provenance table (rows: `pi-free@2.8.4` (MIT, apmantza), `opencode-zen-oauth@1.2.6` (MIT, Naab2k3), `pi-agy@0.6.1` (MIT, shakthi-sagar); columns: upstream, version, license, vendored path, any edits made in TICKET-06) + the `SKILL_PI_DISABLE_PROVIDERS` seam contract. (d) Update the wrapper `README.md` "Currently bundled" list. (e) Ensure `task providers:test` runs all four new test files + the e2e gate; run the full root suite `node --test "test/**/*.test.js"` (L4). (f) Syntax-parse the new raw-TS files via jiti (no tsconfig in the repo — raw TS is loaded by pi's jiti at runtime): `for f in $(git diff --name-only origin/main...HEAD -- 'extensions/providers/**/*.ts'); do npx jiti --check "$f" || echo "PARSE FAIL: $f"; done`. Per blueprint Task 8 + 9.
 - **Acceptance:** `node --test "test/**/*.test.js"` GREEN (e2e skipped unless `SKILL_PI_E2E=1`); `SKILL_PI_E2E=1 task providers:e2e` GREEN locally (a real free-model round-trip completes; both OAuth providers present — record a manual `/login` note, not an assertion); every new `.ts` file under `extensions/providers/` parses cleanly under jiti; `extensions/providers/README.md` carries the provenance table + seam contract; the wrapper `README.md` lists the new extension.
