@@ -45,6 +45,14 @@ tasks:
     cmds:
       - node --test "test/providers.*.test.js"
 
+  providers:load:
+    desc: "Load the pi-free base in a real skill-pi --print session (door check part 2)"
+    cmds:
+      # One-shot session against a throwaway --agent-dir; the startup marker
+      # needs LOG_LEVEL=info and the run is network-heavy, so retry 3x with a
+      # 600s cap (see lib/providers-load.sh).
+      - lib/providers-load.sh
+
   pack:
     desc: "Create a .tgz package for inspection"
     cmds:
