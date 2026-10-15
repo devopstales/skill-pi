@@ -134,6 +134,16 @@ Currently bundled:
   after session start. Free-only filter on by default; per-provider toggles
   (`/toggle-kilo`, `/toggle-openrouter`, …), `/pi-free-health` diagnostics, and opt-in
   auto-fallback to another free model on error.
+- **`plan-build`** — Plan/Build modes with a persistent plan, explicit approval,
+  clean-session handoff, and step-by-step execution. The plan is drawn as a card in
+  the `skill-pi-tui` sidebar rail (same component machinery as the todo card);
+  the mode rail is a footer status line. Core lifecycle forked from
+  [janvitos/pi-plan-build](https://github.com/janvitos/pi-plan-build) (MIT);
+  composer, 64-column panel, per-mode model memory, and the question tool are
+  replaced by the sidebar integration and `ask_user`. `Alt+M` / `Tab` toggle
+  modes; `--plan` / `--build` set the start mode; config at
+  `~/.skill-pi/agent/skill-pi-plan-build.json`. See
+  [`extensions/plan-build/README.md`](extensions/plan-build/README.md).
 
 ## Choosing a model
 
