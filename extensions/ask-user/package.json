@@ -1,9 +1,9 @@
 {
   "name": "@devopstales/pi-ask-user",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "license": "MIT",
-  "description": "ask_user tool for pi: pause the agent to collect a focused decision (single or batch, multi-select, freeform) in TUI and RPC modes.",
+  "description": "ask_user tool for pi: pause the agent to collect one or more structured questions (2-4 options, multi-select, freeform, previews, notes) in TUI and RPC modes.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/devopstales/skill-pi.git"
