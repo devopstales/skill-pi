@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
+import * as path from "node:path";
 import type { FileHandle } from "node:fs/promises";
 
 import {
@@ -28,7 +29,7 @@ import {
 import type { DerivedSkillAllowState, Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "./models.js";
 import { BashArity } from "./bash-arity.js";
 import { extractBashCommands } from "./bash-parser.js";
-import { getExtensionSettingsPaths, loadExtensionSettings, resolveProjectConfDir } from "./project.js";
+import { getExtensionSettingsPaths, loadExtensionSettings } from "./project.js";
 import { buildHardRejectedReason, resolvePermissionRejection } from "./rejection.js";
 import { showPermissionReviewDialog } from "./review-dialog.js";
 import {
@@ -549,7 +550,7 @@ function getBashAlwaysPattern(tokens: string[]): string | undefined {
 }
 
 function getPersistentApprovalSettingsPath(cwd: string): string {
-  return getExtensionSettingsPaths(EXTENSION, cwd).project;
+  return getExtensionSettingsPaths(EXTENSION, cwd).global;
 }
 
 type PersistApprovalRulesResult = {
@@ -559,7 +560,7 @@ type PersistApprovalRulesResult = {
 
 export async function persistApprovalRules(cwd: string, rules: string[]): Promise<PersistApprovalRulesResult> {
   const settingsPath = getPersistentApprovalSettingsPath(cwd);
-  await fsp.mkdir(resolveProjectConfDir(cwd), { recursive: true });
+  await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
 
   return withPersistentApprovalLock(settingsPath, async () => {
     const existing = await loadOwnSettingsFile(settingsPath);

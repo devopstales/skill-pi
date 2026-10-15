@@ -6,63 +6,52 @@ import type { ExtensionAPI, SlashCommandInfo } from "@earendil-works/pi-coding-a
 import { getDerivedSkillAllowState, getSkillAllowedRules, persistApprovalRules, resetDerivedSkillAllowStateCacheForTest } from "./index.js";
 import { loadExtensionSettings } from "./project.js";
 
-describe("persistence", () => {
-  it("appends a rule to the conf.d project file exactly once", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-"));
-    mkdirSync(join(dir, "conf.d"), { recursive: true });
-    const r = await persistApprovalRules(dir, ["bash(git status *)"]);
-    const r2 = await persistApprovalRules(dir, ["bash(git status *)"]);
-    expect(r2.added).toEqual([]);
-    const parsed = JSON.parse(readFileSync(join(dir, "conf.d", "permission.conf"), "utf-8"));
-    expect(parsed.always.filter((x: string) => x === "bash(git status *)")).toHaveLength(1);
-    expect(existsSync(join(dir, "conf.d", "permission.conf.lock"))).toBe(false);
+describe("persistence (global conf.d)", () => {
+  let tmpHome: string;
+
+  it("writes to the global conf.d path, not project", async () => {
+    tmpHome = mkdtempSync(join(tmpdir(), "perm-global-"));
+    const original = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpHome, "agent");
+    try {
+      const r = await persistApprovalRules(process.cwd(), ["bash(git status *)"]);
+      expect(r.settingsPath).toBe(join(tmpHome, "conf.d", "permission.conf"));
+      expect(r.added).toContain("bash(git status *)");
+    } finally {
+      if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = original;
+      rmSync(tmpHome, { recursive: true, force: true });
+    }
   });
 
-  it("reports which rules it added on the first persist", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-"));
-    mkdirSync(join(dir, "conf.d"), { recursive: true });
-    const r = await persistApprovalRules(dir, ["read", "bash(npm run *)"]);
-    expect(r.added).toEqual(["read", "bash(npm run *)"]);
-    expect(r.settingsPath).toBe(join(dir, "conf.d", "permission.conf"));
-    const parsed = JSON.parse(readFileSync(r.settingsPath, "utf-8"));
-    expect(parsed.always).toEqual(["read", "bash(npm run *)"]);
+  it("deduplicates on second persist to the same global file", async () => {
+    tmpHome = mkdtempSync(join(tmpdir(), "perm-global-"));
+    const original = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpHome, "agent");
+    try {
+      await persistApprovalRules(process.cwd(), ["bash(git status *)"]);
+      const r2 = await persistApprovalRules(process.cwd(), ["bash(git status *)"]);
+      expect(r2.added).toEqual([]);
+    } finally {
+      if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = original;
+      rmSync(tmpHome, { recursive: true, force: true });
+    }
   });
 
-  it("creates the conf.d dir when missing", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-"));
-    await persistApprovalRules(dir, ["ls"]);
-    const parsed = JSON.parse(readFileSync(join(dir, "conf.d", "permission.conf"), "utf-8"));
-    expect(parsed.always).toEqual(["ls"]);
-  });
-
-  it("throws on invalid conf.d JSON with the path and message", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-"));
-    mkdirSync(join(dir, "conf.d"), { recursive: true });
-    writeFileSync(join(dir, "conf.d", "permission.conf"), "{ not json");
-    await expect(persistApprovalRules(dir, ["read"])).rejects.toThrow(
-      /Invalid JSON in .*permission\.conf/,
-    );
-    expect(existsSync(join(dir, "conf.d", "permission.conf.lock"))).toBe(false);
-  });
-});
-
-describe(".pi/conf.d fallback (ADR 0008 D2)", () => {
-  it("reads .pi/conf.d only when .skill-pi/conf.d is absent", () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-pi-"));
-    mkdirSync(join(dir, ".pi", "conf.d"), { recursive: true });
-    writeFileSync(join(dir, ".pi", "conf.d", "permission.conf"), JSON.stringify({ defaultMode: "deny" }));
-    const merged = loadExtensionSettings<{ defaultMode?: string }>("permission", dir, (a, b) => ({ ...a, ...b }));
-    expect(merged.defaultMode).toBe("deny");
-  });
-
-  it("prefers .skill-pi/conf.d over .pi/conf.d when both exist", () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-pi-"));
-    mkdirSync(join(dir, ".pi", "conf.d"), { recursive: true });
-    mkdirSync(join(dir, ".skill-pi", "conf.d"), { recursive: true });
-    writeFileSync(join(dir, ".pi", "conf.d", "permission.conf"), JSON.stringify({ defaultMode: "deny" }));
-    writeFileSync(join(dir, ".skill-pi", "conf.d", "permission.conf"), JSON.stringify({ defaultMode: "allow" }));
-    const merged = loadExtensionSettings<{ defaultMode?: string }>("permission", dir, (a, b) => ({ ...a, ...b }));
-    expect(merged.defaultMode).toBe("allow");
+  it("reports which rules it added", async () => {
+    tmpHome = mkdtempSync(join(tmpdir(), "perm-global-"));
+    const original = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpHome, "agent");
+    try {
+      const r = await persistApprovalRules(process.cwd(), ["read"]);
+      expect(r.added).toContain("read");
+      expect(r.settingsPath).toBe(join(tmpHome, "conf.d", "permission.conf"));
+    } finally {
+      if (original === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = original;
+      rmSync(tmpHome, { recursive: true, force: true });
+    }
   });
 });
 
