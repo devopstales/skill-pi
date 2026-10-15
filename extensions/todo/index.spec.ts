@@ -244,6 +244,39 @@ it("env: SKILL_PI_TODO_KEY customizes or disables the collapse key", () => {
   assert.equal(todoCollapseKey({} as NodeJS.ProcessEnv), "ctrl+shift+t");
 });
 
+it("main-view widget renders nothing (todo lives only in the sidebar rail)", async () => {
+  const captured: Array<{ key: string; factory: unknown }> = [];
+  const ctx = makeCtx({
+    ui: {
+      ...makeCtx().ui,
+      setWidget(key: string, factory: unknown): void {
+        captured.push({ key, factory });
+      },
+    },
+  });
+  const mock: MockPi = { tools: new Map(), shortcuts: [], events: new Map(), sent: [], ctx };
+  const pi = {
+    on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+      const list = mock.events.get(event) ?? [];
+      list.push(handler);
+      mock.events.set(event, list);
+      return () => undefined;
+    },
+    registerTool: (tool: RecordedTool & { name: string }) => { mock.tools.set(tool.name, tool); },
+    registerShortcut: (shortcut: string) => { mock.shortcuts.push(shortcut); },
+    sendMessage: () => undefined,
+  } as unknown as ExtensionAPI;
+  piTodo(pi);
+  for (const handler of mock.events.get("session_start") ?? []) handler({ reason: "startup" }, ctx);
+  const tool = mock.tools.get(TODO_TOOL_NAME)!;
+  await tool.execute("1", { action: "write", tasks: [{ title: "A" }] }, undefined, undefined, ctx);
+  for (const handler of mock.events.get("tool_execution_end") ?? []) handler({ toolName: TODO_TOOL_NAME }, ctx);
+  const set = captured.find((w) => w.key === "pi-todo" && typeof w.factory === "function");
+  assert.ok(set, `widget factory registered; got: ${JSON.stringify(captured.map((w) => [w.key, typeof w.factory]))}`);
+  const widget = (set!.factory as (tui: unknown, theme: unknown) => { render: (width: number) => string[] })({ terminal: {} }, { fg: (_c: string, t: string) => t })!;
+  assert.deepEqual(widget.render(120), [], "main-view widget renders nothing");
+});
+
 it("disabled env: registers nothing", () => {
   const ctx = makeCtx();
   const mock: MockPi = { tools: new Map(), shortcuts: [], events: new Map(), sent: [], ctx };

@@ -1,7 +1,7 @@
 /**
  * pi-todo — a task list the model keeps while it works, drawn as a card in the
- * skill-pi-tui fullscreen sidebar (falling back to a widget above the editor
- * on terminals too narrow for the sidebar).
+ * skill-pi-tui fullscreen right sidebar. The main-view widget is empty; the
+ * todo card lives exclusively in the sidebar rail.
  *
  * The `todo` tool plans and mutates the list. The current open snapshot is
  * mirrored into the transcript as a hidden custom message whenever it changes,
@@ -238,13 +238,14 @@ export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proces
       snapshot.host = tui;
       snapshot.tui = tui;
       const barTheme = buildTheme(theme);
-      const bottom = makeCard(snapshot, barTheme, false);
       const rail = makeCard(snapshot, barTheme, true);
-      snapshot.scrollTodo = (lines) => {
-        const state = tui.terminal ? sidebarState(tui) : undefined;
-        (state?.active && state.ownsHost?.() ? rail : bottom).scrollBy(lines);
-      };
-      return sidebarPart(tui, "todo", bottom, rail);
+      snapshot.scrollTodo = (lines) => rail.scrollBy(lines);
+      // Main-view widget renders nothing: the todo card lives exclusively in
+      // the skill-pi-tui right sidebar rail. sidebarPart keeps the empty
+      // bottom component mounted (required by the layout) and registers the
+      // rail for the sidebar.
+      const empty: Component = { render: () => [], invalidate() {} };
+      return sidebarPart(tui, "todo", empty, rail);
     });
   };
 

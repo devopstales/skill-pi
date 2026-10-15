@@ -1,4 +1,4 @@
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { CARD_TONE, cardBottom, cardTop, panelHeaderRow, renderCard, type CardTheme } from "../../skill-pi-tui/src/card.ts";
 import { GLYPHS, TODO_GLYPH, todoSummary, type TodoState } from "./model.ts";
 
@@ -81,21 +81,21 @@ function statusRole(status: string): string {
   }
 }
 
-/** Full card: frame top + body rows (clipped to inner width) + frame bottom. */
+/** Full card: frame top + body rows (wrapped to inner width) + frame bottom. */
 export function renderTodoCard(state: TodoState, theme: TodoCardTheme, width: number, options: TodoCardOptions = {}): string[] {
   const rows = todoCardRows(state, theme, width, options);
   const inner = Math.max(1, width - 4);
+  const body = rows.body.flatMap((line) => wrapTextWithAnsi(line, inner).map((wrapped) => padLine(wrapped, inner)));
   return [
     rows.header[0],
-    ...rows.body.map((line) => padLine(line, inner)),
+    ...body,
     rows.footer,
   ];
 }
 
 function padLine(line: string, inner: number): string {
   const clipped = truncateToWidth(line, inner, "…");
-  const plain = clipped.replace(/\x1b\[[0-9;]*m/g, "");
-  const pad = " ".repeat(Math.max(0, inner - plain.length));
+  const pad = " ".repeat(Math.max(0, inner - visibleWidth(clipped)));
   return `│ ${clipped}${pad} │`;
 }
 

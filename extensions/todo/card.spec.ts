@@ -69,7 +69,7 @@ it("renderTodoCard: collapsed mode shows only a summary line", () => {
   assert.match(flat, /ctrl\+shift\+t/);
 });
 
-it("renderTodoCard: long titles are truncated to fit the width", () => {
+it("renderTodoCard: long titles wrap to multiple lines within width", () => {
   const state = applyTodo(
     emptyTodo(),
     { action: "write", tasks: [{ title: "A very long task title that goes on and on and on beyond the card width entirely" }] },
@@ -79,6 +79,40 @@ it("renderTodoCard: long titles are truncated to fit the width", () => {
   for (const line of lines) {
     assert.ok(plain(line).length <= 30, `line too wide: ${JSON.stringify(line)}`);
   }
+  // The full title must appear across the wrapped lines (not truncated).
+  const flat = lines.map(plain).join(" ");
+  assert.ok(flat.includes("beyond the card width"), "wrapped title includes later words");
+  assert.ok(flat.includes("entirely"), "wrapped title includes the final word");
+});
+
+it("renderTodoCard: in-progress note wraps with the title", () => {
+  const state = applyTodo(
+    emptyTodo(),
+    { action: "write", tasks: [{ title: "Write API integration tests", status: "in_progress", note: "Covering error paths and rate limiting cases" }] },
+    0,
+  ).state;
+  const lines = renderTodoCard(state, fakeTheme, 30);
+  for (const line of lines) {
+    assert.ok(plain(line).length <= 30, `line too wide: ${JSON.stringify(line)}`);
+  }
+  const flat = lines.map(plain).join(" ");
+  assert.ok(flat.includes("Write API"), "title is present");
+  assert.ok(flat.includes("tests"), "title continues on wrapped line");
+  assert.ok(flat.includes("Covering error"), "note is present");
+  assert.ok(flat.includes("rate limiting"), "note continues on wrapped line");
+  assert.ok(flat.includes("cases"), "note final word present");
+});
+
+it("renderTodoCard: lines fit within width even with wide glyphs (emoji)", async () => {
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  const state = applyTodo(
+    emptyTodo(),
+    { action: "write", tasks: [{ title: "Fix memory leak in websocket handler", status: "blocked", note: "Waiting for dev to confirm the heap snapshot from the staging server" }] },
+    0,
+  ).state;
+  const lines = renderTodoCard(state, fakeTheme, 48);
+  const over = lines.filter((l) => visibleWidth(l) > 48);
+  assert.equal(over.length, 0, `lines over 48 cols: ${over.map((l) => JSON.stringify(plain(l).slice(0, 50))).join(", ")}`);
 });
 
 it("renderTodoCard: all-done list shows 0 open", () => {

@@ -13,10 +13,10 @@ Based on [gentle-shell's `gentle-todo`](https://github.com/Gentleman-Programming
 - **The `todo` tool** — `write` (replace the whole list), `add`, `update`,
   `clear`, `list`. Tasks carry `pending` / `in_progress` / `blocked` / `done` /
   `dropped` statuses; `blocked` requires a note naming what it waits for.
-- **A live card** — in the skill-pi-tui sidebar (terminals ≥ 140 columns) or,
-  below the breakpoint, as a widget above the editor. Shows a `done/total · open`
+- **A live card** — in the skill-pi-tui right sidebar. Shows a `done/total · open`
   summary, per-task status glyphs, in-progress notes, and a stale warning when
-  the list goes untouched for several turns.
+  the list goes untouched for several turns. The main-view widget is empty;
+  the card lives exclusively in the sidebar rail.
 - **Collapse & scroll** — `ctrl+shift+t` collapses to a one-line summary;
   `alt+shift+up/down` scrolls a long list.
 - **The list survives** — every change mirrors the open snapshot into the
