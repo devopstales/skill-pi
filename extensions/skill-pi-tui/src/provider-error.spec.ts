@@ -41,14 +41,15 @@ it("humanizeProviderError: turns an Ollama 404 model-not-found payload into a fr
   assert.match(out, /qwen2\.5-coder:7b/);
   assert.match(out, /not found/);
   assert.match(out, /\/model/);
-  assert.match(out, /ollama pull qwen2\.5-coder:7b/);
+  assert.notMatch(out, /ollama/);
 });
 
 it("humanizeProviderError: triangulates with a different 404 model id", () => {
   const out = humanizeProviderError('404: {"message":"model \'llama3.2:3b\' not found","type":"not_found_error"}');
   assert.ok(out);
   assert.match(out, /llama3\.2:3b/);
-  assert.match(out, /ollama pull llama3\.2:3b/);
+  assert.match(out, /\/model/);
+  assert.notMatch(out, /ollama/);
 });
 
 it("humanizeProviderError: maps 401 to an auth hint", () => {
@@ -99,7 +100,7 @@ it("cleanProviderError: replaces empty content + errorMessage with the friendly 
   assert.equal(out.content.length, 1);
   assert.match(out.content[0].text, /qwen2\.5-coder:7b/);
   assert.match(out.content[0].text, /not found/);
-  assert.match(out.content[0].text, /ollama pull qwen2\.5-coder:7b/);
+  assert.notMatch(out.content[0].text, /ollama/);
   assert.notMatch(out.content[0].text, /not_found_error/);
 });
 

@@ -47,10 +47,7 @@ export function humanizeProviderError(text: string): string | null {
   const modelMatch = trimmed.match(MODEL_NOT_FOUND);
   if (modelMatch) {
     const model = modelMatch[1];
-    return (
-      `Model "${model}" not found on the provider.` +
-      `\nPull it or pick another: /model (e.g. ollama pull ${model})`
-    );
+    return `Model "${model}" not found on the provider.\nPick another: /model`;
   }
   if (AUTH_ERROR.test(trimmed)) {
     return "Authentication failed for the provider.\nCheck credentials: /login";
