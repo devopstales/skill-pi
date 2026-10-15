@@ -166,7 +166,7 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
         return prev.active;
       }
       const contentWidth = scroll.getContentWidth(RAIL_WIDTH);
-      const sections = ["footer", "agents", "todo"].filter((key) => key !== "todo" || state.visibility?.todo !== false).map((key) => {
+      const sections = ["footer", "agents", "todo", "plan"].filter((key) => key !== "todo" || state.visibility?.todo !== false).map((key) => {
         const component = state.parts.get(key);
         if (!component) {
           sectionCache.delete(key);
