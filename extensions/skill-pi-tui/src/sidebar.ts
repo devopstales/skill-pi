@@ -7,6 +7,15 @@ export const VISUAL_SETTINGS_CHANGED = "skill-pi-tui.visual-settings-changed";
 
 export interface SidebarState {
   active: boolean;
+  /**
+   * Whether the [main, rail] hstack is currently attached to the layout root
+   * Pi is actually rendering. The bottom-widget suppression (sidebarPart) must
+   * key off this, not off `active`: `active` is decided by `prepare()` before
+   * `attach()` knows the hstack landed on the live root, so the two can
+   * disagree and the todo card would render in both the rail and the main
+   * column. `ownsHost()` is derived from this.
+   */
+  attached?: boolean;
   visibility?: { todo?: boolean };
   ownsHost?: () => boolean;
   railColumns?: number;
@@ -32,7 +41,15 @@ export function sidebarPart<T extends Component & { dispose?(): void }>(tui: TUI
   state.parts.set(key, rail);
   return {
     ...bottom,
-    render: (width: number) => (key === "todo" && state.visibility?.todo === false) || (key === "footer" && (state.statusHidden?.() || state.headerOwnsStatus?.())) || (state.active && state.ownsHost?.()) ? [] : bottom.render(width),
+    // Suppress the main-screen paint for the todo exactly when the rail owns the
+    // host column: ownsHost() is true only while the hstack is attached to the
+    // live layout root (state.attached, set by installSidebar's attach() each
+    // tick). Without that, a content-fit `active` alone would hide the card here
+    // even though the rail isn't painting — or leave it duplicated when the rail
+    // is. The footer is never suppressed by the rail: the rail's Status card is a
+    // complement, not a replacement, so the model/tokens/cost bar stays visible
+    // in the main column regardless of sidebar state.
+    render: (width: number) => (key === "todo" && (state.visibility?.todo === false || (state.active && state.ownsHost?.()))) || (key === "footer" && (state.statusHidden?.() || state.headerOwnsStatus?.())) ? [] : bottom.render(width),
     dispose() {
       if (state.parts.get(key) === rail) state.parts.delete(key);
       bottom.dispose?.();

@@ -2,12 +2,22 @@ import { ScrollView, VStack, visibleWidth, type Component, type TUI, type TuiMou
 import { sidebarState, type SidebarRail } from "./sidebar.ts";
 import { cardStyle, type CardStyle } from "./card.ts";
 
-export const SIDEBAR_BREAKPOINT = 140;
 const RAIL_WIDTH = 50;
 const RAIL_PADDING = 1;
-const GAP = 3;
+// ponytail: the floating card frame (FLOAT_MARGIN in card.ts) adds 2 cols to a
+// part's render width; the host must reserve that or the rail's overflow check
+// in prepare() never passes and ownsHost() stays false.
+const GAP = 5;
 /** Right-edge columns the painting rail takes from the editor column. */
 export const SIDEBAR_RAIL_COLUMNS = RAIL_WIDTH + GAP;
+// Minimum columns the main (left) column must keep so the rail doesn't swallow
+// the whole screen. The sidebar activates when it fits (RAIL_COLUMNS + this),
+// never at a fixed 140 — placement is decided by "does the sidebar fit + is it
+// enabled", not by terminal size. Below this, the todo/footer fall back to the
+// main screen (the main-screen widget is the narrow-terminal fallback by design).
+const MIN_MAIN_COLUMNS = 40;
+/** Minimum terminal width for the fullscreen rail to activate. */
+export const SIDEBAR_BREAKPOINT = SIDEBAR_RAIL_COLUMNS + MIN_MAIN_COLUMNS;
 const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: "stretch" | "start" | "center" | "end" };
 type TuiMouseDispatchResult = TuiMouseEventResult & { handled: true; target: { component: Component; originX: number; originY: number; width: number; height: number } };
@@ -73,10 +83,16 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   let prepared: PreparedRail | undefined;
   const sectionCache = new Map<string, SectionCacheEntry>();
   state.active = false;
+  state.attached = false;
   state.statusHidden = () => !stopped && placement() === "hidden";
   state.headerOwnsStatus = () => false;
   state.railColumns = SIDEBAR_RAIL_COLUMNS;
-  state.ownsHost = () => !stopped && host.mode === "fullscreen" && tui.terminal.columns >= SIDEBAR_BREAKPOINT && (placement() === "auto" || placement() === "right") && !!host.layoutRoot && roots.has(host.layoutRoot);
+  // ownsHost() is the signal the bottom-widget suppression keys off (sidebarPart).
+  // It must mean "the hstack is genuinely attached to the layout root Pi is
+  // rendering right now", not "the rail content would fit" — that is `attached`,
+  // set by attach() each tick. `active` (prepare() content-fit) can be true while
+  // the hstack is not on the live root, which would double-render the card.
+  state.ownsHost = () => state.attached && !stopped && host.mode === "fullscreen" && tui.terminal.columns >= SIDEBAR_BREAKPOINT && (placement() === "auto" || placement() === "right") && !!host.layoutRoot && roots.has(host.layoutRoot);
   const rail: Component = {
     render: () => railLines,
     invalidate() {
@@ -218,11 +234,15 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   };
   const trueOriginals = new Map<LayoutRoot, () => LayoutNode>();
   const attach = () => {
-    if (stopped || failed) return;
-    if (host.mode !== "fullscreen") { state.active = false; return; }
+    if (stopped || failed) { state.attached = false; return; }
+    if (host.mode !== "fullscreen") { state.active = false; state.attached = false; return; }
     try {
       const root = host.layoutRoot;
-      if (!root || typeof root[NODE] !== "function") { state.active = false; return; }
+      if (!root || typeof root[NODE] !== "function") { state.active = false; state.attached = false; return; }
+      // We (re)attach the hstack to the live root this tick. attach() polls every
+      // 100ms, so this tracks the root Pi is actually rendering — including a
+      // root Pi swapped in after installSidebar first ran.
+      state.attached = true;
       let original = trueOriginals.get(root);
       if (!original) {
         original = root[NODE]!;
@@ -252,10 +272,16 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
           else Reflect.deleteProperty(root, NODE);
         });
       }
+      // Record that the hstack is attached to this root so ownsHost() (and the
+      // bottom-widget suppression) can tell "rail is painting" from "rail would
+      // fit". Without this, roots stays empty and ownsHost() is always false, so
+      // the todo card renders in BOTH the rail and the main column.
+      roots.add(root);
       tui.requestRender();
     } catch {
       failed = true;
       state.active = false;
+      state.attached = false;
     }
   };
   attach();
@@ -264,6 +290,7 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   return () => {
     stopped = true;
     state.active = false;
+    state.attached = false;
     clearInterval(timer);
     scroll.setScrollbar("hidden");
     for (const cleanup of cleanups.reverse()) cleanup();

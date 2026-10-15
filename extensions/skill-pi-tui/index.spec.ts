@@ -7,7 +7,8 @@ import { captureChanges, emptyChanges } from "./src/changes.ts";
 import { sanitizeTerminalText } from "./src/text.ts";
 import { renderCard, CARD_TONE, type CardTheme } from "./src/card.ts";
 import { renderStatusCard, type StatusCardModel } from "./src/status-card.ts";
-import { SIDEBAR_BREAKPOINT, invalidateSidebar } from "./src/sidebar-layout.ts";
+import { SIDEBAR_BREAKPOINT, SIDEBAR_RAIL_COLUMNS, invalidateSidebar } from "./src/sidebar-layout.ts";
+import { panelExtraRows } from "./src/card.ts";
 import { sidebarState, sidebarPart } from "./src/sidebar.ts";
 
 function git(cwd: string, ...args: string[]): string {
@@ -111,9 +112,20 @@ it("renderStatusCard: non-git notice when no changes", () => {
   assert.notMatch(flat, /Branch/);
 });
 
-it("SIDEBAR_BREAKPOINT is 140 and registry APIs exist", () => {
-  assert.equal(SIDEBAR_BREAKPOINT, 140);
+it("SIDEBAR_BREAKPOINT is derived from the rail width (not a fixed 140)", () => {
+  // The sidebar must activate whenever the rail fits plus a usable main column,
+  // not at a hardcoded 140 — placement is "does it fit + is it enabled".
+  assert.equal(SIDEBAR_BREAKPOINT, SIDEBAR_RAIL_COLUMNS + 40);
+  assert.ok(SIDEBAR_BREAKPOINT < 140, "breakpoint must be lower than the old fixed 140 so mid-width terminals get the sidebar");
   assert.equal(typeof invalidateSidebar, "function");
   assert.equal(typeof sidebarState, "function");
   assert.equal(typeof sidebarPart, "function");
+});
+
+it("SIDEBAR_RAIL_COLUMNS reserves the floating card frame, not just the rail", () => {
+  const railWidth = 50;
+  const partRenderWidth = railWidth - 2;
+  const floatExtra = panelExtraRows(fakeTheme, railWidth);
+  assert.ok(SIDEBAR_RAIL_COLUMNS >= railWidth + floatExtra, "host must reserve the card frame's full painted width or the rail never activates");
+  assert.ok(partRenderWidth + floatExtra <= SIDEBAR_RAIL_COLUMNS, "part render width + frame margin must fit the reserved columns");
 });
