@@ -1,10 +1,10 @@
 schema: skillgrid/state/v1
 pipeline:
-  current_phase: "shipped"
-  current_change: "2026-10-14-skill-pi-tui-sidebar"
-  status: done
+  current_phase: "slicing"
+  current_change: "2026-10-14-unified-providers"
+  status: in-progress
 progress:
-  completed_changes: 3
+  completed_changes: 4
   blocked_changes: 0
 constraints_ref: .skillgrid/ASSUMPTIONS.md
-notes: "Shipped 2026-10-14-skill-pi-tui-sidebar (QA PASS, three-axis review met-with-fixes, door check green 2026-10-14; W001-W012 in WINDOWS.md; archive move committed). In-flight: 2026-10-14-permission-extension at slicing gate. Parked: 2026-10-14-unified-providers at blueprint gate. Completed: 2026-10-14-skill-pi-tui-sidebar (shipped, archived), 2026-10-13-ask-user (shipped, archived), 2026-10-13-package-naming (shipped, archived)."
+notes: "Active: 2026-10-14-unified-providers at slicing gate (tasks.md + acceptance.feature committed 2026-10-15; 7 tickets in 6 waves, stacked-to-main, ask-on-risk; one-way checkpoint at TICKET-01 vendor commit). Uncommitted WIP on main: 2026-10-15-dynamic-extension-allow (extensions/permission/{index,models}.ts, extensions/todo/index.ts, untracked extension-allow.spec.ts, show-debug.mjs) — parked by user, leave untouched. Parked: 2026-10-14-permission-extension at slicing gate (superseded by 2026-10-15-dynamic-extension-allow for the dynamic-allow work). Completed: 2026-10-15-dynamic-extension-allow (shipped, archived 2026-10-15), 2026-10-14-skill-pi-tui-sidebar (shipped, archived), 2026-10-13-ask-user (shipped, archived), 2026-10-13-package-naming (shipped, archived)."
