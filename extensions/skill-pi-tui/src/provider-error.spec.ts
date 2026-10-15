@@ -35,21 +35,19 @@ it("isProviderError: ignores non-message values", () => {
   );
 });
 
-it("humanizeProviderError: turns an Ollama 404 model-not-found payload into a friendly message", () => {
-  const out = humanizeProviderError(OLLAMA_404);
-  assert.ok(out, "expected a humanized message");
-  assert.match(out, /qwen2\.5-coder:7b/);
-  assert.match(out, /not found/);
-  assert.match(out, /\/model/);
-  assert.notMatch(out, /ollama/);
-});
-
-it("humanizeProviderError: triangulates with a different 404 model id", () => {
-  const out = humanizeProviderError('404: {"message":"model \'llama3.2:3b\' not found","type":"not_found_error"}');
-  assert.ok(out);
-  assert.match(out, /llama3\.2:3b/);
-  assert.match(out, /\/model/);
-  assert.notMatch(out, /ollama/);
+it("humanizeProviderError: round-trips the model id from any 404 model-not-found payload", () => {
+  // The payload mirrors a real Ollama response; the assertions must not
+  // depend on the specific id — the humanizer must carry through whatever
+  // the provider returns.
+  for (const model of ["qwen2.5-coder:7b", "llama3.2:3b", "mistral-nemo:12b-instruct", "custom-model:0.1"]) {
+    const payload = `404: {"message":"model '${model}' not found","type":"not_found_error"}`;
+    const out = humanizeProviderError(payload);
+    assert.ok(out, `expected a humanized message for ${model}`);
+    assert.match(out, new RegExp(`Model "${model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}" not found`));
+    assert.match(out, /\/model/);
+    assert.notMatch(out, /ollama/);
+    assert.notMatch(out, /404:/);
+  }
 });
 
 it("humanizeProviderError: maps 401 to an auth hint", () => {
@@ -98,9 +96,9 @@ it("cleanProviderError: replaces empty content + errorMessage with the friendly 
   });
   assert.ok(out);
   assert.equal(out.content.length, 1);
-  assert.match(out.content[0].text, /qwen2\.5-coder:7b/);
-  assert.match(out.content[0].text, /not found/);
+  assert.match(out.content[0].text, /not found on the provider/);
   assert.notMatch(out.content[0].text, /ollama/);
+  assert.notMatch(out.content[0].text, /404:/);
   assert.notMatch(out.content[0].text, /not_found_error/);
 });
 
