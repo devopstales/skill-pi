@@ -11,5 +11,5 @@
     "verbatimModuleSyntax": true,
     "plugins": [{ "name": "@effect/language-service" }]
   },
-  "include": ["index.ts", "*.spec.ts"]
+  "include": ["**/*.ts"]
 }

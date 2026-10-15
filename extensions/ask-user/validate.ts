@@ -1,48 +1,53 @@
-export interface AskQuestion {
-  question: string;
-  options: string[];
-  multiSelect?: boolean;
-  allowFreeform?: boolean;
-}
+import {
+  MAX_QUESTIONS,
+  MIN_OPTIONS,
+  RESERVED_LABELS,
+  type QuestionParams,
+  type QuestionnaireError,
+} from "./types.js";
 
-export const MIN_OPTIONS = 2;
-export const MAX_OPTIONS = 5;
-export const MIN_BATCH = 2;
-export const MAX_BATCH = 4;
+export const ERROR_NO_QUESTIONS = "Error: At least one question is required";
+export const ERROR_TOO_MANY_QUESTIONS = `Error: At most ${MAX_QUESTIONS} questions are allowed per invocation`;
+export const ERROR_DUPLICATE_QUESTION = "Error: Question text must be unique within an invocation";
+export const ERROR_TOO_FEW_OPTIONS = `Error: Each question requires at least ${MIN_OPTIONS} options`;
+export const ERROR_RESERVED_LABEL = `Error: Option label is reserved (${RESERVED_LABELS.join(", ")})`;
+export const ERROR_DUPLICATE_OPTION_LABEL = "Error: Option labels must be unique within a question";
 
-interface AskUserParams {
-  question?: string;
-  questions?: AskQuestion[];
-  options?: string[];
-  multiSelect?: boolean;
-  allowFreeform?: boolean;
-}
+const RESERVED_LABEL_SET: ReadonlySet<string> = new Set(RESERVED_LABELS);
 
-export function validateParams(params: AskUserParams): string | undefined {
-  const single = params.question !== undefined;
-  const batch = params.questions !== undefined;
-  if (single && batch) {
-    return "ask_user: provide exactly one of `question` or `questions`, not both";
+export type ValidationResult = { ok: true } | { ok: false; error: QuestionnaireError; message: string };
+
+export function validateQuestionnaire(typed: QuestionParams): ValidationResult {
+  if (typed.questions.length === 0) {
+    return { ok: false, error: "no_questions", message: ERROR_NO_QUESTIONS };
   }
-  if (!single && !batch) {
-    return "ask_user: provide `question` (single) or `questions` (batch), one of the two is required";
+  if (typed.questions.length > MAX_QUESTIONS) {
+    return { ok: false, error: "too_many_questions", message: ERROR_TOO_MANY_QUESTIONS };
   }
-  if (batch) {
-    const questions = params.questions!;
-    if (questions.length < MIN_BATCH || questions.length > MAX_BATCH) {
-      return `ask_user: a batch needs ${MIN_BATCH}–${MAX_BATCH} questions, got ${questions.length}`;
+
+  const seenQuestions = new Set<string>();
+  for (const q of typed.questions) {
+    if (seenQuestions.has(q.question)) {
+      return { ok: false, error: "duplicate_question", message: ERROR_DUPLICATE_QUESTION };
     }
-    for (const q of questions) {
-      const count = q.options?.length ?? 0;
-      if (count < MIN_OPTIONS || count > MAX_OPTIONS) {
-        return `ask_user: each question needs ${MIN_OPTIONS}–${MAX_OPTIONS} options, got ${count}`;
+    seenQuestions.add(q.question);
+  }
+
+  for (const q of typed.questions) {
+    if (q.options.length < MIN_OPTIONS) {
+      return { ok: false, error: "empty_options", message: ERROR_TOO_FEW_OPTIONS };
+    }
+    const seenLabels = new Set<string>();
+    for (const o of q.options) {
+      if (RESERVED_LABEL_SET.has(o.label)) {
+        return { ok: false, error: "reserved_label", message: ERROR_RESERVED_LABEL };
       }
+      if (seenLabels.has(o.label)) {
+        return { ok: false, error: "duplicate_option_label", message: ERROR_DUPLICATE_OPTION_LABEL };
+      }
+      seenLabels.add(o.label);
     }
-    return undefined;
   }
-  const count = params.options?.length ?? 0;
-  if (count < MIN_OPTIONS || count > MAX_OPTIONS) {
-    return `ask_user: each question needs ${MIN_OPTIONS}–${MAX_OPTIONS} options, got ${count}`;
-  }
-  return undefined;
+
+  return { ok: true };
 }

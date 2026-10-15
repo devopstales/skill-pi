@@ -1,859 +1,306 @@
-import type {
-  AgentToolResult,
-  ExtensionAPI,
-  ExtensionToolContext,
-} from "@earendil-works/pi-coding-agent";
-import { Text, parseKey } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
+import {
+  COLLAPSE_KEY_OFF,
+  formatKeySpecForDisplay,
+  loadConfig,
+  resolveCollapseKey,
+  validateGuidanceFields,
+} from "./config.js";
+import {
+  ASK_USER_BLOCKED_EVENT,
+  ASK_USER_PROMPT_EVENT,
+  ASK_ANSWERED_EVENT,
+  ASK_CANCELLED_EVENT,
+  type AskUserBlockedEventPayload,
+  type AskUserPromptEventPayload,
+} from "./events.js";
+import { type OpenQuestionnaire, registerAnswerChannel } from "./answer-channel.js";
+import { buildQuestionnaireResponse, buildToolResult } from "./envelope.js";
+import { normalizeQuestionParams, prepareQuestionArguments } from "./normalize.js";
+import {
+  hasDialogUI,
+  runRpcQuestionnaire,
+  type DialogUI,
+} from "./rpc-fallback.js";
+import { QuestionParamsSchema, type QuestionData, type QuestionParams, type QuestionnaireResult } from "./types.js";
+import { validateQuestionnaire } from "./validate.js";
+import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
+import { displayLabel } from "./state/i18n-bridge.js";
+import { sentinelsToAppend } from "./state/row-intent.js";
 
-export interface AskOption {
-  label: string;
-  description: string;
-}
+export const ASK_USER_TOOL_NAME = "ask_user";
 
-export type AskOptionInput = string | AskOption;
+const ERROR_NO_UI = "Error: UI not available (running in non-interactive mode)";
 
-interface AskQuestion {
-  question: string;
-  options: string[];
-  descriptions?: string[];
-  multiSelect?: boolean;
-  allowFreeform?: boolean;
-}
+const ERROR_NO_CUSTOM_UI =
+  "Error: this client cannot render the questionnaire (custom UI is unavailable, e.g. RPC/ACP hosts such as Zed or Paseo). The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, without using this tool.";
 
-interface AskUserParams {
-  question?: string;
-  questions?: RawQuestion[];
-  options?: AskOptionInput[];
-  multiSelect?: boolean;
-  allowFreeform?: boolean;
-}
+const ERROR_SESSION_LOAD_FAILED =
+  "Error: the questionnaire UI failed to load — the host's installed dependencies were likely replaced or removed on disk while Pi was running. The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, and tell the user that restoring this tool requires restarting Pi.";
 
-interface RawQuestion {
-  question: string;
-  options: AskOptionInput[];
-  multiSelect?: boolean;
-  allowFreeform?: boolean;
-}
+const ERROR_STALE_MODULE_CACHE =
+  "Error: the questionnaire UI cannot load — the host's module cache went stale after an earlier failed load. This is unrecoverable within the current Pi process. The user never saw the questions — do NOT treat this as a decline. Ask the questions as plain chat text instead, and tell the user to restart Pi to restore this tool.";
 
-function toQuestion(raw: RawQuestion): AskQuestion {
-  const options: string[] = [];
-  const descriptions: string[] = [];
-  for (const opt of raw.options ?? []) {
-    if (typeof opt === "string") {
-      options.push(opt);
-      descriptions.push("");
-    } else {
-      options.push(opt.label);
-      descriptions.push(opt.description);
-    }
-  }
-  return {
-    question: raw.question,
-    options,
-    descriptions,
-    multiSelect: raw.multiSelect,
-    allowFreeform: raw.allowFreeform,
-  };
-}
+export const BEL = "\x07";
 
-function toQuestions(raw: RawQuestion[]): AskQuestion[] {
-  return raw.map(toQuestion);
-}
-
-export interface AskSelection {
-  kind: "selection";
-  selections: string[];
-}
-
-export interface AskFreeform {
-  kind: "freeform";
-  text: string;
-}
-
-export interface AskSingleDetails {
-  question: string;
-  options: string[];
-  answer: AskSelection | AskFreeform | null;
-  note?: string;
-  cancelled: boolean;
-}
-
-export interface AskBatchDetails {
-  kind: "batch";
-  questions: AskQuestion[];
-  answers: (AskSelection | AskFreeform)[] | null;
-  notes?: (string | undefined)[];
-  globalNote?: string;
-  cancelled: boolean;
-}
-
-export type AskDetails = AskSingleDetails | AskBatchDetails;
-
-export const ASK_PROMPT_SNIPPET =
-  "Use ask_user to ask the user a focused decision question with 2–5 options.";
-
-export const ASK_PROMPT_GUIDELINES = [
-  "Ask ONE focused decision question per ask_user call with 2–5 mutually exclusive options; never bundle independent decisions in one question.",
-  "Use the `questions` batch (2–4 questions) only for independent decisions that can be answered in order; each batch question still needs 2–5 options.",
-  "Set `multiSelect: true` when the user may pick more than one option; otherwise options are single-choice.",
-  "Freeform answers are offered automatically unless `allowFreeform` is false.",
-  "If you recommend a specific option, make it the first option and append (Recommended) to its label.",
+export const DEFAULT_PROMPT_SNIPPET = "Ask the user up to 4 structured questions (2-4 options each) when requirements are ambiguous";
+export const DEFAULT_PROMPT_GUIDELINES: string[] = [
+  "Use ask_user whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to 4 questions per invocation.",
+  'Each question MUST have 2-4 options. Every option requires a concise label (1-5 words) and a description explaining what the choice means or its trade-offs. The user can additionally type a custom answer via the automatically appended "Type something." row on every question, or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.',
+  'Set multiSelect: true when multiple answers are valid. Provide an options[].preview markdown string when an option benefits from richer side-by-side context (mockups, code snippets, diagrams, configs) — single-select only. If you recommend a specific option, make that the first option and append "(Recommended)" to its label.',
+  "Do not stack multiple ask_user calls back-to-back — group all clarifying questions into one invocation.",
 ];
 
-function askUserParams() {
-  return Type.Object({
-    question: Type.Optional(
-      Type.String({
-        description:
-          "The single decision question to ask. Exactly one of `question` or `questions` must be provided.",
-      }),
-    ),
-    options: Type.Optional(
-      Type.Array(Type.String(), {
-        description:
-          "2–5 mutually exclusive option labels for `question` (required when `question` is used).",
-      }),
-    ),
-    multiSelect: Type.Optional(
-      Type.Boolean({
-        description:
-          "When true the user may select several options; the selection commits only on an explicit Done.",
-      }),
-    ),
-    allowFreeform: Type.Optional(
-      Type.Boolean({
-        description:
-          "When false the user cannot type a custom answer (default: allowed).",
-      }),
-    ),
-    questions: Type.Optional(
-      Type.Array(
-        Type.Object({
-          question: Type.String({
-            description: "The decision question to ask.",
-          }),
-          options: Type.Array(Type.String(), {
-            description: "2–5 mutually exclusive option labels.",
-          }),
-          multiSelect: Type.Optional(Type.Boolean()),
-          allowFreeform: Type.Optional(Type.Boolean()),
-        }),
-        {
-          description:
-            "A batch of 2–4 independent decision questions. Exactly one of `question` or `questions` must be provided.",
-        },
-      ),
-    ),
-  });
-}
+export const DEFAULT_TOOL_DESCRIPTION = `Ask the user one or more structured questions during execution. Use when you need to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take
 
-export type AskUserParamsSchema = ReturnType<typeof askUserParams>;
+Usage notes:
+- Users can type a custom answer via the automatically appended "Type something." row on every question or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.
+- Use multiSelect: true when multiple answers are valid. The "Type something." row is available on every question, including when options carry a \`preview\`.
+- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end of the label.
 
-const MIN_OPTIONS = 2;
-const MAX_OPTIONS = 5;
-const MIN_BATCH = 2;
-const MAX_BATCH = 4;
+Preview feature:
+Use the optional \`preview\` field on options when presenting concrete artifacts that users need to visually compare:
+- ASCII mockups of UI layouts or components
+- Code snippets showing different implementations
+- Diagram variations
+- Configuration examples
 
-function validateOptions(options: AskOptionInput[] | undefined): string | undefined {
-  const count = options?.length ?? 0;
-  if (count < MIN_OPTIONS || count > MAX_OPTIONS) {
-    return `ask_user: each question needs ${MIN_OPTIONS}–${MAX_OPTIONS} options, got ${count}`;
-  }
-  for (const opt of options ?? []) {
-    if (typeof opt === "string") continue;
-    if (typeof opt.label !== "string" || opt.label.length === 0) {
-      return "ask_user: each option needs a string label";
-    }
-    if (typeof opt.description !== "string" || opt.description.length === 0) {
-      return `ask_user: option ${opt.label} needs a non-empty description`;
-    }
-  }
-  return undefined;
-}
+Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).`;
 
-function validateParams(params: AskUserParams): string | undefined {
-  const single = params.question !== undefined;
-  const batch = params.questions !== undefined;
-  if (single && batch) {
-    return "ask_user: provide exactly one of `question` or `questions`, not both";
-  }
-  if (!single && !batch) {
-    return "ask_user: provide `question` (single) or `questions` (batch), one of the two is required";
-  }
-  if (batch) {
-    if (params.questions!.length < MIN_BATCH || params.questions!.length > MAX_BATCH) {
-      return `ask_user: a batch needs ${MIN_BATCH}–${MAX_BATCH} questions, got ${params.questions!.length}`;
-    }
-    for (const q of params.questions!) {
-      const error = validateOptions(q.options);
-      if (error) return error;
-    }
-    return undefined;
-  }
-  return validateOptions(params.options);
-}
-
-function validationError(message: string): AgentToolResult<AskDetails> {
-  return {
-    content: [{ type: "text", text: message }],
-    details: { cancelled: true, answer: null } as unknown as AskSingleDetails,
-    isError: true,
+function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCallId: string): void {
+  const payload: AskUserPromptEventPayload = {
+    toolCallId,
+    questions: params.questions.map((q) => ({
+      question: q.question,
+      header: q.header,
+      multiSelect: q.multiSelect ?? false,
+      options: q.options.map((o) => ({
+        label: o.label,
+        description: o.description,
+        hasPreview: typeof o.preview === "string" && o.preview.length > 0,
+      })),
+    })),
   };
+  pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
-export function renderAskCall(
-  params: AskUserParams,
-  theme: { fg(color: string, text: string): string; bold(text: string): string },
-) {
-  const describe = (q: AskQuestion) =>
-    `${q.question} (${q.options.join(", ")})`;
-  let plain: string;
-  if (params.questions) {
-    const full = `Ask (${params.questions.length} questions): ${params.questions
-      .map(describe)
-      .join(", ")}`;
-    plain = full.length > 120 ? `${full.slice(0, 119)}…` : full;
-  } else {
-    plain = `Ask: ${describe({ question: params.question ?? "", options: params.options ?? [] })}`;
+function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean, toolCallId: string): void {
+  const payload: AskUserBlockedEventPayload = { active, toolCallId };
+  pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
+}
+
+function emitBackwardCompatEvents(pi: ExtensionAPI, params: QuestionParams, result: QuestionnaireResult): void {
+  for (const a of result.answers) {
+    pi.events.emit(ASK_ANSWERED_EVENT, { question: a.question, kind: a.kind });
   }
-  return new Text(
-    theme.fg("toolTitle", theme.bold("ask_user ")) +
-      theme.fg("accent", plain),
-    0,
-    0,
-  );
-}
-
-export function renderAskResult(
-  result: AgentToolResult<AskDetails>,
-  theme: { fg(color: string, text: string): string; bold(text: string): string },
-) {
-  const details = result.details;
-  if (!details) return new Text("", 0, 0);
-  if (details.kind === "batch") {
-    const label = details.cancelled
-      ? "✗ cancelled (batch)"
-      : `✓ ${details.answers?.length ?? 0} answers collected`;
-    return new Text(details.cancelled ? theme.fg("warning", label) : theme.fg("success", label), 0, 0);
+  if (result.cancelled && result.answers.length === 0) {
+    pi.events.emit(ASK_CANCELLED_EVENT, { question: params.questions[params.questions.length - 1]?.question });
   }
-  if (details.cancelled) {
-    return new Text(theme.fg("warning", "✗ cancelled"), 0, 0);
+}
+
+function rejectWithoutUi() {
+  return buildToolResult(ERROR_NO_UI, { answers: [], cancelled: true, error: "no_ui" });
+}
+
+function emitTerminalAttention(): void {
+  try {
+    if (process.stdout.isTTY) process.stdout.write(BEL);
+  } catch {
+    // Terminal attention is best effort.
   }
-  const answer = details.answer;
-  if (!answer) return new Text(theme.fg("dim", "no answer"), 0, 0);
-  if (answer.kind === "freeform") {
-    return new Text(theme.fg("success", `✓ ${answer.text}`), 0, 0);
+}
+
+async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams, toolCallId: string) {
+  emitAskUserBlockedEvent(pi, true, toolCallId);
+  try {
+    emitTerminalAttention();
+    const result = await runRpcQuestionnaire(ui, typed);
+    emitBackwardCompatEvents(pi, typed, result);
+    return buildQuestionnaireResponse(result, typed);
+  } finally {
+    emitAskUserBlockedEvent(pi, false, toolCallId);
   }
-  const first = answer.selections[0];
-  const index = details.options.indexOf(first);
-  const label =
-    index >= 0 && answer.selections.length === 1
-      ? `${index + 1}. ${first}`
-      : answer.selections.join(", ");
-  return new Text(theme.fg("success", `✓ ${label}`), 0, 0);
 }
 
-export const FREEFORM_OPTION = "✎ Type something…";
-export const DONE_OPTION = "Done";
-export const UNAVAILABLE_TEXT = "ask_user is unavailable outside interactive modes";
+type SessionModule = typeof import("./state/questionnaire-session.js");
 
-interface EmitFn {
-  (channel: string, data: unknown): void;
-}
+type SessionLoad =
+  | { ok: true; module: SessionModule }
+  | { ok: false; error: "session_load_failed" | "stale_module_cache"; message: string };
 
-export async function askSingleViaRpc(q: AskQuestion, ctx: ExtensionToolContext) {
-  const dialogOptions =
-    q.allowFreeform === false ? q.options : [...q.options, FREEFORM_OPTION];
-  const choice = await ctx.ui.select(q.question, dialogOptions);
-  if (choice === undefined) return null;
-  if (choice === FREEFORM_OPTION) {
-    const text = await ctx.ui.input(q.question, "Type your answer…");
-    return text ? ({ kind: "freeform", text } as AskFreeform) : null;
+export async function loadQuestionnaireSession(): Promise<SessionLoad> {
+  let mod: SessionModule;
+  try {
+    mod = await import("./state/questionnaire-session.js");
+  } catch (e) {
+    const cause = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: "session_load_failed", message: `${ERROR_SESSION_LOAD_FAILED} (cause: ${cause})` };
   }
-  return { kind: "selection", selections: [choice] } as AskSelection;
-}
-
-function multiSelectTitle(q: AskQuestion, selected: Set<string>, round: number) {
-  const marks = q.options
-    .map((option) => `${selected.has(option) ? "[x]" : "[ ]"} ${option}`)
-    .join("\n");
-  return `${q.question}\n${marks}\n(Round ${round})`;
-}
-
-export async function askMultiSelectViaRpc(
-  q: AskQuestion,
-  ctx: ExtensionToolContext,
-): Promise<AskSelection | null> {
-  const selected = new Set<string>();
-  const cap = Math.max(32, q.options.length + 2);
-  const dialogOptions = [
-    ...q.options,
-    DONE_OPTION,
-    ...(q.allowFreeform === false ? [] : [FREEFORM_OPTION]),
-  ];
-  for (let round = 1; round <= cap; round++) {
-    const choice = await ctx.ui.select(
-      multiSelectTitle(q, selected, round),
-      dialogOptions,
-    );
-    if (choice === undefined) return null;
-    if (choice === DONE_OPTION) {
-      return { kind: "selection", selections: [...selected] } as AskSelection;
-    }
-    if (choice === FREEFORM_OPTION) {
-      const text = await ctx.ui.input(q.question, "Type your answer…");
-      return text ? ({ kind: "freeform", text } as AskFreeform) : null;
-    }
-    if (selected.has(choice)) selected.delete(choice);
-    else selected.add(choice);
-    if (selected.size === q.options.length) {
-      return { kind: "selection", selections: [...selected] } as AskSelection;
-    }
-  }
-  return null;
-}
-
-interface BatchOutcome {
-  answers: (AskSelection | AskFreeform)[] | null;
-  question: AskQuestion;
-  answered: { question: AskQuestion; answer: AskSelection | AskFreeform }[];
-}
-
-export async function askBatchViaRpc(
-  questions: AskQuestion[],
-  ctx: ExtensionToolContext,
-): Promise<BatchOutcome> {
-  const answers: (AskSelection | AskFreeform)[] = [];
-  const answered: { question: AskQuestion; answer: AskSelection | AskFreeform }[] = [];
-  for (const q of questions) {
-    const answer = q.multiSelect
-      ? await askMultiSelectViaRpc(q, ctx)
-      : await askSingleViaRpc(q, ctx);
-    if (answer === null) return { answers: null, question: q, answered };
-    answers.push(answer);
-    answered.push({ question: q, answer });
-  }
-  return { answers, question: questions[questions.length - 1], answered };
-}
-
-export function batchPlaceholder(questions: AskQuestion[]): AskBatchDetails {
-  return { kind: "batch", questions, answers: null, cancelled: true };
-}
-
-export function batchResult(questions: AskQuestion[], outcome: BatchOutcome): AgentToolResult<AskBatchDetails> {
-  const details: AskBatchDetails = {
-    kind: "batch",
-    questions,
-    answers: outcome.answers,
-    cancelled: outcome.answers === null,
-  };
-  return {
-    content: [
-      {
-        type: "text",
-        text:
-          outcome.answers === null
-            ? `The user declined at "${outcome.question.question}"; the whole batch was cancelled, so proceed without these decisions.`
-            : `Batch answered: ${outcome.answers
-                .map((a) => (a.kind === "freeform" ? a.text : a.selections.join(", ")))
-                .join("; ")}`,
-      },
-    ],
-    details,
-  };
-}
-
-export function singleResult(q: AskQuestion, answer: AskSelection | AskFreeform | null): AgentToolResult<AskSingleDetails> {
-  const details: AskSingleDetails = {
-    question: q.question,
-    options: q.options,
-    answer,
-    cancelled: answer === null,
-  };
-  return {
-    content: [
-      {
-        type: "text",
-        text:
-          answer === null
-            ? "The user declined to answer; proceed without this decision and do not assume one."
-            : answer.kind === "freeform"
-              ? `User answer: ${answer.text}`
-              : `User selected: ${answer.selections.join(", ")}`,
-      },
-    ],
-    details,
-  };
-}
-
-export function singleUnavailable(q: AskQuestion): AgentToolResult<AskSingleDetails> {
-  return {
-    content: [{ type: "text", text: UNAVAILABLE_TEXT }],
-    details: { question: q.question, options: q.options, answer: null, cancelled: true },
-  };
-}
-
-export function batchUnavailable(questions: AskQuestion[]): AgentToolResult<AskBatchDetails> {
-  return {
-    content: [{ type: "text", text: UNAVAILABLE_TEXT }],
-    details: { kind: "batch", questions, answers: null, cancelled: true },
-  };
-}
-
-export interface AskPopupOutput {
-  cancelled: boolean;
-  answers: (AskSelection | AskFreeform | null)[];
-  notes: (string | null)[];
-  globalNote: string | null;
-}
-
-type AskPopupMode = "options" | "freeform";
-
-export class AskTuiPopup {
-  private readonly questions: AskQuestion[];
-  private page = 0;
-  private mode: AskPopupMode = "options";
-  private focus = 0;
-  private text = "";
-  private note = "";
-  private toggled = new Set<string>();
-  private answered: (AskSelection | AskFreeform | null)[];
-  private notes: (string | null)[];
-  private globalNote: string | null = null;
-  private warned = false;
-  private finished = false;
-
-  constructor(questions: AskQuestion[]) {
-    this.questions = questions;
-    this.answered = questions.map(() => null);
-    this.notes = questions.map(() => null);
-  }
-
-  render(width: number): string[] {
-    const title =
-      this.page === this.questions.length
-        ? "Review"
-        : `Ask ${this.page + 1}/${this.questions.length}`;
-    const footer: string[] = [];
-    if (this.mode === "freeform") {
-      footer.push(`${this.text}█  Esc back  Enter submit`);
-    } else if (this.page === this.questions.length) {
-      const unanswered = this.answered.filter((a) => a === null).length;
-      if (unanswered > 0) {
-        footer.push(`⚠ ${unanswered} question${unanswered > 1 ? "s" : ""} unanswered`);
-      }
-      footer.push(`Page ${this.page}/${this.questions.length}  Tab →  Enter submit`);
-      footer.push("Esc cancel");
-    } else {
-      const q = this.questions[this.page];
-      footer.push(
-        q.multiSelect
-          ? `↑↓ navigate  1-${q.options.length} toggle  Enter toggle/Done  Esc cancel`
-          : `↑↓ navigate  1-${q.options.length} select  Esc cancel`,
-      );
-    }
-    const inner = Math.max(1, width - 4);
-    const lines: string[] = [boxTitle(title, width)];
-    const body: string[] = [];
-    if (this.page === this.questions.length) {
-      body.push(...this.reviewRows());
-    } else {
-      const q = this.questions[this.page];
-      body.push(q.question, "");
-      body.push(...this.questionRows(q));
-    }
-    for (const line of body) lines.push(boxRow(line, inner));
-    lines.push(boxRow("", inner));
-    for (const line of footer) lines.push(boxRow(line, inner));
-    lines.push("└" + "─".repeat(Math.max(0, width - 2)) + "┘");
-    return lines;
-  }
-
-  handleInput(key: string): void {
-    if (this.finished) return;
-    if (this.mode === "freeform") return this.handleEditorInput(key);
-    if (this.mode === "note") return this.handleNoteInput(key);
-    if (key === "escape") {
-      this.finished = true;
-      return;
-    }
-    if (this.page === this.questions.length) return this.handleReviewInput(key);
-    this.handleQuestionInput(key);
-  }
-
-  get finishedFlag(): boolean {
-    return this.finished;
-  }
-
-  get editorMode(): boolean {
-    return this.mode === "freeform";
-  }
-
-  output(): AskPopupOutput {
+  if (typeof mod.QuestionnaireSession !== "function") {
+    const keys = JSON.stringify(Object.keys(mod));
     return {
-      cancelled: false,
-      answers: [...this.answered],
-      notes: [...this.notes],
-      globalNote: this.globalNote,
+      ok: false,
+      error: "stale_module_cache",
+      message: `${ERROR_STALE_MODULE_CACHE} (resolved namespace keys: ${keys})`,
     };
   }
-
-  private questionRows(q: AskQuestion): string[] {
-    if (q.multiSelect) {
-      const rows = q.options.map((option, i) =>
-        rowLine(`${this.toggled.has(option) ? "[x]" : "[ ]"} ${i + 1}. ${option}`, this.focus === i),
-      );
-      rows.push(rowLine(`✓ ${DONE_OPTION}`, this.focus === q.options.length));
-      return rows;
-    }
-    const rows = q.options.map((option, i) => rowLine(`${i + 1}. ${option}`, this.focus === i));
-    if (q.allowFreeform !== false) {
-      rows.push(rowLine(FREEFORM_OPTION, this.focus === q.options.length));
-    }
-    return rows;
-  }
-
-  private reviewRows(): string[] {
-    return this.questions.map((q, i) => {
-      const a = this.answered[i];
-      const value = a
-        ? a.kind === "freeform"
-          ? a.text
-          : a.selections.join(", ")
-        : "(skipped)";
-      return rowLine(`${i + 1}. ${q.question}  →  ${value}`, this.focus === i);
-    });
-  }
-
-  private focusCount(): number {
-    if (this.page === this.questions.length) return this.questions.length;
-    const q = this.questions[this.page];
-    if (q.multiSelect) return q.options.length + 1;
-    return q.options.length + (q.allowFreeform === false ? 0 : 1);
-  }
-
-  private moveFocus(delta: number): void {
-    const count = this.focusCount();
-    this.focus = (this.focus + delta + count) % count;
-  }
-
-  private handleQuestionInput(key: string): void {
-    const q = this.questions[this.page];
-    const rows = this.questionRows(q);
-    const freeformIndex = rows.length - 1;
-    if (key === "up") return this.moveFocus(-1);
-    if (key === "down") return this.moveFocus(1);
-    if (key === "tab") {
-      this.page = this.questions.length;
-      this.focus = 0;
-      this.mode = "options";
-      this.warned = false;
-      return;
-    }
-    if (/^[1-9]$/.test(key)) {
-      const n = Number(key);
-      if (n > rows.length) return;
-      if (q.multiSelect) {
-        if (n <= q.options.length) this.toggleOption(n - 1);
-      } else if (n - 1 === freeformIndex) {
-        this.openFreeform();
-      } else {
-        this.answerPage({ kind: "selection", selections: [q.options[n - 1]] });
-      }
-      return;
-    }
-    if (key === "enter") {
-      if (this.focus >= rows.length) return;
-      if (q.multiSelect) {
-        if (this.focus === q.options.length) this.commitMulti();
-        else this.toggleOption(this.focus);
-        return;
-      }
-      if (this.focus === freeformIndex) {
-        this.openFreeform();
-      } else {
-        this.answerPage({ kind: "selection", selections: [q.options[this.focus]] });
-      }
-      return;
-    }
-    if (q.allowFreeform === false) return;
-    if (this.focus === freeformIndex) {
-      this.openFreeform();
-      return;
-    }
-    if (!q.multiSelect && key.length === 1) {
-      this.openFreeform();
-      this.text = key;
-    }
-  }
-
-  private openFreeform(): void {
-    this.mode = "freeform";
-  }
-
-  private toggleOption(index: number): void {
-    const q = this.questions[this.page];
-    const option = q.options[index];
-    if (this.toggled.has(option)) this.toggled.delete(option);
-    else this.toggled.add(option);
-    if (this.toggled.size === q.options.length) this.commitMulti();
-  }
-
-  private commitMulti(): void {
-    this.answerPage({ kind: "selection", selections: [...this.toggled] });
-    this.toggled = new Set();
-  }
-
-  private answerPage(answer: AskSelection | AskFreeform): void {
-    this.answered[this.page] = answer;
-    if (this.questions.length === 1) {
-      this.finished = true;
-      return;
-    }
-    this.page += 1;
-    this.focus = 0;
-  }
-
-  private handleEditorInput(key: string): void {
-    if (key === "escape") {
-      this.mode = "options";
-      this.text = "";
-      return;
-    }
-    if (key === "backspace") {
-      this.text = this.text.slice(0, -1);
-      return;
-    }
-    if (key === "enter") {
-      if (this.text.length === 0) {
-        this.mode = "options";
-        return;
-      }
-      this.answerPage({ kind: "freeform", text: this.text });
-      this.text = "";
-      this.mode = "options";
-      return;
-    }
-    if (key === "space") this.text += " ";
-    else if (key.length === 1) this.text += key;
-  }
-
-  private handleReviewInput(key: string): void {
-    if (key === "up") return this.moveFocus(-1);
-    if (key === "down") return this.moveFocus(1);
-    if (key === "tab" || key === "shift+tab") {
-      this.page = 0;
-      this.focus = 0;
-      this.mode = "options";
-      this.warned = false;
-      return;
-    }
-    if (/^[1-9]$/.test(key) && Number(key) <= this.questions.length) {
-      this.page = Number(key) - 1;
-      this.focus = 0;
-      this.mode = "options";
-      this.warned = false;
-      return;
-    }
-    if (key === "enter") {
-      if (this.answered.some((a) => a === null)) {
-        if (!this.warned) {
-          this.warned = true;
-          return;
-        }
-      }
-      this.finished = true;
-    }
-  }
+  return { ok: true, module: mod };
 }
 
-function rowLine(label: string, focused: boolean): string {
-  return `${focused ? "▶" : " "} ${label}`;
-}
-
-function boxTitle(title: string, width: number): string {
-  const label = `─ ${title} `;
-  const fill = Math.max(0, width - label.length - 1);
-  return `┌${label}${"─".repeat(fill)}┐`;
-}
-
-function boxRow(line: string, inner: number): string {
-  const clipped = line.slice(0, inner);
-  return `│ ${clipped.padEnd(inner, " ")} │`;
-}
-
-interface AskTuiComponent {
-  render(width: number): string[];
-  handleInput(data: string): void;
-  invalidate(): void;
-  dispose(): void;
-  cancel(): void;
-}
-
-function makeTuiPopup(
-  questions: AskQuestion[],
-  onSettled: (output: AskPopupOutput) => void,
-): AskTuiComponent {
-  const popup = new AskTuiPopup(questions);
-  let settled = false;
-  const settle = (output: AskPopupOutput) => {
-    if (settled) return;
-    settled = true;
-    onSettled(output);
-  };
-  return {
-    render: (width: number) => popup.render(width),
-    handleInput: (data: string) => {
-      const key = parseKey(data);
-      if (!key) return;
-      if (key === "escape" && !popup.editorMode) {
-        settle({ cancelled: true, answers: [] });
-        return;
-      }
-      popup.handleInput(key);
-      if (popup.finishedFlag) settle(popup.output());
-    },
-    invalidate: () => undefined,
-    dispose: () => undefined,
-    cancel: () => settle({ cancelled: true, answers: [] }),
-  };
-}
-
-export function askTuiOutcome(
-  questions: AskQuestion[],
-  ctx: ExtensionToolContext,
-): Promise<AskPopupOutput> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (output: AskPopupOutput) => {
-      if (settled) return;
-      settled = true;
-      ctx.signal?.removeEventListener("abort", onAbort);
-      resolve(output);
-    };
-    const onAbort = () => finish({ cancelled: true, answers: [] });
-    if (ctx.signal) {
-      if (ctx.signal.aborted) {
-        finish({ cancelled: true, answers: [] });
-        return;
-      }
-      ctx.signal.addEventListener("abort", onAbort, { once: true });
+function registerCollapseKeyListener(
+  ctx: ExtensionContext,
+  collapseKey: string,
+  sessionRef: { current: InstanceType<SessionModule["QuestionnaireSession"]> | null },
+  overlayHandleRef: { current: OverlayHandle | undefined },
+): (() => void) | undefined {
+  if (collapseKey === COLLAPSE_KEY_OFF || typeof ctx.ui.onTerminalInput !== "function") return undefined;
+  let hasAnnouncedHide = false;
+  return ctx.ui.onTerminalInput((data) => {
+    const handle = overlayHandleRef.current;
+    if (!handle) return undefined;
+    if (!handle.isHidden() && !handle.isFocused()) return undefined;
+    if (!matchesKey(data, collapseKey as Parameters<typeof matchesKey>[1])) return undefined;
+    if (isKeyRelease(data) || isKeyRepeat(data)) return { consume: true };
+    sessionRef.current?.toggleCollapsedExternal();
+    if (handle.isHidden() && !hasAnnouncedHide) {
+      hasAnnouncedHide = true;
+      ctx.ui.notify?.(`ask_user hidden — press ${formatKeySpecForDisplay(collapseKey)} to reopen`, "info");
     }
-    void ctx.ui.custom((_tui, _theme, _keybindings, customDone) => {
-      const component = makeTuiPopup(questions, (output) => {
-        customDone(output);
-        finish(output);
-      });
-      if (ctx.signal) {
-        ctx.signal.addEventListener("abort", () => component.cancel(), { once: true });
-      }
-      return component;
-    });
+    return { consume: true };
   });
+}
+
+function buildItemsForQuestion(question: QuestionData): WrappingSelectItem[] {
+  const items: WrappingSelectItem[] = question.options.map((o) => ({
+    kind: "option",
+    label: o.label,
+    description: o.description,
+  }));
+  for (const kind of sentinelsToAppend(question)) {
+    items.push({ kind, label: displayLabel(kind) });
+  }
+  return items;
+}
+
+async function runTuiPath(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  typed: QuestionParams,
+  open: OpenQuestionnaire,
+): Promise<{ content: { type: "text"; text: string }[]; details: QuestionnaireResult }> {
+  const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
+  emitAskUserBlockedEvent(pi, true, open.toolCallId);
+  try {
+    const sessionLoad = await loadQuestionnaireSession();
+    if (open.settled) return buildQuestionnaireResponse(open.settled, typed);
+    if (!sessionLoad.ok) {
+      return buildToolResult(sessionLoad.message, { answers: [], cancelled: true, error: sessionLoad.error });
+    }
+    const { QuestionnaireSession } = sessionLoad.module;
+    const collapseKey = resolveCollapseKey(loadConfig());
+    const sessionRef: { current: InstanceType<SessionModule["QuestionnaireSession"]> | null } = { current: null };
+    const overlayHandleRef: { current: OverlayHandle | undefined } = { current: undefined };
+    const removeOverlayInputListener = registerCollapseKeyListener(ctx, collapseKey, sessionRef, overlayHandleRef);
+    const canReopenWhileHidden = removeOverlayInputListener !== undefined;
+    try {
+      const result = await ctx.ui.custom<QuestionnaireResult>(
+        (tui: TUI, theme, keybindings, done) => {
+          if (open.settled) {
+            done(open.settled);
+            return { render: () => [], invalidate: () => {}, handleInput: () => {} };
+          }
+          open.attach(done);
+          const session = new QuestionnaireSession({
+            tui,
+            theme,
+            params: typed,
+            itemsByTab,
+            done: (r: QuestionnaireResult) => open.settle(r),
+            keybindings,
+            editInput: async (value: string) => {
+              try {
+                const [{ SettingsManager }, { editWithExternalEditor }] = await Promise.all([
+                  import("@earendil-works/pi-coding-agent"),
+                  import("./state/external-editor.js"),
+                ]);
+                const editorCommand = SettingsManager.create(ctx.cwd, undefined, {
+                  projectTrusted: ctx.isProjectTrusted(),
+                }).getExternalEditorCommand();
+                if (!editorCommand) throw new Error("No external editor command is configured");
+                return await editWithExternalEditor(tui, editorCommand, value);
+              } catch {
+                return undefined;
+              }
+            },
+            collapseKey,
+            canReopenWhileHidden,
+            rowBudget: (rows: number) => rows,
+          });
+          sessionRef.current = session;
+          return session.component;
+        },
+        {
+          overlay: false,
+        },
+      );
+      if (result === undefined) {
+        open.host = "rpc";
+        if (hasDialogUI(ctx.ui)) {
+          const rpcResult = await runRpcQuestionnaire(ctx.ui, typed);
+          emitBackwardCompatEvents(pi, typed, rpcResult);
+          return buildQuestionnaireResponse(rpcResult, typed);
+        }
+        return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
+      }
+      emitBackwardCompatEvents(pi, typed, result);
+      return buildQuestionnaireResponse(result, typed);
+    } finally {
+      removeOverlayInputListener?.();
+    }
+  } finally {
+    emitAskUserBlockedEvent(pi, false, open.toolCallId);
+  }
 }
 
 export default function askUserExtension(pi: ExtensionAPI) {
-  const emit: EmitFn = (channel, data) => pi.events.emit(channel, data);
-  pi.registerTool<AskUserParamsSchema, AskDetails>({
-    name: "ask_user",
+  const guidance = validateGuidanceFields(loadConfig().guidance);
+  const answers = registerAnswerChannel(pi);
+  pi.registerTool({
+    name: ASK_USER_TOOL_NAME,
     label: "Ask User",
-    description:
-      "Pause and ask the user a focused decision question with 2–5 options (single choice or multi-select), optionally with a freeform answer, or a batch of 2–4 independent questions. The user's answer comes back as a structured result; a cancelled prompt returns cancelled=true. If you recommend a specific option, make it the first option in the list and add (Recommended) at the end of the label.",
-    promptSnippet: ASK_PROMPT_SNIPPET,
-    promptGuidelines: ASK_PROMPT_GUIDELINES,
-    parameters: askUserParams(),
+    description: guidance.description ?? DEFAULT_TOOL_DESCRIPTION,
+    promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
+    promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
+    parameters: QuestionParamsSchema,
+    prepareArguments: prepareQuestionArguments,
 
-    async execute(
-      _toolCallId: string,
-      params: AskUserParams,
-      _signal: AbortSignal | undefined,
-      _onUpdate: unknown,
-      _ctx: ExtensionToolContext,
-    ): Promise<AgentToolResult<AskDetails>> {
-      const error = validateParams(params);
-      if (error) return validationError(error);
-      if (params.questions) {
-        const questions = toQuestions(params.questions);
-        if (_ctx.mode === "tui" && _ctx.hasUI) {
-          const output = await askTuiOutcome(questions, _ctx);
-          if (output.cancelled) {
-            emit("ask:cancelled", { question: questions[questions.length - 1].question });
-            return batchResult(questions, {
-              answers: null,
-              question: questions[questions.length - 1],
-              answered: [],
-              globalNote: output.globalNote ?? undefined,
-            });
-          }
-          for (let i = 0; i < questions.length; i++) {
-            const answer = output.answers[i];
-            if (answer !== null) {
-              emit("ask:answered", {
-                question: questions[i].question,
-                kind: answer.kind,
-              });
-            }
-          }
-          return batchResult(questions, {
-            answers: output.answers.map((a) => a ?? ({ kind: "freeform", text: "(skipped)" })),
-            question: questions[questions.length - 1],
-            notes: output.notes.map((n) => n ?? undefined),
-            globalNote: output.globalNote ?? undefined,
-            answered: output.answers.map((answer, i) =>
-              answer === null ? null : { question: questions[i], answer },
-            ).filter((a): a is { question: AskQuestion; answer: AskSelection | AskFreeform } => a !== null),
-          });
-        }
-        if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
-          return batchUnavailable(questions);
-        }
-        const outcome = await askBatchViaRpc(questions, _ctx);
-        for (const { question, answer } of outcome.answered) {
-          emit("ask:answered", { question: question.question, kind: answer.kind });
-        }
-        if (outcome.answers === null) {
-          emit("ask:cancelled", { question: outcome.question.question });
-        }
-        return batchResult(questions, outcome);
-      }
-      const rawSingle: RawQuestion = {
-        question: params.question!,
-        options: params.options ?? [],
-        multiSelect: params.multiSelect,
-        allowFreeform: params.allowFreeform,
-      };
-      const q = toQuestion(rawSingle);
-      if (_ctx.mode === "tui" && _ctx.hasUI) {
-        const output = await askTuiOutcome([q], _ctx);
-        const answer = output.cancelled ? null : output.answers[0] ?? null;
-        if (answer === null) {
-          emit("ask:cancelled", { question: q.question });
-        } else {
-          emit("ask:answered", { question: q.question, kind: answer.kind });
-        }
-        return singleResult(q, answer, output.notes[0] ?? undefined);
-      }
-      if (!_ctx.hasUI || _ctx.mode === "json" || _ctx.mode === "print") {
-        return singleUnavailable(q);
-      }
-      const answer = q.multiSelect
-        ? await askMultiSelectViaRpc(q, _ctx)
-        : await askSingleViaRpc(q, _ctx);
-      if (answer === null) {
-        emit("ask:cancelled", { question: q.question });
-      } else {
-        emit("ask:answered", { question: q.question, kind: answer.kind });
-      }
-      return singleResult(q, answer);
-    },
+    async execute(toolCallId: string, params: unknown, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionContext) {
+      const typed = normalizeQuestionParams(params as QuestionParams);
+      if (!ctx.hasUI) return rejectWithoutUi();
 
-    renderCall(args, theme) {
-      return renderAskCall(args as AskUserParams, theme);
-    },
+      const validation = validateQuestionnaire(typed);
+      if (!validation.ok) {
+        return buildToolResult(validation.message, {
+          answers: [],
+          cancelled: true,
+          error: validation.error,
+        });
+      }
 
-    renderResult(result, _options, theme) {
-      return renderAskResult(result, theme);
+      const viaRpc = (ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui);
+      const open = answers.open(toolCallId, typed.questions, viaRpc ? "rpc" : "tui");
+      try {
+        emitAskUserPromptEvent(pi, typed, toolCallId);
+        if (viaRpc) return await runRpcPath(pi, ctx.ui, typed, toolCallId);
+        return await runTuiPath(pi, ctx, typed, open);
+      } finally {
+        answers.close(open);
+      }
     },
   });
 }
