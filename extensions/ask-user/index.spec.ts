@@ -1054,7 +1054,7 @@ describe("execute — event flow (RPC path)", () => {
   it("inbound ask_user:answer resolves an open TUI questionnaire (first-answer-wins) and replies ok", async () => {
     const { tool, events } = makePi();
     const { ctx } = makeCtx({ mode: "tui" });
-    ctx.ui.custom = async () => new Promise<QuestionnaireResult>(() => {});
+    (ctx as any).ui.custom = async () => new Promise<QuestionnaireResult>(() => {});
     const promise = execute(tool, { questions: [makeQuestion()] }, ctx);
     // let execute reach the session load and register the questionnaire (host = tui)
     for (let i = 0; i < 10; i++) await Promise.resolve();
