@@ -143,7 +143,7 @@ const SINGLE_PROMPT = `Use the ask_user tool now to ask me which programming lan
 The question must be exactly "Which programming language do you prefer?" and the options must be exactly these three strings, in this order: Python, Rust, Go.
 Do not write any prose before or after the tool call. Do not call any other tool.`;
 
-const FREEFORM_PROMPT = `Use the ask_user tool now. Ask me "What is your favorite programming language?" with options: Python, Rust, Go. Set allowFreeform to true.
+const FREEFORM_PROMPT = `Use the ask_user tool now. Ask me "What is your favorite programming language?" with options: Python, Rust, Go.
 Do not write any prose before or after the tool call. Do not call any other tool.`;
 
 const BATCH_PROMPT = `Use the ask_user tool now with a batch of two questions.
