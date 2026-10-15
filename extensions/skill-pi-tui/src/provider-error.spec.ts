@@ -66,8 +66,18 @@ it("humanizeProviderError: maps 429 to a rate-limit hint", () => {
 it("humanizeProviderError: falls back to a generic message with the payload excerpt", () => {
   const out = humanizeProviderError("500: {\"message\":\"upstream exploded badly, twice in a row\"}");
   assert.ok(out);
-  assert.match(out, /Provider returned an error/);
+  assert.match(out, /Provider request failed/);
   assert.match(out, /upstream exploded badly/);
+});
+
+it("humanizeProviderError: generic label stays out of pi's retry patterns", async () => {
+  // pi decides whether to retry a final error by testing errorMessage against
+  // patterns that include "provider returned an error". The label must not
+  // match, or a genuine 5xx would be retried and persisted as repeated messages.
+  const { isRetryableAssistantError } = await import("@earendil-works/pi-ai/compat");
+  const out = humanizeProviderError("500: {\"message\":\"upstream exploded badly, twice in a row\"}");
+  assert.ok(out);
+  assert.equal(isRetryableAssistantError({ stopReason: "error", errorMessage: out }), false);
 });
 
 it("humanizeProviderError: returns null for an unrecognized payload", () => {

@@ -61,7 +61,10 @@ export function humanizeProviderError(text: string): string | null {
     const jsonMatch = jsonStart >= 0 ? withoutStatus.slice(jsonStart).match(/"(?:message|error|code|reason)"\s*:\s*"((?:\\.|[^"\\])*)"/) : null;
     const inner = jsonMatch?.[1] ? jsonMatch[1].replace(/\\'/g, "'").replace(/\\"/g, '"') : withoutStatus;
     const excerpt = firstSentence(inner.replace(/,\s*"type"\s*:\s*"[^"]*"\s*\}?$/u, "").replace(/[{}]\s*$/u, ""));
-    return `Provider returned an error.\n${excerpt}`;
+    // The label must not contain pi's retry-pattern words (e.g. "provider returned
+    // an error") or pi will treat the final error as transient and retry it,
+    // persisting each attempt as a separate error message.
+    return `Provider request failed.\n${excerpt}`;
   }
   return null;
 }
