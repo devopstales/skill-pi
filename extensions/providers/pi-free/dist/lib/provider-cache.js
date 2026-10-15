@@ -1,0 +1,111 @@
+/**
+ * Provider Model Cache
+ *
+ * Caches provider model lists to disk for faster startup and offline use.
+ *
+ * Flow:
+ * 1. On session_start: fetch fresh models from API, save to cache
+ * 2. On extension load: register cached models immediately (shows in --list-models)
+ * 3. If API fails: use cached models as fallback
+ */
+import { createJSONStore } from "./json-persistence.js";
+import { createLogger } from "./logger.js";
+import { resolveSafeDataFile } from "./paths.js";
+import { recordCacheHit } from "./startup-timing.js";
+const _logger = createLogger("provider-cache");
+// =============================================================================
+// Cache Store
+// =============================================================================
+const CACHE_FILE = resolveSafeDataFile(process.env.PI_FREE_PROVIDER_CACHE, "provider-cache.json");
+const _cache = createJSONStore(CACHE_FILE, { providers: {} });
+export const DEFAULT_PROVIDER_CACHE_TTL_MS = 60 * 60 * 1000;
+function getProviderCacheEntry(providerId) {
+    try {
+        const data = _cache.load();
+        const cached = data?.providers?.[providerId];
+        if (!cached || !Array.isArray(cached.models))
+            return undefined;
+        return cached;
+    }
+    catch (error) {
+        _logger.warn(`Failed to load provider cache for ${providerId}`, {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return undefined;
+    }
+}
+/**
+ * Load cached models for a provider.
+ * Returns undefined if no cache exists.
+ */
+export function loadProviderCache(providerId) {
+    const cached = getProviderCacheEntry(providerId);
+    if (!cached) {
+        return undefined;
+    }
+    _logger.debug(`Loaded cached models for ${providerId}`, {
+        count: cached.models.length,
+        fetchedAt: cached.fetchedAt,
+    });
+    // Best-effort startup observability: record that a cache entry was available
+    // to the caller. The caller may still attempt a network refresh when stale.
+    recordCacheHit(providerId);
+    // Cached data is loaded from disk on each call. Callers must treat the
+    // returned list as read-only; save paths clone before persistence.
+    return cached.models;
+}
+/**
+ * Return the age of a provider cache entry in milliseconds.
+ * Returns undefined if no cache exists or the timestamp is invalid.
+ */
+function getProviderCacheAgeMs(providerId) {
+    const cached = getProviderCacheEntry(providerId);
+    if (!cached)
+        return undefined;
+    const fetchedAt = new Date(cached.fetchedAt).getTime();
+    if (Number.isNaN(fetchedAt))
+        return undefined;
+    const age = Date.now() - fetchedAt;
+    if (age < -5000)
+        return undefined;
+    return Math.max(0, age);
+}
+/**
+ * Check whether a provider cache entry is fresh enough to skip network refresh.
+ */
+export function isProviderCacheFresh(providerId, maxAgeMs) {
+    const age = getProviderCacheAgeMs(providerId);
+    return age !== undefined && age <= maxAgeMs;
+}
+/**
+ * Save models to cache for a provider.
+ */
+export async function saveProviderCache(providerId, models) {
+    await _cache.update((data) => {
+        data.providers[providerId] = {
+            provider: providerId,
+            models: structuredClone(models),
+            fetchedAt: new Date().toISOString(),
+        };
+        return data;
+    });
+    _logger.debug(`Saved ${models.length} models to cache for ${providerId}`);
+}
+/**
+ * Persist models to the cache, but refuse to overwrite a healthy existing
+ * entry with a drastically smaller list (a transient partial/error response).
+ * Also never caches an empty list. Returns true when the cache was written.
+ */
+export async function saveProviderCacheGuarded(providerId, models) {
+    if (!models || models.length === 0)
+        return false;
+    const existing = getProviderCacheEntry(providerId);
+    const existingCount = existing?.models.length ?? 0;
+    if (existingCount > 0 && models.length < existingCount * 0.5) {
+        _logger.debug(`Not caching ${providerId}: ${models.length} models vs ${existingCount} cached (likely transient shrink)`);
+        return false;
+    }
+    await saveProviderCache(providerId, models);
+    return true;
+}
+//# sourceMappingURL=provider-cache.js.map

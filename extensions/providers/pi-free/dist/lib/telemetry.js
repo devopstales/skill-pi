@@ -1,0 +1,364 @@
+/**
+ * Model Telemetry — tracks real-world performance of free models.
+ *
+ * Hooks into Pi's turn_end event to capture token usage, latency, and
+ * success/failure per model. Persists to ~/.pi/free-telemetry.json.
+ *
+ * Provides a real-world performance signal alongside static CI benchmarks.
+ */
+import { createLogger } from "./logger.js";
+import { resolveSafeDataFile } from "./paths.js";
+import { createJSONStore } from "./json-persistence.js";
+const _logger = createLogger("telemetry");
+// =============================================================================
+// Constants
+// =============================================================================
+const TELEMETRY_FILE = resolveSafeDataFile(process.env.PI_FREE_TELEMETRY_FILE, "free-telemetry.json");
+const MAX_RECENT_CALLS = 50;
+/** Latency samples above this threshold are discarded as implausible. */
+const MAX_SANE_LATENCY_MS = 10 * 60 * 1000; // 10 minutes
+const _inFlight = new Map();
+const _IN_FLIGHT_TTL_MS = 60 * 60 * 1000;
+let _callIdCounter = 0;
+function reapStaleInFlight(now) {
+    for (const [id, entry] of _inFlight) {
+        if (now - entry.startTime > _IN_FLIGHT_TTL_MS) {
+            _logger.info("Reaped stale in-flight telemetry entry", {
+                callId: id,
+                key: entry.key,
+                ageMs: Math.round(now - entry.startTime),
+            });
+            _inFlight.delete(id);
+        }
+    }
+}
+// =============================================================================
+// Key construction — single source of truth for provider/model keys
+// =============================================================================
+function telemetryKey(provider, model) {
+    return `${provider}/${model}`;
+}
+// =============================================================================
+// Storage
+// =============================================================================
+// Debounce disk writes so a chatty session does not perform one synchronous
+// writeFileSync per turn_end. The in-memory cache stays fresh (load() returns
+// the latest state immediately), so /free-telemetry always shows current data;
+// only the disk flush is coalesced. clearTelemetry() calls flush() to make the
+// explicit user action durable right away.
+const TELEMETRY_WRITE_DEBOUNCE_MS = 1500;
+const _store = createJSONStore(TELEMETRY_FILE, { models: {}, lastUpdated: Date.now() }, { debounceMs: TELEMETRY_WRITE_DEBOUNCE_MS });
+// =============================================================================
+// Entry management
+// =============================================================================
+function deriveModelTelemetry(entries) {
+    const recent = entries.slice(-MAX_RECENT_CALLS);
+    let successCalls = 0;
+    let totalTokensFromSuccessful = 0;
+    let totalLatencyFromSuccessful = 0;
+    let totalTokens = 0;
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    let totalLatencyMs = 0;
+    let totalCost = 0;
+    for (const e of entries) {
+        totalTokens += e.totalTokens;
+        totalPromptTokens += e.promptTokens;
+        totalCompletionTokens += e.completionTokens;
+        totalLatencyMs += e.latencyMs;
+        totalCost += e.cost;
+        if (e.success) {
+            successCalls++;
+            totalTokensFromSuccessful += e.totalTokens;
+            totalLatencyFromSuccessful += e.latencyMs;
+        }
+    }
+    const totalCalls = entries.length;
+    return {
+        totalCalls,
+        successCalls,
+        errorCalls: totalCalls - successCalls,
+        totalTokens,
+        totalPromptTokens,
+        totalCompletionTokens,
+        totalLatencyMs,
+        totalCost,
+        avgLatencyMs: successCalls > 0
+            ? Math.round(totalLatencyFromSuccessful / successCalls)
+            : 0,
+        avgTokensPerSecond: totalLatencyFromSuccessful > 0
+            ? Number.parseFloat((totalTokensFromSuccessful /
+                (totalLatencyFromSuccessful / 1000)).toFixed(1))
+            : 0,
+        successRate: totalCalls > 0
+            ? Number.parseFloat(((successCalls / totalCalls) * 100).toFixed(1))
+            : 0,
+        recentCalls: recent,
+    };
+}
+async function addEntry(entry) {
+    await _store.update((store) => {
+        const modelKey = telemetryKey(entry.provider, entry.model);
+        const existing = store.models[modelKey]?.recentCalls ?? [];
+        existing.push(entry);
+        // Keep only last MAX_RECENT_CALLS * 2 in raw storage (we derive stats from these)
+        const pruned = existing.slice(-MAX_RECENT_CALLS * 2);
+        return {
+            ...store,
+            models: {
+                ...store.models,
+                [modelKey]: deriveModelTelemetry(pruned),
+            },
+            lastUpdated: Date.now(),
+        };
+    });
+}
+// =============================================================================
+// Public API
+// =============================================================================
+/**
+ * Get telemetry for all tracked models.
+ */
+export function getAllTelemetry() {
+    return _store.load().models;
+}
+/**
+ * Get telemetry for a specific provider/model combination.
+ */
+export function getModelTelemetry(provider, model) {
+    return _store.load().models[telemetryKey(provider, model)] ?? null;
+}
+/**
+ * Persist one pi-ai resolution snapshot into the telemetry file.
+ *
+ * The durable counterpart of `/pi-free-health`'s live section: the health
+ * report is only visible while the process lives, and the #581 report arrived
+ * with nothing but a stack trace. Overwrites the previous record (one per
+ * session) rather than appending, so the file cannot grow with every reload.
+ */
+export async function recordPiAiDiagnostics(snapshot) {
+    const entries = {};
+    for (const [entry, resolution] of Object.entries(snapshot.entries)) {
+        entries[entry] = {
+            root: resolution.root,
+            version: resolution.version,
+            file: resolution.file,
+            source: resolution.source,
+            via: resolution.via,
+        };
+    }
+    const piAi = {
+        recordedAt: Date.now(),
+        fastPathRoot: snapshot.fastPath.root,
+        fastPathVersion: snapshot.fastPath.version,
+        fastPathDefines: { ...snapshot.fastPath.defines },
+        shadowed: snapshot.shadowed,
+        vendored: snapshot.vendored,
+        entries,
+        events: snapshot.events,
+    };
+    await _store.update((store) => ({
+        ...store,
+        diagnostics: { ...store.diagnostics, piAi },
+        lastUpdated: Date.now(),
+    }));
+    // Flush immediately. Telemetry writes are debounced (1500ms) to coalesce
+    // chatty per-turn call records, but this record is written once per session
+    // and Pi calls process.exit(0) right after extension startup (see
+    // lib/logger.ts): a debounced diagnostics write would routinely vanish with
+    // the exact process that needed to record it. Same rationale as
+    // clearTelemetry, and bounded to one flush per session.
+    await _store.flush();
+}
+/**
+ * The persisted pi-ai diagnostics, or undefined for a telemetry file written
+ * before the record existed (or one that has not seen a session yet).
+ */
+export function getPiAiDiagnostics() {
+    return _store.load().diagnostics?.piAi;
+}
+/**
+ * Mark a model call as started and return a unique call id.
+ * Pass this id to {@link recordModelCall} to pair the start/end correctly.
+ */
+export function startModelCall(provider, model) {
+    // Monotonic clock for latency measurement (immune to NTP skew / system
+    // suspend); wall clock only for the human-readable call id correlation tag.
+    const start = performance.now();
+    const ts = Date.now();
+    reapStaleInFlight(start);
+    const callId = `${telemetryKey(provider, model)}:${ts}:${++_callIdCounter}`;
+    _inFlight.set(callId, {
+        key: telemetryKey(provider, model),
+        startTime: start,
+    });
+    return callId;
+}
+/**
+ * Derive a structured {@link ErrorClass} from a status code and/or error
+ * message. Best-effort classification used to turn opaque "failed" telemetry
+ * entries into incident-relevant buckets (Cline workos: 401 vs 403-vs-headers
+ * vs gateway 5xx). Numeric status codes win when present; otherwise the error
+ * text is scanned for embedded statuses or network-failure fingerprints.
+ */
+export function classifyError(message, statusCode) {
+    if (!message && statusCode === undefined)
+        return undefined;
+    if (statusCode !== undefined) {
+        if (statusCode === 401)
+            return "401";
+        if (statusCode === 403)
+            return "403";
+        if (statusCode === 429)
+            return "429";
+        if (statusCode >= 500 && statusCode < 600)
+            return "5xx";
+        // A non-failure status (e.g. 200) carries no class unless the message
+        // itself describes a failure.
+        if (!message)
+            return undefined;
+    }
+    if (message) {
+        // A fetch-level network failure (TypeError in browsers, node-style
+        // undici/fetch errors) is distinct from an HTTP status failure.
+        if (/Failed to fetch|fetch failed|network error|ECONN|ENOTFOUND|EHOST|EAI_AGAIN|ETIMEDOUT|socket hang up|underlying connection|unexpected end of file/i.test(message)) {
+            return "network";
+        }
+        if (/\b401\b/.test(message))
+            return "401";
+        if (/\b403\b/.test(message))
+            return "403";
+        if (/\b429\b/.test(message))
+            return "429";
+        if (/\b5\d\d\b/.test(message))
+            return "5xx";
+    }
+    return "other";
+}
+/**
+ * Record a completed model call with its usage data.
+ * Call this from turn_end when the message is an AssistantMessage.
+ *
+ * @param callId - The call id returned by {@link startModelCall}, or undefined
+ *   if no matching start was recorded.
+ * @param provider - The provider ID
+ * @param model - The model ID
+ * @param usage - Token usage { input, output, totalTokens }
+ * @param cost - Cost in USD
+ * @param options - Options object ({@link RecordModelCallOptions})
+ */
+export async function recordModelCall(callId, provider, model, usage, cost, options) {
+    const { success, stopReason, errorMessage, statusCode, errorClass } = options;
+    // Wall clock for the stored entry timestamp; monotonic clock for the
+    // elapsed-latency measurement so NTP adjustments or system suspend cannot
+    // corrupt the recorded duration.
+    const now = Date.now();
+    const end = performance.now();
+    let latencyMs;
+    if (callId && _inFlight.has(callId)) {
+        const entry = _inFlight.get(callId);
+        latencyMs = Math.round(end - entry.startTime);
+        _inFlight.delete(callId);
+    }
+    else {
+        // No matching start — record 0 latency rather than a bogus value.
+        latencyMs = 0;
+        _logger.info("recordModelCall: no matching startModelCall", {
+            callId: callId ?? "(none)",
+            provider,
+            model,
+        });
+    }
+    // Discard implausibly long latency samples (e.g. system was suspended).
+    if (latencyMs > MAX_SANE_LATENCY_MS) {
+        _logger.info("Discarding implausible latency sample", {
+            callId,
+            provider,
+            model,
+            latencyMs,
+            thresholdMs: MAX_SANE_LATENCY_MS,
+        });
+        latencyMs = 0;
+    }
+    const totalTokens = usage.totalTokens || usage.input + usage.output;
+    const tokensPerSecond = latencyMs > 0
+        ? Number.parseFloat((totalTokens / (latencyMs / 1000)).toFixed(1))
+        : 0;
+    const derivedErrorClass = errorClass ??
+        (errorMessage ? classifyError(errorMessage, statusCode) : undefined);
+    const entry = {
+        timestamp: now,
+        provider,
+        model,
+        success,
+        latencyMs,
+        promptTokens: usage.input,
+        completionTokens: usage.output,
+        totalTokens,
+        tokensPerSecond,
+        cost,
+        stopReason,
+        ...(errorMessage ? { error: errorMessage } : {}),
+        ...(statusCode === undefined ? {} : { statusCode }),
+        ...(derivedErrorClass ? { errorClass: derivedErrorClass } : {}),
+    };
+    await addEntry(entry);
+    _logger.info(`Telemetry: ${telemetryKey(provider, model)}`, {
+        latencyMs,
+        totalTokens,
+        tokensPerSecond,
+        success,
+        cost,
+    });
+}
+/**
+ * Clear all telemetry data.
+ */
+export async function clearTelemetry() {
+    await _store.update(() => ({
+        models: {},
+        lastUpdated: Date.now(),
+    }));
+    // Explicit user action (/clear-free-telemetry) — flush the debounced
+    // write so the clear is durable immediately rather than after the debounce.
+    await _store.flush();
+}
+/**
+ * Get the path to the telemetry file.
+ */
+export function getTelemetryPath() {
+    return TELEMETRY_FILE;
+}
+/**
+ * Aggregate failure classes per provider from recorded telemetry entries.
+ * Status codes/classes only — never error bodies or messages.
+ */
+export function getProviderErrorCounts() {
+    const counts = new Map();
+    const bump = (provider, errorClass) => {
+        let entry = counts.get(provider);
+        if (!entry) {
+            entry = {
+                authFailures: 0,
+                "401": 0,
+                "403": 0,
+                "429": 0,
+                "5xx": 0,
+                network: 0,
+                other: 0,
+            };
+            counts.set(provider, entry);
+        }
+        entry[errorClass] += 1;
+        if (errorClass === "401" || errorClass === "403")
+            entry.authFailures += 1;
+    };
+    for (const telemetry of Object.values(_store.load().models)) {
+        for (const entry of telemetry.recentCalls) {
+            if (entry.errorClass)
+                bump(entry.provider, entry.errorClass);
+        }
+    }
+    return counts;
+}
+//# sourceMappingURL=telemetry.js.map

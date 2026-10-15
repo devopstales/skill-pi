@@ -1,0 +1,15 @@
+{
+  "name": "@devopstales/pi-extensions",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Dir-level manifest for the skill-pi --extension source dir (ADR-0001). Dependencies here are the extension runtime footprint; npm install at the root hoists them into the shared node_modules that pi's jiti resolves from.",
+  "pi": {
+    "extensions": [
+      "./providers/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  }
+}

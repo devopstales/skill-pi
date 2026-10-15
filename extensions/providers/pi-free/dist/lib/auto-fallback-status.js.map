@@ -1,0 +1,1 @@
+{"version":3,"file":"auto-fallback-status.js","sourceRoot":"","sources":["../../lib/auto-fallback-status.ts"],"names":[],"mappings":"AAAA;;;;;;;;;GASG;AAIH,IAAI,qBAAyE,CAAC;AAE9E,+EAA+E;AAC/E,MAAM,UAAU,gCAAgC,CAC/C,MAA4C;IAE5C,qBAAqB,GAAG,MAAM,CAAC;AAChC,CAAC;AAED,gFAAgF;AAChF,MAAM,UAAU,eAAe;IAC9B,OAAO,qBAAqB,EAAE,EAAE,CAAC;AAClC,CAAC"}

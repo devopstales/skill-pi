@@ -1,0 +1,1 @@
+{"version":3,"file":"routeway-auth.js","sourceRoot":"","sources":["../../../providers/routeway/routeway-auth.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,iBAAiB,EAAE,MAAM,iBAAiB,CAAC;AACpD,OAAO,EAAE,sBAAsB,EAAE,MAAM,8BAA8B,CAAC;AAEtE,MAAM,CAAC,MAAM,YAAY,GAAG,sBAAsB,CAAC;IAClD,IAAI,EAAE,kBAAkB;IACxB,MAAM,EAAE,kBAAkB;IAC1B,MAAM,EAAE,kBAAkB;IAC1B,SAAS,EAAE,iBAAiB;CAC5B,CAAC,CAAC"}

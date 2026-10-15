@@ -40,6 +40,11 @@ tasks:
     cmds:
       - node --test "test/**/*.test.js"
 
+  providers:test:
+    desc: "Run unified providers extension tests"
+    cmds:
+      - node --test "test/providers.*.test.js"
+
   pack:
     desc: "Create a .tgz package for inspection"
     cmds:

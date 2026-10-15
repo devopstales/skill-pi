@@ -1,0 +1,1 @@
+function o(n){let e={};for(let[t,r]of n.entries())e[t]=r;return e}function u(n){if(!n)return;let e={};for(let[t,r]of Object.entries(n))r!==null&&(e[t]=r);return Object.keys(e).length>0?e:void 0}export{o as a,u as b};

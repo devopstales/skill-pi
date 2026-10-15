@@ -1,0 +1,187 @@
+/**
+ * Kilo device authorization flow and native provider auth.
+ *
+ * Exposes a pi-ai `ProviderAuth` (apiKey + oauth) for the createProvider object
+ * form. Pi owns credential persistence (~/.pi/agent/auth.json) and token refresh:
+ * `OAuthAuth.refresh` is called under the credential-store lock before any
+ * network access, replacing the hand-rolled refresh the legacy `oauth:` config
+ * required the extension to own.
+ */
+import { getKiloApiKey } from "../../config.js";
+import { KILO_POLL_INTERVAL_MS, KILO_TOKEN_EXPIRATION_MS, } from "../../constants.js";
+import { openBrowser } from "../../lib/open-browser.js";
+const KILO_API_BASE = process.env.KILO_API_URL || "https://api.kilo.ai";
+const DEVICE_AUTH_ENDPOINT = `${KILO_API_BASE}/api/device-auth/codes`;
+const PROFILE_ENDPOINT = `${KILO_API_BASE}/api/profile`;
+// =============================================================================
+// Balance & Rate Limit
+// =============================================================================
+export async function fetchKiloBalance(token) {
+    try {
+        const response = await fetch(`${PROFILE_ENDPOINT}/balance`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+            },
+        });
+        if (!response.ok)
+            return null;
+        const data = (await response.json());
+        return data.balance ?? null;
+    }
+    catch {
+        return null;
+    }
+}
+function abortableSleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new Error("Login cancelled"));
+            return;
+        }
+        const timeout = setTimeout(resolve, ms);
+        signal?.addEventListener("abort", () => {
+            clearTimeout(timeout);
+            reject(new Error("Login cancelled"));
+        }, { once: true });
+    });
+}
+async function initiateDeviceAuth() {
+    const response = await fetch(DEVICE_AUTH_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!response.ok) {
+        throw new Error(response.status === 429
+            ? "Too many pending authorization requests. Please try again later."
+            : `Failed to initiate device authorization: ${response.status}`);
+    }
+    return (await response.json());
+}
+async function pollDeviceAuth(code) {
+    const response = await fetch(`${DEVICE_AUTH_ENDPOINT}/${code}`);
+    if (response.status === 202)
+        return { status: "pending" };
+    if (response.status === 403)
+        return { status: "denied" };
+    if (response.status === 410)
+        return { status: "expired" };
+    if (!response.ok)
+        throw new Error(`Failed to poll device authorization: ${response.status}`);
+    return (await response.json());
+}
+/**
+ * Run the Kilo device-authorization flow against the native `AuthInteraction`
+ * (Pi renders auth_url/device_code/progress events; `signal` cancels). Returns
+ * a canonical OAuth credential Pi persists to the shared auth store.
+ */
+export async function loginKilo(interaction) {
+    interaction.notify({
+        type: "progress",
+        message: "Initiating device authorization...",
+    });
+    const { code, verificationUrl, expiresIn } = await initiateDeviceAuth();
+    interaction.notify({
+        type: "auth_url",
+        url: verificationUrl,
+        instructions: `Enter code: ${code}`,
+    });
+    interaction.notify({
+        type: "device_code",
+        userCode: code,
+        verificationUri: verificationUrl,
+    });
+    openBrowser(verificationUrl);
+    interaction.notify({
+        type: "progress",
+        message: "Waiting for browser authorization...",
+    });
+    const deadline = Date.now() + expiresIn * 1000;
+    while (Date.now() < deadline) {
+        if (interaction.signal?.aborted)
+            throw new Error("Login cancelled");
+        // pi-lens-ignore: await-in-loop
+        await abortableSleep(KILO_POLL_INTERVAL_MS, interaction.signal);
+        const result = await pollDeviceAuth(code);
+        if (result.status === "approved") {
+            if (!result.token)
+                throw new Error("Authorization approved but no token received");
+            interaction.notify({ type: "progress", message: "Login successful!" });
+            return {
+                type: "oauth",
+                refresh: result.token,
+                access: result.token,
+                expires: Date.now() + KILO_TOKEN_EXPIRATION_MS,
+            };
+        }
+        if (result.status === "denied")
+            throw new Error("Authorization denied by user.");
+        if (result.status === "expired")
+            throw new Error("Authorization code expired. Please try again.");
+        const remaining = Math.ceil((deadline - Date.now()) / 1000);
+        interaction.notify({
+            type: "progress",
+            message: `Waiting for browser authorization... (${remaining}s remaining)`,
+        });
+    }
+    throw new Error("Authentication timed out. Please try again.");
+}
+/**
+ * Native OAuth refresh. Kilo access tokens are long-lived (1 year) with no
+ * refresh endpoint, so a still-valid credential is returned as-is and an expired
+ * one throws — Pi preserves the stored credential for retry and `/login kilo`
+ * re-authenticates. This replaces the legacy `refreshKiloToken` the extension
+ * previously had to wire up itself.
+ */
+export async function refreshKiloCredential(credential, _signal) {
+    if (credential.expires > Date.now())
+        return credential;
+    throw new Error("Kilo token expired. Please run /login kilo to re-authenticate.");
+}
+// =============================================================================
+// Native ProviderAuth
+// =============================================================================
+/**
+ * Resolve the effective Kilo API key: a natively-stored key (from
+ * `interaction.prompt` login) wins, then the ambient `KILO_API_KEY` env var /
+ * `~/.pi/free.json` value via the shared config getter. When neither exists,
+ * resolve() returns undefined and Pi hides the provider from /model (#530):
+ * chat requires a real key or OAuth login — the gateway rejects
+ * unauthenticated completions — so a logged-out listing is clutter.
+ */
+async function resolveKiloApiKey(input) {
+    const key = input.credential?.key ?? getKiloApiKey();
+    if (!key) {
+        return undefined;
+    }
+    return {
+        auth: { apiKey: key },
+        source: input.credential?.key ? "stored API key" : "KILO_API_KEY",
+    };
+}
+export const kiloApiKeyAuth = {
+    name: "Kilo API key",
+    async login(interaction) {
+        const key = await interaction.prompt({
+            type: "secret",
+            message: "Kilo API key",
+        });
+        return { type: "api_key", key };
+    },
+    resolve: resolveKiloApiKey,
+};
+export const kiloOAuthAuth = {
+    name: "Kilo",
+    loginLabel: "Sign in with Kilo",
+    login: loginKilo,
+    refresh: refreshKiloCredential,
+    async toAuth(credential) {
+        return { apiKey: credential.access };
+    },
+};
+/** Native auth for the Kilo provider: API key and OAuth device flow. */
+export const kiloAuth = {
+    apiKey: kiloApiKeyAuth,
+    oauth: kiloOAuthAuth,
+};
+//# sourceMappingURL=kilo-auth.js.map

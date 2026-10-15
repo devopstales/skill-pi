@@ -1,0 +1,64 @@
+/**
+ * Cline Provider Extension
+ *
+ * Provides access to Cline's models via their gateway, which speaks vanilla
+ * OpenAI Chat Completions — models use the standard `openai-completions` api
+ * and stream through pi-ai's OpenAI implementation (lazy compat bridge).
+ * Registered as a native pi-ai `Provider` (createProvider object form) so Pi
+ * owns credential refresh, background model refresh, and offline initialization:
+ *
+ *   - The factory is synchronous and network-free — it builds the provider
+ *     object and registers it. Models load via `refreshModels` (offline init
+ *     from the native models store, then a background fetch of Cline's PUBLIC
+ *     catalog), so Cline no longer owns any of Pi's startup critical path and
+ *     models still appear before `/login cline` (browsing needs no account).
+ *   - Native `auth` (API key + OAuth callback-server flow) persisted to
+ *     ~/.pi/agent/auth.json — the same store the legacy `/login cline` used.
+ *   - Free/paid filtering stays on pi-free's re-registration toggle so it keeps
+ *     composing with the global /toggle-free system.
+ *
+ * Run /login cline to authenticate and make API calls; /toggle-cline shows the
+ * paid catalog.
+ */
+import { getClineApiKey, PROVIDER_CLINE } from "../../config.js";
+import { registerWithGlobalToggle } from "../../lib/registry.js";
+import { registerNativeProvider, registerNativeProviderRefresh, registerNativeProviderToggle, } from "../../lib/native-provider.js";
+import { createClineProvider, rotateClineTaskId } from "./cline-provider.js";
+// =============================================================================
+// Extension entry point
+// =============================================================================
+export default async function clineProvider(pi) {
+    const { provider, stored } = createClineProvider();
+    // Register the native provider. The factory performs NO network I/O: models
+    // load via refreshModels (offline init from the store, then a background
+    // fetch of the public catalog), so Cline no longer owns any of Pi's startup
+    // critical path.
+    registerNativeProvider(pi, provider);
+    // Re-registration invalidates Pi's availability snapshot while preserving the
+    // complete catalog and native auth on the same provider object.
+    const reRegister = () => {
+        registerNativeProvider(pi, provider);
+    };
+    const hasClineKey = Boolean(getClineApiKey());
+    registerWithGlobalToggle(PROVIDER_CLINE, stored, reRegister, hasClineKey, {
+        native: true,
+        invalidate: reRegister,
+    });
+    registerNativeProviderToggle(pi, {
+        providerId: PROVIDER_CLINE,
+        stored,
+        reRegister,
+    });
+    // Rotate the Cline task id when a Cline agent starts (mirrors the legacy
+    // behavior). The rotation mutates the shared headers record (see
+    // cline-headers.ts), which every Cline model holds as its `headers` —
+    // pi-ai merges only the model's headers into requests — so the new
+    // X-Task-ID takes effect immediately, no re-registration needed.
+    pi.on("before_agent_start", (_event, ctx) => {
+        if (ctx.model?.provider !== PROVIDER_CLINE)
+            return;
+        rotateClineTaskId();
+    });
+    registerNativeProviderRefresh(pi, PROVIDER_CLINE);
+}
+//# sourceMappingURL=cline.js.map
