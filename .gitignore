@@ -2,3 +2,5 @@
 .skillgrid/sdd/
 .skillgrid/brainstorm/
 .skillgrid/cache/
+# Local Pi runtime state
+.atl/
