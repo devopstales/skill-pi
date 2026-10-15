@@ -42,6 +42,21 @@ A finding blocks ship if it breaks a `SATISFIES` scenario, violates an in-force 
 
 Verification after fixes: extension vitest 62/62 green, `tsc --noEmit` clean.
 
+## Post-review bug (found in live E2E, fixed as `e9b60fb`)
+
+The `source === "local"` guard (fix #1) was **wrong for skill-pi**: the wrapper
+passes bundled extensions via `--extension` CLI flags, and pi's loader stamps
+those with `sourceInfo.source = "cli"` (loader.js:495:
+`getSyntheticPathSource(extensionPath) ?? "local"`), not `"local"`. The guard
+therefore excluded exactly the tools that needed auto-allowing (todo still
+asked). The path/namespace filters alone are sufficient — builtins carry
+`builtin:` synthetic paths, MCP tools are namespaced or synthetic, and
+CLI-provided extension tools are the user's explicit load choice. Fix: drop
+the source check; spec extended with a `source: "local"` + `source: "cli"`
+assertion. Verified end-to-end against the vllm provider
+(`test/dynamic-allow-e2e.test.js`): `todo · add` → `Added task N` with no
+permission prompt, 1/1 pass.
+
 ## Deferred (Minor, logged)
 
 - `cacheKey` public-but-internal field (pattern consistency with skill cache)
