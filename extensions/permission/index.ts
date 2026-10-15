@@ -91,7 +91,6 @@ export default function (pi: ExtensionAPI) {
     const derivedExtensionAllowState = getDerivedExtensionAllowState(pi);
     const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules);
     const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>) ?? "";
-    logPermissionDiagnostics(pi, sessionState);
     const mode = await resolveMode(settings, event.toolName, argValue, sessionState, derivedExtensionAllowState);
 
     if (mode === "allow") {
@@ -208,10 +207,6 @@ function logPermissionDiagnostics(pi: ExtensionAPI, sessionState: RuntimeSession
   } catch (error) {
     console.error(`diagnostic: failed: ${String(error)}`);
   }
-}
-
-export function resetPermissionDiagnosticsForTest(): void {
-  permissionDiagnosticsShown = false;
 }
 
 function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
