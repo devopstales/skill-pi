@@ -12,7 +12,7 @@ import { readGitStatus, emptyGitStatus } from "./src/git.ts";
 import { readRuntimeInfo } from "./src/runtime.ts";
 import { SessionLifecycle } from "./src/session-lifecycle.ts";
 import { getModelMeta, invalidateUsageCache } from "./src/state.ts";
-import { humanizeProviderError, isProviderError, modelText, type ProviderErrorLike } from "./src/provider-error.ts";
+import { cleanProviderError } from "./src/provider-error.ts";
 import { resolveGlyphs } from "./src/icons.ts";
 import { formatCwd } from "./src/utils.ts";
 import {
@@ -374,16 +374,14 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("message_end", (event) => {
     if (!lifecycle.isCurrent()) return;
-    const message = (event as { message?: ProviderErrorLike }).message;
+    const message = (event as { message?: unknown }).message;
     if (message?.role === "assistant" && peek.phase === "thinking") {
       peek = { ...peek, phase: "done" };
       setPeekLabel();
     }
-    if (isProviderError(message)) {
-      const humanized = humanizeProviderError(modelText(message));
-      if (humanized) {
-        return { message: { ...message, content: [{ type: "text", text: humanized }] } };
-      }
+    const cleaned = cleanProviderError(message);
+    if (cleaned) {
+      return { message: { ...message, ...cleaned, errorMessage: undefined } };
     }
     invalidateUsageCache();
     tuiRef?.requestRender();

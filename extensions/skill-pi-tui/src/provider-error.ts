@@ -6,13 +6,19 @@ export interface ProviderErrorLike {
   role?: unknown;
   stopReason?: unknown;
   content?: unknown;
+  errorMessage?: unknown;
+}
+
+function asErrorMessage(message: unknown): string {
+  const raw = (message as { errorMessage?: unknown } | undefined)?.errorMessage;
+  return typeof raw === "string" ? raw : "";
 }
 
 export function isProviderError(message: unknown): boolean {
   if (!message || typeof message !== "object") return false;
   const m = message as ProviderErrorLike;
   if (m.role !== "assistant" || m.stopReason !== "error") return false;
-  return Array.isArray(m.content);
+  return Array.isArray(m.content) || asErrorMessage(m).length > 0;
 }
 
 function modelText(message: unknown): string {
@@ -57,6 +63,17 @@ export function humanizeProviderError(text: string): string | null {
     return `Provider returned an error.\n${excerpt}`;
   }
   return null;
+}
+
+export function cleanProviderError(
+  message: unknown,
+): { content: { type: "text"; text: string }[] } | null {
+  if (!isProviderError(message)) return null;
+  const source = modelText(message) || asErrorMessage(message);
+  if (!source) return null;
+  const humanized = humanizeProviderError(source);
+  if (!humanized) return null;
+  return { content: [{ type: "text", text: humanized }] };
 }
 
 export { modelText };

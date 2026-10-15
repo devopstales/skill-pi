@@ -1,5 +1,5 @@
 import { assert, it } from "vitest";
-import { humanizeProviderError, isProviderError } from "./provider-error.ts";
+import { cleanProviderError, humanizeProviderError, isProviderError } from "./provider-error.ts";
 
 const OLLAMA_404 =
   '404: {"message":"model \'qwen2.5-coder:7b\' not found","type":"not_found_error","param":null,"code":null}';
@@ -74,4 +74,55 @@ it("humanizeProviderError: falls back to a generic message with the payload exce
 it("humanizeProviderError: returns null for an unrecognized payload", () => {
   assert.equal(humanizeProviderError("all good"), null);
   assert.equal(humanizeProviderError(""), null);
+});
+
+it("isProviderError: detects an error message that only carries errorMessage", () => {
+  assert.equal(
+    isProviderError({
+      role: "assistant",
+      stopReason: "error",
+      content: [],
+      errorMessage: OLLAMA_404,
+    }),
+    true,
+  );
+});
+
+it("cleanProviderError: replaces empty content + errorMessage with the friendly message", () => {
+  const out = cleanProviderError({
+    role: "assistant",
+    stopReason: "error",
+    content: [],
+    errorMessage: OLLAMA_404,
+  });
+  assert.ok(out);
+  assert.equal(out.content.length, 1);
+  assert.match(out.content[0].text, /qwen2\.5-coder:7b/);
+  assert.match(out.content[0].text, /not found/);
+  assert.match(out.content[0].text, /ollama pull qwen2\.5-coder:7b/);
+  assert.notMatch(out.content[0].text, /not_found_error/);
+});
+
+it("cleanProviderError: replaces raw payload content with the friendly message", () => {
+  const out = cleanProviderError({
+    role: "assistant",
+    stopReason: "error",
+    content: [{ type: "text", text: OLLAMA_404 }],
+    errorMessage: OLLAMA_404,
+  });
+  assert.ok(out);
+  assert.equal(out.content.length, 1);
+  assert.match(out.content[0].text, /not found on the provider/);
+  assert.notMatch(out.content[0].text, /404:/);
+  assert.notMatch(out.content[0].text, /not_found_error/);
+});
+
+it("cleanProviderError: returns null when no humanized text is available", () => {
+  assert.equal(cleanProviderError({ role: "assistant", stopReason: "error", content: [] }), null);
+  assert.equal(cleanProviderError({ role: "assistant", stopReason: "error" }), null);
+  assert.equal(cleanProviderError(undefined), null);
+  assert.equal(
+    cleanProviderError({ role: "assistant", stopReason: "stop", content: [] }),
+    null,
+  );
 });
