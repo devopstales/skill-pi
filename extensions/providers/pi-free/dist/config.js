@@ -24,7 +24,7 @@ import { PROVIDER_ANYAPI, PROVIDER_BAI, PROVIDER_ORCAROUTER, PROVIDER_XKIRO, PRO
 // ./constants.ts directly.
 export { PROVIDER_CLINE, PROVIDER_KILO } from "./constants.js";
 import { createLogger } from "./lib/logger.js";
-import { ensureDir, PI_DATA_DIR } from "./lib/paths.js";
+import { ensureDir, PI_DATA_DIR, resolveAgentDir } from "./lib/paths.js";
 function safeJsonReviver(_key, value) {
     if (_key === "__proto__" || _key === "constructor") {
         return undefined;
@@ -627,7 +627,7 @@ function readAuthJsonKey(providerId, envVar) {
         return envVal;
     // Check auth.json
     try {
-        const authPath = join(PI_DATA_DIR, "agent", "auth.json");
+        const authPath = join(resolveAgentDir(), "auth.json");
         if (!existsSync(authPath))
             return undefined;
         const raw = readFileSync(authPath, "utf8");

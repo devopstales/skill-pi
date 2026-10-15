@@ -25,7 +25,21 @@ function resolveHomeDir() {
     return _nodeHomedir();
 }
 /** The user's pi data directory (~/.pi). */
-export const PI_DATA_DIR = join(resolveHomeDir(), ".pi");
+export function resolveDataDir() {
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    if (agentDir && agentDir.trim()) {
+        return resolve(agentDir);
+    }
+    return join(resolveHomeDir(), ".pi");
+}
+export const PI_DATA_DIR = resolveDataDir();
+export function resolveAgentDir() {
+    const agentDir = process.env.PI_CODING_AGENT_DIR;
+    if (agentDir && agentDir.trim()) {
+        return resolve(agentDir);
+    }
+    return join(resolveHomeDir(), ".pi", "agent");
+}
 /** Maximum basename length for override env vars. */
 const MAX_BASENAME_LENGTH = 128;
 /** Characters that are not allowed in a basename. */

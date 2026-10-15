@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { resolveAgentDir } from "../../lib/paths.js";
 /**
  * Get or create a persistent machine ID.
  * Checks ~/.qoder/.auth/machine_id first, then falls back to ~/.pi/agent/qoder-machine-id.
@@ -17,7 +18,7 @@ import { dirname, join } from "node:path";
 export function getMachineId() {
     const paths = [
         join(homedir(), ".qoder", ".auth", "machine_id"),
-        join(homedir(), ".pi", "agent", "qoder-machine-id"),
+        join(resolveAgentDir(), "qoder-machine-id"),
     ];
     for (const p of paths) {
         if (existsSync(p)) {

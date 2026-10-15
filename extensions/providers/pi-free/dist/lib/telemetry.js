@@ -6,14 +6,23 @@
  *
  * Provides a real-world performance signal alongside static CI benchmarks.
  */
+import { join } from "node:path";
 import { createLogger } from "./logger.js";
-import { resolveSafeDataFile } from "./paths.js";
+import { PI_DATA_DIR } from "./paths.js";
 import { createJSONStore } from "./json-persistence.js";
 const _logger = createLogger("telemetry");
 // =============================================================================
 // Constants
 // =============================================================================
-const TELEMETRY_FILE = resolveSafeDataFile(process.env.PI_FREE_TELEMETRY_FILE, "free-telemetry.json");
+function resolveTelemetryPath() {
+    const override = process.env.PI_FREE_TELEMETRY_FILE;
+    if (!override || override.trim() === "")
+        return join(PI_DATA_DIR, "free-telemetry.json");
+    if (/[/\\\0]/.test(override))
+        return join(PI_DATA_DIR, "free-telemetry.json");
+    return join(PI_DATA_DIR, override);
+}
+const TELEMETRY_FILE = resolveTelemetryPath();
 const MAX_RECENT_CALLS = 50;
 /** Latency samples above this threshold are discarded as implausible. */
 const MAX_SANE_LATENCY_MS = 10 * 60 * 1000; // 10 minutes
