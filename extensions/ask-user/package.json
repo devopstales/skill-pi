@@ -20,7 +20,11 @@
     "user-decision"
   ],
   "files": [
-    "index.ts",
+    "*.ts",
+    "state/**/*.ts",
+    "view/**/*.ts",
+    "tool/**/*.ts",
+    "locales/*.json",
     "README.md"
   ],
   "publishConfig": {

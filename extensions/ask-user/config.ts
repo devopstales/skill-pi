@@ -111,7 +111,11 @@ export function loadConfig(): AskUserQuestionConfig {
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return parsed as AskUserQuestionConfig;
+    const source = parsed as Record<string, unknown>;
+    const config: AskUserQuestionConfig = {};
+    if (source.collapseKey !== undefined) config.collapseKey = source.collapseKey as CollapseKeySpec;
+    if (source.guidance !== undefined) config.guidance = validateGuidanceFields(source.guidance);
+    return config;
   } catch (err) {
     console.warn(`ask-user: invalid JSON at ${path}, using default ({}) — ${(err as Error).message}`);
     return {};

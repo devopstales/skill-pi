@@ -16,7 +16,7 @@ decisions in an interactive TUI (or native RPC dialogs).
 - **Terminal attention** — a single BEL (`\x07`) on a TTY when the questionnaire starts waiting
 - **Events** — outbound `ask_user:prompt` / `ask_user:blocked`; inbound `ask_user:answer` +
   `ask_user:answer-result` (first answer wins); legacy `ask:answered` / `ask:cancelled` for back-compat
-- **i18n** — 9 locales (`en`, `de`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`, `zh`) selected by `LANG`/`LC_ALL`
+- **i18n** — 9 locales (`en`, `de`, `es`, `fr`, `pt`, `pt-BR`, `ru`, `uk`, `zh`) selected by `LC_ALL` / `LC_MESSAGES` / `LANG` (first match wins; a `pt_BR`-style tag falls back to its `pt` prefix), with an English fallback for any missing key
 
 > Ported for full UI/contract parity with [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono)
 > (MIT), keeping the `ask_user` tool name and skill-pi's self-contained, `conf.d`-based config.
@@ -115,6 +115,11 @@ file → stderr warning + defaults.
 ```json
 { "collapseKey": "alt+o" }
 ```
+
+Only the `user` scope is implemented (ADR-0008's `project`/`.skill-pi` merge is not
+wired for this extension — YAGNI); the path above is the only config location read.
+Unknown top-level keys in the file are ignored (only `collapseKey` and `guidance`
+are honored).
 
 ### Keyboard
 

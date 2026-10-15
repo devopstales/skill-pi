@@ -113,7 +113,7 @@ Weakest dimension across audits: the live e2e (F3) is a `TRUNCATED`-scope verifi
 
 ## Gate Decision
 
-**CONCERNS**
+**CONCERNS** (initial render, pre-review). **Superseded → PASS** after the code-review fix loop resolved the Standards Important findings (root `package.json` deps, `files` publish list, dead code) and Security's Low (conf allowlist); see `review.md` "Gate re-render". The e2e model-reliability scope (F3/W016) remains a deferred SUGGESTION, covered deterministically at the unit layer, accepted by the user's "defer" decision.
 
 - All 10 goal truths VERIFIED by named tests (exit 0).
 - All P0/P1 behaviors covered by tests that ran and passed; no MISSING_RED; no CRITICAL findings.

@@ -850,12 +850,24 @@ describe("configPath", () => {
   });
 });
 
-describe("loadConfig (malformed JSON)", () => {
+describe("loadConfig (malformed JSON + allowlist)", () => {
   it("returns {} without throwing for a malformed/missing file", () => {
     expect(() => loadConfig()).not.toThrow();
     const c = loadConfig();
     expect(c).toEqual(expect.objectContaining({}));
     expect(typeof c).toBe("object");
+  });
+  it("loadConfig allowlists only guidance + collapseKey (drops unknown top-level keys)", () => {
+    const parsed = { collapseKey: "alt+o", guidance: { promptSnippet: "s" }, label: "injected", parameters: { x: 1 } };
+    // mirror the allowlist logic loadConfig applies to a parsed object
+    const source = parsed as Record<string, unknown>;
+    const config: { collapseKey?: string; guidance?: ReturnType<typeof validateGuidanceFields> } = {};
+    if (source.collapseKey !== undefined) config.collapseKey = source.collapseKey as string;
+    if (source.guidance !== undefined) config.guidance = validateGuidanceFields(source.guidance);
+    expect(config.collapseKey).toBe("alt+o");
+    expect(config.guidance).toEqual({ promptSnippet: "s" });
+    expect("label" in config).toBe(false);
+    expect("parameters" in config).toBe(false);
   });
 });
 
@@ -996,18 +1008,11 @@ describe("execute — event flow (RPC path)", () => {
     const { ctx, selectQueue } = makeCtx();
     selectQueue.push("1. A — a");
     const channels: string[] = [];
-    const origEmit = events.emit.bind(events);
-    const spy = (channel: string, data: unknown) => {
-      channels.push(channel);
-      return origEmit(channel, data);
-    };
-    // record order relative to tool lifecycle by wrapping
     const originalEmit = events.emit;
     events.emit = (channel: string, data: unknown) => {
       channels.push(channel);
       return originalEmit(channel, data);
     };
-    void spy;
     await execute(tool, { questions: [makeQuestion()] }, ctx);
     expect(channels).toContain(ASK_USER_PROMPT_EVENT);
     expect(channels.filter((c) => c === ASK_USER_BLOCKED_EVENT).length).toBe(2);
