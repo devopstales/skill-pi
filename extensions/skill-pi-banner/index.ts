@@ -1,12 +1,12 @@
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
 import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
 
-import { VERSION, SettingsManager, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VERSION, getAgentDir, SettingsManager, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { sanitizeTerminalText } from "./text.ts";
-import { formatCwd } from "./utils.ts";
 
 const LOGO = [
   " ███████╗██╗  ██╗██╗██╗     ██╗     ██████╗  ██████╗ ██╗██████╗  ",
@@ -30,7 +30,7 @@ function dim(text: string): string {
   return `${DIM}${text}${RESET}`;
 }
 
-export interface BannerStats {
+interface BannerStats {
   gitBranch: string;
   path: string;
   mcpServers: number;
@@ -41,17 +41,24 @@ export interface BannerStats {
   customTools: number;
 }
 
-export function gitBranch(cwd: string): string {
+function gitBranch(cwd: string): string {
   try {
-    const branch = sanitizeTerminalText(execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
       cwd,
       stdio: ["ignore", "pipe", "ignore"],
       encoding: "utf8",
-    }).trim());
+    }).trim();
     return branch || "(detached)";
   } catch {
     return "(not a git repo)";
   }
+}
+
+function shortPath(cwd: string): string {
+  const home = homedir();
+  if (cwd === home) return "~";
+  if (cwd.startsWith(home + "/")) return "~" + cwd.slice(home.length);
+  return cwd;
 }
 
 function readJson(path: string): unknown {
@@ -62,7 +69,7 @@ function readJson(path: string): unknown {
   }
 }
 
-export function mcpServerCount(cwd: string, agentDir: string): number {
+function mcpServerCount(cwd: string, agentDir: string): number {
   const count = (doc: unknown): number => {
     const servers = (doc as { mcpServers?: Record<string, unknown> } | undefined)?.mcpServers;
     return servers && typeof servers === "object" ? Object.keys(servers).length : 0;
@@ -72,7 +79,7 @@ export function mcpServerCount(cwd: string, agentDir: string): number {
   return count(readJson(join(cwd, "mcp.json"))) + count(readJson(join(agentDir, "mcp.json")));
 }
 
-export async function loadedResourceCounts(
+async function loadedResourceCounts(
   cwd: string,
   agentDir: string,
   cliExtensions: string[],
@@ -127,7 +134,7 @@ function buildStatsLines(stats: BannerStats): string[] {
   });
 }
 
-export class BannerHeader implements Component {
+class BannerHeader implements Component {
   private stats: BannerStats;
 
   constructor(stats: BannerStats) {
@@ -157,36 +164,62 @@ export class BannerHeader implements Component {
   }
 }
 
-export function buildBannerStats(input: {
-  cwd: string;
-  settings: { packages: number };
-  customTools: number;
-  mcpConfigured: number;
-  mcpLoaded: number;
-  skills: number;
-  extensions: number;
-}): BannerStats {
-  const mcpServers = input.mcpConfigured > 0 ? input.mcpConfigured : input.mcpLoaded;
-  return {
-    gitBranch: gitBranch(input.cwd),
-    path: formatCwd(input.cwd),
-    mcpServers,
-    packages: input.settings.packages,
-    skills: input.skills,
-    extensions: input.extensions,
-    piVersion: VERSION,
-    customTools: input.customTools,
-  };
-}
+export default function (pi: ExtensionAPI): void {
+  pi.on("session_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    if (process.stdout.rows < 12 || process.stdout.columns < 50) return;
 
-export function countCustomTools(getAllTools: () => Array<{ sourceInfo: { source: string } }>): number {
-  try {
-    let n = 0;
-    for (const tool of getAllTools()) {
-      if (tool.sourceInfo.source !== "builtin") n += 1;
+    const agentDir = getAgentDir();
+
+    const settings = (() => {
+      try {
+        const raw = pi.getSettings();
+        return {
+          packages: Array.isArray(raw.packages) ? raw.packages.length : 0,
+          extensions: Array.isArray(raw.extensions) ? [...raw.extensions] : [],
+          skills: Array.isArray(raw.skills) ? [...raw.skills] : [],
+        };
+      } catch {
+        return { packages: 0, extensions: [] as string[], skills: [] as string[] };
+      }
+    })();
+
+    const { skills, extensions } = await loadedResourceCounts(
+      ctx.cwd,
+      agentDir,
+      settings.extensions,
+      settings.skills,
+    );
+
+    let customTools = 0;
+    try {
+      for (const tool of pi.getAllTools()) {
+        if (tool.sourceInfo.source !== "builtin") customTools += 1;
+      }
+    } catch {
+      customTools = 0;
     }
-    return n;
-  } catch {
-    return 0;
-  }
+
+    const mcpConfigured = mcpServerCount(ctx.cwd, agentDir);
+    let mcpLoaded = 0;
+    try {
+      mcpLoaded = pi.getMcpServers().length;
+    } catch {
+      mcpLoaded = 0;
+    }
+    const mcpServers = mcpConfigured > 0 ? mcpConfigured : mcpLoaded;
+
+    const stats: BannerStats = {
+      gitBranch: gitBranch(ctx.cwd),
+      path: shortPath(resolve(ctx.cwd)),
+      mcpServers,
+      packages: settings.packages,
+      skills,
+      extensions,
+      piVersion: VERSION,
+      customTools,
+    };
+
+    ctx.ui.setHeader((_tui, _theme) => new BannerHeader(stats));
+  });
 }
