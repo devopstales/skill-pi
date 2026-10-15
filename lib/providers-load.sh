@@ -3,13 +3,12 @@
 # base loads in a real `skill-pi --print` session.
 #
 # pi-free's logStartupSummary marker is the proof the base loaded. pi-free
-# writes its log to ~/.pi/free.log because paths.js hardcodes
-# PI_DATA_DIR = join(homedir(), ".pi") — it reads HOME, not PI_CODING_AGENT_DIR
-# (an ADR-0002 finding tracked for TICKET-06; that is why state also leaks to
-# ~/.pi here). The marker is an info-level line and the file level defaults to
-# debug, so it lands in ~/.pi/free.log whether or not LOG_LEVEL is set. We read
-# the marker from that file (scoped to this run's session by timestamp) and fall
-# back to the captured stdout+stderr. A load failure instead prints
+# writes its log to $PI_DATA_DIR/free.log (PI_DATA_DIR resolves through
+# PI_CODING_AGENT_DIR after the ADR-0002 fix in TICKET-06; falls back to
+# ~/.pi when unset). The marker is an info-level line and the file level
+# defaults to debug, so it lands in the data dir's free.log whether or not
+# LOG_LEVEL is set. We read the marker from that file (scoped to this run's
+# session by timestamp) and fall back to the captured stdout+stderr. A load failure instead prints
 # `Failed to load extension "...": ...` to stderr and the session exits 1; the
 # per-provider lines in the log name any rejected setup.
 #
