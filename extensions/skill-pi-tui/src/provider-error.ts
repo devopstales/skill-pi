@@ -56,7 +56,11 @@ export function humanizeProviderError(text: string): string | null {
     return "Rate limited by the provider.\nWait a moment and retry, or switch models: /model";
   }
   if (/\b\d{3}\b/.test(trimmed)) {
-    const excerpt = firstSentence(trimmed.replace(/^[0-9]{3}:\s*/, ""));
+    const withoutStatus = trimmed.replace(/^[0-9]{3}:\s*/, "");
+    const jsonStart = withoutStatus.search(/["{]/);
+    const jsonMatch = jsonStart >= 0 ? withoutStatus.slice(jsonStart).match(/"(?:message|error|code|reason)"\s*:\s*"((?:\\.|[^"\\])*)"/) : null;
+    const inner = jsonMatch?.[1] ? jsonMatch[1].replace(/\\'/g, "'").replace(/\\"/g, '"') : withoutStatus;
+    const excerpt = firstSentence(inner.replace(/,\s*"type"\s*:\s*"[^"]*"\s*\}?$/u, "").replace(/[{}]\s*$/u, ""));
     return `Provider returned an error.\n${excerpt}`;
   }
   return null;

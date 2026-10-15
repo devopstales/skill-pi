@@ -381,7 +381,12 @@ export default function (pi: ExtensionAPI): void {
     }
     const cleaned = cleanProviderError(message);
     if (cleaned) {
-      return { message: { ...message, ...cleaned, errorMessage: undefined } };
+      // pi renders a red `Error: ${errorMessage}` line for any stopReason "error"
+      // message, independent of the content. Blank the (raw) content and carry the
+      // humanized reason in errorMessage so the error shows exactly once,
+      // readable, instead of a raw payload plus "Unknown error".
+      const text = cleaned.content.find((c) => c.type === "text")?.text;
+      return { message: { ...message, content: [], errorMessage: text } };
     }
     invalidateUsageCache();
     tuiRef?.requestRender();
