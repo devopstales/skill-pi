@@ -350,24 +350,6 @@ export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proces
     current.pending = undefined;
   });
 
-  pi.on("message_end", (event, ctx) => {
-    const message = (event as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
-    if (message?.role !== "assistant" || message.stopReason !== "error" || !ctx.hasUI) return;
-    const raw = message.errorMessage ?? "";
-    if (!raw) return;
-    const modelMatch = /model '([^']+)'\s+not found/i.exec(raw);
-    if (modelMatch) {
-      const modelName = modelMatch[1];
-      const provider = ctx.sessionManager.getModel?.()?.provider ?? "the provider";
-      ctx.ui.notify(`Model "${modelName}" not found on ${provider}. Run: ollama pull ${modelName}`, "error");
-      return;
-    }
-    const firstLine = raw.split("\n")[0]?.trim() ?? raw;
-    if (firstLine.length > 120) return;
-    if (/^[{}[\]]/.test(firstLine) || /^40\d/.test(firstLine) || /^50\d/.test(firstLine)) return;
-    ctx.ui.notify(firstLine, "error");
-  });
-
   pi.on("context", (event, ctx) => {
     const current = session(ctx);
     const trailing: Array<{ role: "custom"; customType: string; content: string; display: false; timestamp: number }> = [];
