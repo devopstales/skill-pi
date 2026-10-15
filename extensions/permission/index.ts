@@ -91,6 +91,7 @@ export default function (pi: ExtensionAPI) {
     const derivedExtensionAllowState = getDerivedExtensionAllowState(pi);
     const settings = mergeSkillAllowRules(loadSettings(ctx.cwd), derivedSkillAllowState.rules);
     const argValue = getMatchValue(event.toolName, event.input as Record<string, unknown>) ?? "";
+    logPermissionDiagnostics(pi, sessionState);
     const mode = await resolveMode(settings, event.toolName, argValue, sessionState, derivedExtensionAllowState);
 
     if (mode === "allow") {
@@ -184,7 +185,33 @@ function isLocalSkillCommand(command: SlashCommandInfo): command is LocalSkillCo
 }
 
 function isSyntheticToolPath(pathValue: string): boolean {
-  return !pathValue.startsWith("/");
+  return typeof pathValue !== "string" || !pathValue.startsWith("/");
+}
+
+let permissionDiagnosticsShown = false;
+
+function logPermissionDiagnostics(pi: ExtensionAPI, sessionState: RuntimeSessionState): void {
+  if (permissionDiagnosticsShown) return;
+  permissionDiagnosticsShown = true;
+  try {
+    const tools = pi.getAllTools();
+    const lines = [
+      `diagnostic: getAllTools returned ${tools.length} tools`,
+      ...tools.map((t) => {
+        const si = t.sourceInfo;
+        return `  ${t.name}: source=${si?.source} path=${si?.path} ns=${t.namespace?.name ?? "-"}`;
+      }),
+      `  sessionState.approvalRules=[${[...sessionState.approvalRules].join(", ")}]`,
+      `  sessionState.modeOverrides=[${[...sessionState.modeOverrides.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}]`,
+    ];
+    console.error(lines.join("\n"));
+  } catch (error) {
+    console.error(`diagnostic: failed: ${String(error)}`);
+  }
+}
+
+export function resetPermissionDiagnosticsForTest(): void {
+  permissionDiagnosticsShown = false;
 }
 
 function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
