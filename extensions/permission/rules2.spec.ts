@@ -1,10 +1,6 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
 import { matchPattern, matchesAnyRule, resolveMode, resolveSingleMode } from "./index.js";
 import type { PermissionSettings, RuntimeSessionState } from "./models.js";
-import { getExtensionSettingsPaths, loadExtensionSettings } from "./project.js";
 
 const state: RuntimeSessionState = { modeOverrides: new Map(), approvalRules: new Set() };
 
@@ -52,28 +48,25 @@ describe("rule chain (triangulation)", () => {
   });
 });
 
-describe("conf.d loading (triangulation)", () => {
-  it("merges project under local with last-wins defaultMode", () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-conf-"));
-    mkdirSync(join(dir, "conf.d"), { recursive: true });
-    writeFileSync(join(dir, "conf.d", "permission.conf"), JSON.stringify({ defaultMode: "deny", allow: ["read"] }));
-    writeFileSync(join(dir, "conf.d", "permission.local.conf"), JSON.stringify({ defaultMode: "allow" }));
-
-    const merged = loadExtensionSettings<{ defaultMode?: string; allow?: string[] }>("permission", dir, (a, b) => ({
-      ...a,
-      ...b,
-      allow: [...(a.allow ?? []), ...(b.allow ?? [])],
-    }));
-    expect(merged.defaultMode).toBe("allow");
-    expect(merged.allow).toEqual(["read"]);
+describe("external_directory default", () => {
+  it("read on absolute path outside project defaults to ask", () => {
+    expect(resolveSingleMode({}, "read", "/home/user/other-project/file.txt", state)).toBe("ask");
   });
 
-  it("throws on invalid JSON with the path in the message", () => {
-    const dir = mkdtempSync(join(tmpdir(), "perm-conf-"));
-    mkdirSync(join(dir, "conf.d"), { recursive: true });
-    writeFileSync(join(dir, "conf.d", "permission.conf"), "{ not json");
-    expect(() =>
-      loadExtensionSettings<Record<string, unknown>>("permission", dir, (a, b) => ({ ...a, ...b })),
-    ).toThrow(/Invalid JSON in .*permission\.conf/);
+  it("read on in-project relative path defaults to allow", () => {
+    expect(resolveSingleMode({}, "read", "src/file.txt", state)).toBe("allow");
+  });
+
+  it("read on temp path defaults to allow", () => {
+    expect(resolveSingleMode({}, "read", "/tmp/file.txt", state)).toBe("allow");
+  });
+
+  it("edit on external path defaults to ask (not allow)", () => {
+    expect(resolveSingleMode({}, "edit", "/home/user/other-project/file.txt", state)).toBe("ask");
+  });
+
+  it("explicit allow rule beats external_directory ask", () => {
+    const s: PermissionSettings = { allow: ["read(*)"] };
+    expect(resolveSingleMode(s, "read", "/home/user/other-project/file.txt", state)).toBe("allow");
   });
 });

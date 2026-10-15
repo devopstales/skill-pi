@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { FileHandle } from "node:fs/promises";
 
@@ -29,7 +30,7 @@ import {
 import type { DerivedSkillAllowState, Mode, ParsedRule, PermissionSettings, RuntimeSessionState } from "./models.js";
 import { BashArity } from "./bash-arity.js";
 import { extractBashCommands } from "./bash-parser.js";
-import { getExtensionSettingsPaths, loadExtensionSettings } from "./project.js";
+import { getExtensionSettingsPaths, loadExtensionSettings, resolveProjectRoot } from "./project.js";
 import { buildHardRejectedReason, resolvePermissionRejection } from "./rejection.js";
 import { showPermissionReviewDialog } from "./review-dialog.js";
 import {
@@ -448,6 +449,59 @@ export function getMatchValue(tool: string, input: Record<string, unknown>): str
   }
 }
 
+const ALLOW_BY_DEFAULT = new Set([
+  "read",
+  "glob",
+  "grep",
+  "ls",
+  "fd",
+  "rg",
+  "find",
+  "task",
+  "skill",
+]);
+
+const ASK_BY_DEFAULT = new Set([
+  "edit",
+  "write",
+  "bash",
+  "webfetch",
+  "websearch",
+  "fetch",
+]);
+
+const PATH_TOOLS = new Set(["read", "edit", "write", "glob", "grep", "ls", "find"]);
+
+function isEnvFile(pathValue: string): boolean {
+  if (!pathValue) return false;
+  const base = pathValue.split("/").pop() ?? pathValue;
+  if (base.endsWith(".env.example")) return false;
+  if (base === ".env" || base.startsWith(".env.")) return true;
+  return /\b[^/]*\.env$/.test(base) || /\b[^/]*\.env\.[^/]+$/.test(base);
+}
+
+function isTempPath(resolved: string): boolean {
+  const tmp = os.tmpdir();
+  return (
+    resolved === tmp ||
+    resolved.startsWith(tmp + "/") ||
+    resolved === "/tmp" ||
+    resolved.startsWith("/tmp/") ||
+    resolved === "/var/tmp" ||
+    resolved.startsWith("/var/tmp/") ||
+    resolved === "/private/tmp" ||
+    resolved.startsWith("/private/tmp/")
+  );
+}
+
+function isExternalPath(argValue: string): boolean {
+  if (!argValue) return false;
+  const resolved = path.isAbsolute(argValue) ? path.resolve(argValue) : path.resolve(process.cwd(), argValue);
+  if (isTempPath(resolved)) return false;
+  const projectRoot = resolveProjectRoot(process.cwd());
+  return !(resolved === projectRoot || resolved.startsWith(projectRoot + "/"));
+}
+
 export function resolveSingleMode(
   settings: PermissionSettings,
   toolName: string,
@@ -463,7 +517,14 @@ export function resolveSingleMode(
   if (matchesAnyRule(settings.ask ?? [], toolName, argValue)) return "ask";
   if (matchesAnyRule(settings.allow ?? [], toolName, argValue)) return "allow";
 
-  return settings.defaultMode ?? "ask";
+  if (settings.defaultMode) return settings.defaultMode;
+
+  if (PATH_TOOLS.has(toolName) && isExternalPath(argValue)) return "ask";
+  if (toolName === "read" && isEnvFile(argValue)) return "ask";
+  if (ASK_BY_DEFAULT.has(toolName)) return "ask";
+  if (ALLOW_BY_DEFAULT.has(toolName)) return "allow";
+
+  return "ask";
 }
 
 export async function resolveMode(

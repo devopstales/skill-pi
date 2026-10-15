@@ -9,6 +9,36 @@ Opencode-style permission gate for pi tool calls.
 - **Bash parsing** — tree-sitter-bash for command-level permission
 - **Review dialog** — TUI popup for permission requests
 - **Preview** — show what a tool call will do before approving
+- **Permissive defaults** — matches opencode: reads/search run silently, only writes and shell prompt
+
+## Defaults
+
+When no rule matches a tool, the extension resolves using opencode-style per-tool defaults:
+
+| Default | Tools |
+|---------|-------|
+| `allow` | `read`, `glob`, `grep`, `ls`, `fd`, `rg`, `find`, `task`, `skill` |
+| `ask` | `edit`, `write`, `bash`, `webfetch`, `websearch`, `fetch` |
+
+Additional guards:
+
+- **`.env` guard (read only)** — reading `*.env` / `*.env.*` files prompts (`ask`). `.env.example` is allowed. Explicit rules override.
+- **`external_directory`** — path-taking tools touching files outside the project working directory prompt (`ask`). Temp folder paths are allowed.
+
+`settings.defaultMode` (when set) acts as the global catch-all and overrides per-tool defaults, matching opencode's `"*"` key.
+
+## Config
+
+Rules live in `<project>/.skill-pi/conf.d/permission.conf` (project) and `~/.skill-pi/conf.d/permission.conf` (user). "Allow always" persists to the user-level file. Schema:
+
+```json
+{
+  "defaultMode": "ask",
+  "always": ["bash(git status *)"],
+  "allow": ["read(*)"],
+  "deny": ["bash(rm -rf *)"],
+  "ask": ["webfetch(*)"]
+}
 
 ## Install
 

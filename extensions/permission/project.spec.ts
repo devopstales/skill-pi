@@ -7,7 +7,7 @@ describe("conf.d path resolution (ADR 0008)", () => {
     expect(p.global).toMatch(/\/conf\.d\/permission\.conf$/);
   });
 
-  it("resolves project conf.d under the git root", () => {
-    expect(resolveProjectConfDir(process.cwd())).toMatch(/conf\.d$/);
+  it("resolves project conf.d under .skill-pi/conf.d", () => {
+    expect(resolveProjectConfDir(process.cwd())).toMatch(/\.skill-pi\/conf\.d$/);
   });
 });

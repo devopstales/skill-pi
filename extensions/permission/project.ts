@@ -30,15 +30,15 @@ export function resolveProjectRoot(cwd: string): string {
 }
 
 export function resolveProjectConfDir(cwd: string): string {
-  return path.join(resolveProjectRoot(cwd), "conf.d");
+  return path.join(resolveProjectRoot(cwd), ".skill-pi", "conf.d");
 }
 
 export function getExtensionSettingsPaths(name: string, cwd: string): ConfSettingsPaths {
   const root = resolveProjectRoot(cwd);
   return {
     global: path.join(agentHome(), "conf.d", `${name}.conf`),
-    project: path.join(root, "conf.d", `${name}.conf`),
-    local: path.join(root, "conf.d", `${name}.local.conf`),
+    project: path.join(root, ".skill-pi", "conf.d", `${name}.conf`),
+    local: path.join(root, ".skill-pi", "conf.d", `${name}.local.conf`),
   };
 }
 
@@ -48,18 +48,11 @@ export function loadExtensionSettings<T>(
   merge: (a: Partial<T>, b: Partial<T>) => Partial<T>,
 ): Partial<T> {
   const paths = getExtensionSettingsPaths(name, cwd);
-  const root = resolveProjectRoot(cwd);
   const g = loadJsonSafe<T>(paths.global);
-  const skillPiPath = path.join(root, ".skill-pi", "conf.d", `${name}.conf`);
-  const piPath = path.join(root, ".pi", "conf.d", `${name}.conf`);
-  const skillPi = loadJsonSafe<T>(skillPiPath);
-  const pi = fs.existsSync(skillPiPath) ? {} : loadJsonSafe<T>(piPath);
   const p = loadJsonSafe<T>(paths.project);
   const l = loadJsonSafe<T>(paths.local);
-  const skillPiAndPi = merge(skillPi, pi);
-  const withUser = merge(g, skillPiAndPi);
-  const withProjectConf = merge(withUser, p);
-  return merge(withProjectConf, l);
+  const withUser = merge(g, p);
+  return merge(withUser, l);
 }
 
 export function loadJsonSafe<T>(filePath: string): Partial<T> {
