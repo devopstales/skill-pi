@@ -187,28 +187,6 @@ function isSyntheticToolPath(pathValue: string): boolean {
   return typeof pathValue !== "string" || !pathValue.startsWith("/");
 }
 
-let permissionDiagnosticsShown = false;
-
-function logPermissionDiagnostics(pi: ExtensionAPI, sessionState: RuntimeSessionState): void {
-  if (permissionDiagnosticsShown) return;
-  permissionDiagnosticsShown = true;
-  try {
-    const tools = pi.getAllTools();
-    const lines = [
-      `diagnostic: getAllTools returned ${tools.length} tools`,
-      ...tools.map((t) => {
-        const si = t.sourceInfo;
-        return `  ${t.name}: source=${si?.source} path=${si?.path} ns=${t.namespace?.name ?? "-"}`;
-      }),
-      `  sessionState.approvalRules=[${[...sessionState.approvalRules].join(", ")}]`,
-      `  sessionState.modeOverrides=[${[...sessionState.modeOverrides.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}]`,
-    ];
-    console.error(lines.join("\n"));
-  } catch (error) {
-    console.error(`diagnostic: failed: ${String(error)}`);
-  }
-}
-
 function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
   return tools
     .map((tool) => `${tool.name}:${tool.sourceInfo.path}:${tool.namespace?.name ?? ""}`)
@@ -219,10 +197,7 @@ function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
 export function getDerivedExtensionAllowState(pi: ExtensionAPI): DerivedExtensionAllowState {
   const tools = pi
     .getAllTools()
-    .filter(
-      (tool) =>
-        !tool.namespace && !isSyntheticToolPath(tool.sourceInfo.path) && tool.sourceInfo.source === "local",
-    )
+    .filter((tool) => !tool.namespace && !isSyntheticToolPath(tool.sourceInfo.path))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const cacheKey = buildExtensionAllowCacheKey(tools);

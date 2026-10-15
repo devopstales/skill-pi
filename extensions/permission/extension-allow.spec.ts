@@ -12,13 +12,13 @@ import type { PermissionSettings, RuntimeSessionState } from "./models.js";
 
 const state: RuntimeSessionState = { modeOverrides: new Map(), approvalRules: new Set() };
 
-function extensionTool(name: string, path: string): ToolInfo {
+function extensionTool(name: string, path: string, source: "local" | "cli" = "cli"): ToolInfo {
   return {
     name,
     description: `test ${name}`,
     parameters: {},
     exposure: "direct",
-    sourceInfo: { path, source: "local", scope: "user", origin: "top-level", baseDir: join(path, "..") },
+    sourceInfo: { path, source, scope: "user", origin: "top-level", baseDir: join(path, "..") },
   };
 }
 
@@ -84,6 +84,7 @@ describe("dynamic extension allow", () => {
       switch (name) {
         case "extension-registered tool resolves to allow": {
           expect(resolve({}, "todo", fakePi([extensionTool("todo", todoPath), builtinTool("bash")]))).toBe("allow");
+          expect(resolve({}, "todo", fakePi([extensionTool("todo", todoPath, "local"), builtinTool("bash")]))).toBe("allow");
           break;
         }
         case "builtin tool keeps its existing resolution": {
