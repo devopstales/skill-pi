@@ -197,7 +197,10 @@ function buildExtensionAllowCacheKey(tools: ToolInfo[]): string {
 export function getDerivedExtensionAllowState(pi: ExtensionAPI): DerivedExtensionAllowState {
   const tools = pi
     .getAllTools()
-    .filter((tool) => !tool.namespace && !isSyntheticToolPath(tool.sourceInfo.path))
+    .filter(
+      (tool) =>
+        !tool.namespace && !isSyntheticToolPath(tool.sourceInfo.path) && tool.sourceInfo.source === "local",
+    )
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const cacheKey = buildExtensionAllowCacheKey(tools);

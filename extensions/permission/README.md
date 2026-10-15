@@ -20,7 +20,7 @@ When no rule matches a tool, the extension resolves using opencode-style per-too
 | `allow` | `read`, `glob`, `grep`, `ls`, `fd`, `rg`, `find`, `task`, `skill` |
 | `ask` | `edit`, `write`, `bash`, `webfetch`, `websearch`, `fetch` |
 
-**Dynamic extension allow:** any tool registered by a local extension (discovered via `pi.getAllTools()` `sourceInfo`) is also `allow` by default — no per-tool rule needed. This covers bundled extensions (`todo`, …) and future ones. Namespaced/MCP tools are not covered and still `ask` unless a rule matches. Explicit rules always win: `deny`/`ask` entries in `conf.d/permission.conf` beat the auto-allow.
+**Dynamic extension allow:** any tool registered by a local extension (discovered via `pi.getAllTools()` `sourceInfo`: `source: "local"`, real file path, no namespace) is also `allow` by default — no per-tool rule needed. This covers bundled extensions (`todo`, `ask_user`, …) and future ones. Namespaced/MCP tools are not covered and still `ask` unless a rule matches. Explicit rules always win: `deny`/`ask` entries in `conf.d/permission.conf` beat the auto-allow. Two caveats: the auto-allow is argument-blind (an extension tool runs with any arguments; restrict via `ask: ["tool(arg ...)"]` rules), and setting `settings.defaultMode` in conf.d skips the auto-allow for tools it would otherwise catch (an explicit setting is a stronger signal than the dynamic default).
 
 Additional guards:
 
