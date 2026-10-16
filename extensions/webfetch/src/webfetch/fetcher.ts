@@ -34,7 +34,6 @@ export interface FetchResult {
 	contentType: string;
 	bytes: number;
 	body: Uint8Array;
-	truncated: boolean;
 }
 
 interface HttpResponse {
@@ -192,7 +191,6 @@ async function readHttpResponse(response: HttpResponse, signal: AbortSignal): Pr
 		contentType: getHeader(response.headers, "content-type"),
 		bytes: body.length,
 		body,
-		truncated: body.length === MAX_RESPONSE_SIZE_BYTES,
 	};
 }
 

@@ -12,7 +12,7 @@ export default function (): WebFetchExtension {
 		name: "github-redirect",
 		description: "Redirects GitHub URLs to use gh CLI",
 		matches: [
-			"github.com/**",
+			"github.com",
 		],
 		async beforeFetch(ctx) {
 			const parts = ctx.parsedUrl.pathname.split("/").filter(Boolean);

@@ -11,7 +11,7 @@ export default function (): WebFetchExtension {
 		name: "google-docs-redirect",
 		description: "Redirects Google Docs URLs to use google_workspace_mcp tools",
 		matches: [
-			"docs.google.com/**",
+			"docs.google.com",
 		],
 		async beforeFetch(ctx) {
 			// Detect the specific Google Docs product from the URL
@@ -27,9 +27,8 @@ export default function (): WebFetchExtension {
 
 			return ctx.redirect(
 				`This is a ${docType} URL. Do NOT scrape it with webfetch.\n\n` +
-				`Instead, use the **google_workspace_mcp** tools to access this document directly:\n` +
-				`- These tools provide structured access to the document content, comments, and metadata\n` +
-				`- They handle authentication and return clean data without scraping artifacts\n\n` +
+				`If a Google Workspace integration is available, use it to read the document directly ` +
+				`(structured content, comments, and metadata without scraping artifacts).\n\n` +
 				`URL: ${ctx.url}`,
 			);
 		},

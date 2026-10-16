@@ -72,10 +72,9 @@ export interface WebFetchExtension {
   /** Human-readable description */
   description?: string;
   /**
-   * URL glob patterns matched against hostname + pathname.
-   * Uses picomatch syntax: `*` matches a single segment, `**` matches
-   * multiple.
-   * @example ["github.com/**", "docs.google.com/**"]
+   * URL glob patterns matched against the parsed hostname only (the path is
+   * not part of the match). Use a hostname or hostname glob.
+   * @example ["github.com", "docs.google.com"]
    */
   matches: string[];
 

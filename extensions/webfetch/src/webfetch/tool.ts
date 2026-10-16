@@ -69,8 +69,6 @@ export interface WebfetchDetails {
   extracted: boolean;
   /** The Python tool runner used for extraction, when extracted. */
   runner?: string;
-  /** Whether the network response body was truncated at the 5MB fetch limit. */
-  truncated: boolean;
   /** Whether the text handed to the model was capped below the raw content size. */
   outputTruncated: boolean;
   /** Byte length of the text handed to the model (excluding the truncation notice). */
@@ -178,7 +176,6 @@ export function createWebfetchTool(options: WebfetchToolOptions = {}) {
         timeoutSeconds,
         extracted,
         runner: runnerLabel,
-        truncated: fetched.truncated,
         outputTruncated: capped.truncated,
         outputBytes: capped.outputBytes,
         outputTotalBytes: capped.totalBytes,
