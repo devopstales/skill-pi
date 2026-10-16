@@ -1,6 +1,14 @@
 # Changelog
 
 
+## `[v0.1.0]` - 16.10.2026
+
+Forked at upstream `v0.7.1`, repackaged as `@devopstales/pi-context-view` for skill-pi.
+
+### Changed
+* `[config]` Override file moved to the skill-pi conf.d contract (`$AGENT_HOME/conf.d/pi-context-view.conf`).
+
+
 ## `[v0.7.1]` - 13.10.2026
 
 Support for Pi 1.2.0, which is now required, with fixes for its breaking changes.

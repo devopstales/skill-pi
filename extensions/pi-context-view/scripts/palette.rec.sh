@@ -47,7 +47,7 @@ REAL_AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 mirror_agent_dir() {
     #
     # Mirror the user's agent directory into a throwaway one made of symlinks,
-    # substituting only pi-context-view.json. The recording then reads the
+    # substituting only pi-context-view.conf. The recording then reads the
     # palette without ever touching the user's own extension config.
     #
     # AGENT_DIR is set before anything is built, and not returned on stdout: a
@@ -64,16 +64,12 @@ mirror_agent_dir() {
 
     AGENT_DIR=$(mktemp -d) || return 1
 
-    find "$REAL_AGENT_DIR" -mindepth 1 -maxdepth 1 -exec ln -s {} "$AGENT_DIR/" \; || return 1
-    rm "$AGENT_DIR/extensions" || return 1
-    mkdir "$AGENT_DIR/extensions" || return 1
-
-    # every other extension keeps its own config; only this one is substituted
-    find "$REAL_AGENT_DIR/extensions" -mindepth 1 -maxdepth 1 ! -name 'pi-context-view.json' \
-        -exec ln -s {} "$AGENT_DIR/extensions/" \; || return 1
+    find "$REAL_AGENT_DIR" -mindepth 1 -maxdepth 1 \
+        ! -name 'conf.d' -exec ln -s {} "$AGENT_DIR/" \; || return 1
+    mkdir -p "$AGENT_DIR/conf.d" || return 1
     [[ $palette == 'default' ]] && return 0
 
-    cp "$REPO_ROOT/doc/palettes/$palette.json" "$AGENT_DIR/extensions/pi-context-view.json"
+    cp "$REPO_ROOT/doc/palettes/$palette.json" "$AGENT_DIR/conf.d/pi-context-view.conf"
 }
 
 

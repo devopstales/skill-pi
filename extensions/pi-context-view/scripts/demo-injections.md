@@ -11,7 +11,7 @@ or re-exports the other. Change the demo fixtures without changing regular test
 behavior. The launcher tests check selection and paths. `demo-fixtures.test.ts` loads
 the demo files through Pi's resource loader and checks their combined behavior
 with the mock provider in both load orders and all three supported payload APIs.
-`pnpm check` also typechecks both sets and checks their import boundaries.
+`npm run check` also typechecks both sets and checks their import boundaries.
 
 Load orders:
 

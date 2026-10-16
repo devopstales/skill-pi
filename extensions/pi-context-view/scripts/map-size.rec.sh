@@ -56,14 +56,9 @@ mirror_agent_dir() {
     #   mirror_agent_dir || exit 1
     #
     AGENT_DIR=$(mktemp -d) || return 1
-    find "$REAL_AGENT_DIR" -mindepth 1 -maxdepth 1 ! -name 'extensions' \
+    find "$REAL_AGENT_DIR" -mindepth 1 -maxdepth 1 ! -name 'conf.d' \
         -exec ln -s {} "$AGENT_DIR/" \; || return 1
-    mkdir "$AGENT_DIR/extensions" || return 1
-
-    if [[ -d $REAL_AGENT_DIR/extensions ]]; then
-        find "$REAL_AGENT_DIR/extensions" -mindepth 1 -maxdepth 1 ! -name 'pi-context-view.json' \
-            -exec ln -s {} "$AGENT_DIR/extensions/" \; || return 1
-    fi
+    mkdir -p "$AGENT_DIR/conf.d" || return 1
 }
 
 
@@ -80,7 +75,7 @@ apply_map_size() {
     #
     local rows="$1"
     local cols="$2"
-    local config_file="$AGENT_DIR/extensions/pi-context-view.json"
+    local config_file="$AGENT_DIR/conf.d/pi-context-view.conf"
 
     printf '{"mapRows":%s,"mapCols":%s}\n' "$rows" "$cols" > "$config_file"
 }

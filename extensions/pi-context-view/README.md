@@ -94,8 +94,8 @@ To get started, create a configuration file populated with the current defaults:
 > This creates `~/.pi/conf.d/pi-context-view.conf` (stock pi) or
 > `~/.skill-pi/conf.d/pi-context-view.conf` (skill-pi).
 
-See the [configuration reference](https://github.com/dimk90/pi-context-view/blob/master/doc/CONFIG.md)
-for each parameter's meaning and default value.
+See the [configuration reference](doc/CONFIG.md) for each parameter's meaning
+and default value.
 
 ### Category Colors
 

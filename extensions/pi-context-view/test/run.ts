@@ -1,5 +1,5 @@
 /**
- * Test entry point for `pnpm test`: `node test/run.ts [file...]`, all
+ * Test entry point for `npm test`: `node test/run.ts [file...]`, all
  * `test/*.test.ts` files by default.
  *
  * Every file runs in this one process, so Pi is imported once rather than per

@@ -10,9 +10,9 @@
  * Location follows ADR 0008 (conf.d): the file is derived from
  * `getAgentDir()` so the same code resolves to the right home under either
  * host — stock pi → `~/.pi/conf.d/pi-context-view.conf`, skill-pi →
- * `~/.skill-pi/conf.d/pi-context-view.conf` — and project-local
- * `<git-root>/.skill-pi/conf.d/pi-context-view.conf` is merged over the
- * global file. The extension never hardcodes `~/.skill-pi` or `~/.pi`.
+ * `~/.skill-pi/conf.d/pi-context-view.conf`. The extension never hardcodes
+ * `~/.skill-pi` or `~/.pi`. Project-local configuration is intentionally
+ * unsupported: one global file, override-only, per the upstream design.
  */
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
