@@ -236,4 +236,36 @@ describe("code_symbols", () => {
     expect(log).toContain("initialize:python");
     expect(log).toContain("references:python");
   });
+
+  it("eagerInit spawns servers on session_start", async () => {
+    const { cwd, logFile } = createWorkspace();
+    const piExtension = (await import("./index.ts")).default;
+    const manager = new LspServerManager();
+    const handlers: Record<string, unknown[]> = {};
+    const fakePi = {
+      registerTool: () => {},
+      on: (event: string, handler: unknown) => {
+        handlers[event] = [handler];
+      },
+    };
+    piExtension(fakePi as never);
+
+    const sessionStartHandler = handlers["session_start"]?.[0] as
+      | ((event: unknown, ctx: { cwd: string }) => void)
+      | undefined;
+    expect(sessionStartHandler).toBeDefined();
+
+    const confDir = join(cwd, ".skill-pi", "conf.d");
+    const confPath = join(confDir, "lsp.conf");
+    const conf = JSON.parse(readFileSync(confPath, "utf8")) as Record<string, unknown>;
+    conf.eagerInit = true;
+    writeFileSync(confPath, JSON.stringify(conf, null, 2));
+
+    sessionStartHandler!({}, { cwd });
+    await new Promise((r) => setTimeout(r, 500));
+
+    const log = readFileSync(logFile, "utf8");
+    expect(log).toContain("initialize:typescript");
+    expect(log).toContain("initialize:python");
+  });
 });

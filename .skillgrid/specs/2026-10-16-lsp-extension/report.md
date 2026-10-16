@@ -111,14 +111,11 @@ None.
 
 ### SUGGESTION
 
-- **W022** — The `session_start` eager-init path (config `eagerInit: true`) is not
-  exercised by a dedicated test. The integration tests use lazy init (first
-  `code_symbols` call). A test that sets `eagerInit: true` and verifies servers
-  spawn on `session_start` would close this gap. Low risk: the code path is 4
-  lines and the lazy-init path is fully tested.
-- **W023** — `minimatch` v10 is a new production dependency. It's well-established
-  and the lockfile is clean, but it's the only new runtime dep. No action needed;
-  noted for dependency inventory.
+- **W026** — ~~The `session_start` eager-init path (config `eagerInit: true`) is not
+  exercised by a dedicated test.~~ **CLOSED**: `eagerInit` test added to
+  `code-symbols.spec.ts` (5 tests total, all pass).
+- **W027** — ~~`minimatch` v10 is a new production dependency.~~ **CLOSED**: noted
+  in README (`fileGlobs` field); dep is intentional (upstream), lockfile clean.
 
 ## Floor
 

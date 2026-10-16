@@ -74,7 +74,7 @@ tolerated.
 
 - `id` — stable server identifier (defaults to `server-<n>`)
 - `languages` — optional language filter used during routing
-- `fileGlobs` — optional minimatch globs evaluated relative to the workspace cwd
+- `fileGlobs` — optional glob patterns (minimatch v10) evaluated relative to the workspace cwd
 - `rootMarkers` — files/dirs used to compute the LSP server root
 - `command.command` — executable to spawn (must be on `$PATH` or absolute)
 - `command.args` — optional argument array
