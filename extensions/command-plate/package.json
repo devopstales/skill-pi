@@ -22,7 +22,7 @@
   ],
   "files": [
     "index.ts",
-    "src",
+    "*.ts",
     "README.md"
   ],
   "publishConfig": {
@@ -33,9 +33,6 @@
     "check": "tsc --noEmit -p .",
     "test": "vitest run",
     "test:watch": "vitest"
-  },
-  "dependencies": {
-    "typebox": "*"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^1.2.0",
