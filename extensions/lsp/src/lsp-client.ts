@@ -44,6 +44,9 @@ function toUri(path: string): string {
 }
 
 function fromUri(uri: string): string {
+  if (!uri.startsWith("file:")) {
+    throw new Error(`Unsupported LSP URI scheme: ${uri.slice(0, 64)}`);
+  }
   return fileURLToPath(uri);
 }
 

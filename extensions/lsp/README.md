@@ -86,6 +86,16 @@ tolerated.
 Language servers are **not** auto-installed; install them separately
 (e.g. `npm install -g vtsls`).
 
+### Trust model
+
+A project-scope `lsp.conf` names the executables to spawn
+(`command.command`). That file lives in the repo you open
+(`<git-root>/.skill-pi/conf.d/lsp.conf`), so treat it with the same trust you
+give the repo's `settings.json` or `AGENTS.md` — opening an unreviewed repo can
+run its chosen LSP server. Servers are spawned lazily on the first `code_symbols`
+call by default; `eagerInit: true` spawns all workspace servers on session start
+instead. Prefer user-scope conf for servers you trust unconditionally.
+
 ## Development
 
 ```sh

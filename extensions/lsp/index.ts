@@ -30,9 +30,17 @@ export default function piLspExtension(pi: ExtensionAPI) {
       for (const server of serversForWorkspace(config, ctx.cwd)) {
         manager
           .getClient(config, ctx.cwd, { serverId: server.id })
-          .catch(() => {});
+          .catch(() => {
+            // lazy re-attempt happens on first code_symbols call; the
+            // serverId:rootPath key is evicted on failure so it is not cached
+            console.warn(`[lsp] eager init failed for server "${server.id}" (will retry on first code_symbols call)`);
+          });
       }
-    } catch {}
+    } catch (err) {
+      // no config or a malformed conf: the tool re-loads on first call and
+      // surfaces a precise error there, so this is a warning, not a throw
+      console.warn(`[lsp] session_start config load skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   pi.on("session_shutdown", () => {
