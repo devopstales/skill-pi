@@ -1,6 +1,6 @@
 # command-plate
 
-Ctrl+X command plate (which-key style leader palette) for pi, with scoped-model
+Ctrl+K command plate (which-key style leader palette) for pi, with scoped-model
 and full model/thinking pickers. Based on [tomsej's pi-ext leader-key](https://github.com/tomsej/pi-ext) (MIT),
 homogenized into skill-pi extension conventions.
 
@@ -8,7 +8,7 @@ homogenized into skill-pi extension conventions.
 
 | Key | Action |
 | --- | --- |
-| `Ctrl+X` | Open the command plate palette |
+| `Ctrl+K` | Open the command plate palette |
 | `/cp` | Open the command plate palette (command form) |
 | `Ctrl+M` | Open the Scoped Models picker directly |
 

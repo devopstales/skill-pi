@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "A Ctrl+X command plate (which-key style leader palette) for pi, with scoped-model and full model/thinking pickers. Based on tomsej's pi-ext leader-key (MIT).",
+  "description": "A Ctrl+K command plate (which-key style leader palette) for pi, with scoped-model and full model/thinking pickers. Based on tomsej's pi-ext leader-key (MIT).",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/devopstales/skill-pi.git"

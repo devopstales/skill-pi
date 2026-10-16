@@ -327,7 +327,7 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(Key.ctrl("x"), {
+  pi.registerShortcut(Key.ctrl("k"), {
     description: "Open Command Plate",
     handler: async (ctx) => {
       await openCommandPlate(ctx);
