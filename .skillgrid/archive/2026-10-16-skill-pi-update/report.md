@@ -144,7 +144,7 @@ All other dimensions: PASS/COMPLETE.
 
 ## Gate Decision
 
-**PASS**
+**Verdict:** PASS
 
 Rationale: all truths VERIFIED by named tests or named runtime spot-checks (the backstop truths carry explicit ship-time door checks, which is the plan's own design — the banner behavior is pi's, unchanged, and the wrapper sets no version-check env; the live npm update is the natural ship-time verification). 5/5 scenarios COMPLIANT, 0 pending. No CRITICAL findings. All code-quality gates PASS or N/A. Trivy 0 CRITICAL. Scope COMPLETE. P0 100%, P1 100%.
 
@@ -157,4 +157,57 @@ None.
 ---
 
 ## Final-State Facts
-*(filled by reflect at archive time)*
+
+- **Shipped:** 2026-10-16, same-branch on main (no merge). Integration commits: 0695fea (update module), 356a85e (CLI interception), d93ba74 (docs), 7e89353 (help align + `-- update` test); archive move 2af57c2; state 40cc0e7.
+- **Integrated-tree evidence:** `node --test "test/**/*.test.js"` → 58 tests / 51 pass / 0 fail / 7 skip (the single earlier failure was the known pre-existing `rpc.test.js` flake, green on re-run).
+- **Rollback:** `git revert 0695fea..7e89353` (4 independently-revertable commits; no state/migration to undo).
+- **Ship-time door check (outstanding):** run `skill-pi update` on a real checkout → expect pi 1.3.0 + truthful banner. Not performed in-session (network + live install).
+
+## Acceptance Verdict
+
+**Verdict:** accepted
+
+All briefing success criteria met and verified (see Goal-Backward + Traceability above). The in-TUI "Update Available" banner now points at a command that does what it says.
+
+## Decisions
+
+| Decision | Choice | Rationale | Alternatives rejected |
+|---|---|---|---|
+| How to make the banner truthful | Wrapper intercepts bare `update` before pi passthrough; runs `npm install` + `npm link --force` in pkgRoot | The banner's `APP_NAME` already brands to skill-pi via the overlay; only the command target was wrong. Interception is additive, no pi source coupling (ADR-0006), no banner suppression | Suppress pi's check (`PI_SKIP_VERSION_CHECK`) + own banner (re-implements throttle/offline/UI); document the real command (leaves a misleading banner) |
+| Update step set | `npm install` + `npm link --force` (no `npm ci`) | Update semantics are incremental; `npm ci` is the clean-install semantics of `task install`. Hint text + README + help all state the 2-step form, so nothing misleads | Match `task install` verbatim (adds a clean-install nuke to an update); `npm ci` only (fails without a lockfile delta) |
+| Version report source | Synchronous read of installed `node_modules/.../package.json` (not `printVersion()`'s dynamic import) | Keeps `runUpdate` synchronous (no async plumbing in the bin) and side-effect free (never loads pi's runtime); post-install read makes the "to" number honest | Dynamic import of pi's `VERSION` (loads pi runtime on the update path); pre-install read (unhonest "to") |
+| Testability seam | `runUpdate({ spawn?, pkgRoot? })` injection + bin argv[1] identity guard + exported `parseArgs`/`isUpdateCommand`/`printHelp` | Tests stay hermetic (temp sandbox, no network, no TUI spawn); the routing contract (`args.update`) has a named home | Subprocess-level CLI tests (slow, network); no exports (tests would launch the TUI) |
+
+## Lessons
+
+- pi's self-update (`handlePackageCommand "update"`) resolves `PACKAGE_NAME` from the active package.json — and skill-pi's brand overlay re-exports pi's package.json, so stock `skill-pi update` was updating *stock pi*. The overlay's re-export (needed for asset paths) silently inherits pi's identity for any pi feature that keys off package name. **Lesson: any pi feature that reads the active package.json will see pi's identity under the overlay — audit such features when pi releases.**
+- A bare-positional subcommand needs a decision rule against the existing positional = project contract. "First bare positional wins" broke silently for `update`; the fix was a dedicated `else if (a === "update")` branch placed *before* the positional fallback, plus tests for all four arg shapes (bare, with-project, flag-form, after-`--`). **Lesson: when adding a subcommand to a pass-through CLI, enumerate every arg-shape interaction in the test list, not just the happy path.**
+- Guarding a bin module's top-level `main()` with `process.argv[1] === fileURLToPath(import.meta.url)` is the minimal pattern that makes a CLI import-safe for unit tests. `resolve()` on both sides covers the `npm link` symlink case.
+- `res.status ?? 1` in the spawn loop is the correct handling of signal-killed children (`spawnSync` returns `status: null` on signal) — an edge the brief didn't name but the implementation caught.
+
+## Patterns
+
+- **Injection at the subprocess boundary only:** stub `spawn`, keep the filesystem real (the transition test mutates the sandbox's pi `package.json` during the fake `install`, then asserts the post-install read). Cheaper and more honest than mocking `readFileSync`.
+- **Honest transition report:** capture "from" pre-steps, re-read "to" post-steps. The pattern generalizes to any wrapper command that reports a version/dependency transition.
+- **Zone discipline under parallel sessions:** three sessions committing to main simultaneously — explicit file staging (never `git add .`), per-task scoped review diffs, and ledger notes naming which commits belong to which change kept the reviews clean.
+
+## Surprises
+
+- The full root suite is load-sensitive: `test/rpc.test.js` (spawns a real pi rpc subprocess) times out intermittently under full-suite parallelism but passes standalone. Pre-existing (W030 documents the env hang); it flipped once during this change's runs and was confirmed as the known flake.
+- The brief's verbatim test snippets used top-level `await` inside sync `test()` callbacks — a parse-time SyntaxError on Node 24. The implementer converted to async callbacks (assertions unchanged); the brief's NOTE anticipated this.
+
+## Open Items
+
+- **Ship-time door check** (not performed in-session): run `skill-pi update` on a real checkout → pi 1.3.0, `--version` shows it, banner truthful.
+- **W037** (SUGGESTION): README "Updating" vs adjacent pre-existing Upgrading paragraph reads tensioned — one-word disambiguation in the adjacent paragraph (outside this change's scope).
+- **W038** (SUGGESTION): `skill-pi update` step set (2-step) vs `task install` (3-step with `npm ci`) — the two automation surfaces can drift; align or document the intentional distinction.
+- S1/S3 (report SUGGESTIONS): second-step npm-failure test + `--version update` precedence test — both low-value, parked.
+
+## Environment Retro
+
+| Category | Finding | Fix lands in | Source |
+|----------|---------|--------------|--------|
+| Automated checks | repo has no pre-commit guardrail at all — the zone rule (spec-zone commits before code, no mixed commits) is enforced only by convention + reviewer attention; this change's 4 commits held it, but nothing would have mechanically caught a mixed commit | add a pre-commit hook checking staged-path zones (`.skillgrid/specs/` vs code) per the work-unit-commits zone rule | session: zone rule applied manually across 4 commits; no hook exists (`ls .git/hooks` → samples only) |
+| Navigation | `state.yaml` `notes` field has grown to a multi-KB single-line append-only log (now >2000 chars, truncated on read) — it no longer serves as the cheap first-read pointer it's meant to be | cap `notes` to the latest shipped change + open windows pointer; move history into the archive reports (which already carry it) | `.skillgrid/state.yaml:10` (truncated in read) |
+| Information access | the `sdd-workspace` script names the per-plan workspace by *plan filename* (`blueprint`), so two plans with the same filename collide; the controller had to check for a foreign ledger | namespace the workspace dir by the plan's *change folder* (`.skillgrid/sdd/<change-dir>/`) instead of the plan basename | `.skillgrid/sdd/` held a `blueprint` dir (this plan) alongside `2026-10-16-pi-hooks-extension` — the scripts/sdd-workspace output vs the ledger's first line |
+| Tool economy | full-suite runs take ~6 min and flip on the known `rpc.test.js` env hang (W030) — the controller re-ran the full suite 3× during this change to isolate the flake | add a `task test:fast` (deterministic suites only, `--test-skip-pattern` on the PTY e2e files) for in-session re-verify; keep the full run for the QA/ship gates | session: 3 full-suite runs (370s each) to confirm the flake was pre-existing |
