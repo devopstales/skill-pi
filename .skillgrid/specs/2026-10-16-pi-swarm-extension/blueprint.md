@@ -77,8 +77,8 @@ on the RPC stream contract.
 - `swarm_cancel` sends RPC `abort`, waits up to 5s, then force-kills; the
   agent settles with `interrupted` status.
 - `MAX_RUNNING` (default 4) extra `swarm_spawn`s are **queued**, not rejected;
-  they start as running children settle. `MAX_TRACKED` (64) prunes oldest
-  settled agents (LRU).
+  they start as running children settle. `MAX_TRACKED` (64) prunes the
+  **least-recently-settled** settled agent first (LRU by `settledAt` ascending; never prunes a running/queued agent or one with active wait interest).
 - `swarm_check` returns status/turns/≤2KB preview **without** consuming;
   `swarm_list` returns one describe line per tracked agent.
 - With ≥1 running child and an empty prompt, `↓` enters the FleetView; `↑`
@@ -166,7 +166,7 @@ on the RPC stream contract.
 
 - `extensions/pi-swarm/package.json` — new; house package (`@devopstales/pi-swarm`, ADR 0005), scripts `check`/`test`, peerDeps on pi packages, devDeps vitest/typescript/@types/node (copy `extensions/todo/package.json` shape)
 - `extensions/pi-swarm/tsconfig.json` — new; copy `extensions/todo/tsconfig.json`
-- `extensions/pi-swarm/vitest.config.ts` — new; copy `extensions/todo/vitest.config.ts` if present, else default (include `src/**/*.spec.ts`)
+- `extensions/pi-swarm/vitest.config.ts` — new; default config with `include: ["src/**/*.spec.ts"]` (todo has no vitest config file to copy — verified)
 - `extensions/pi-swarm/src/domain.ts` — new; all shared types + constants (pure)
 - `extensions/pi-swarm/src/jsonl.ts` — new; line codec (pure)
 - `extensions/pi-swarm/src/child.ts` — new; `SwarmChild` lifecycle
@@ -348,6 +348,7 @@ export class SwarmChild {
 ```
 
 Cover at minimum:
+- the `cwd` argument to `buildChildInvocation` and the `cwd` option to `spawn()` must be the same value (assert in a test — a mismatch would make the child see two different project roots)
 - `buildChildInvocation` argv is `[skill-pi-exe, "--mode", "rpc", cwd]` shape (exact argv verified in the door check and pinned here) and env has `PI_CODING_AGENT_DIR` set to the given agentDir, no `PI_PACKAGE_DIR` key.
 - Fake child that emits `agent_start` then `agent_end` with final text → `onSnapshot` observes `running` then `done`, `finalText` is the text, `turns` ≥ 1.
 - Fake child that emits garbage lines then exits 1 → settles `error`, `errorText` bounded to `ERROR_TEXT_BUDGET`.
@@ -431,13 +432,14 @@ Key rules:
 - Sync reserve-before-yield for `MAX_RUNNING` (same race rationale as the davis design): increment the running counter in `spawn()` before any `await`; release on settle.
 - Snapshot store: plain mutable map + listener set (the synchronous read model — TUI reads without awaiting).
 - `waitFor` keeps a wait-interest refcount per id; settle during an active wait marks `consumed`.
-- Truncation helpers live here: `truncate(text, budget)` appends `\n[truncated: N more bytes]` — used by result delivery (24KB), wait output (48KB total / 16KB per agent), check preview (2KB / 20 lines).
+- Truncation helpers live here: `truncate(text, budget)` appends `\n[truncated: N more bytes]` — used by result delivery (24KB), wait output, check preview. Wait budget rule: per-agent budget starts at `WAIT_BUDGET_PER_AGENT` (16KB); if `ids.length × 16KB > WAIT_BUDGET_TOTAL` (48KB), the per-agent budget is reduced proportionally (`floor(48KB / ids.length)`) so the total never exceeds 48KB. Check preview: truncate `latestText` to ≤2KB **and** ≤20 lines (whichever hits first).
 
 - [ ] **Step 4: Wire `index.ts`** — extension factory:
   - `pi.registerTool` for `swarm_spawn` (params: `prompt` string required, `title` optional, `agent_type` optional, `model` optional; background is always on in v1 — the tool returns the id; description explains fire-and-forget + that children are isolated), `swarm_wait` (params: `ids` string array, max 64; blocks, streams `Waiting for …` via `onUpdate`), `swarm_list` (no params; one describe line per agent: `sa-N [status] "title" (agentType, model, tokens, elapsed)`)
-  - `deliver` callback: `pi.sendMessage({ customType: "swarm-result", content: <truncated finalText + transcript pointer>, details: { id, title, status } }, { deliverAs: "followUp", triggerTurn: true })`
+  - `deliver` callback: `pi.sendMessage({ customType: "swarm-result", content: <truncated body + transcript pointer>, details: { id, title, status } }, { deliverAs: "followUp", triggerTurn: true })` — body = `finalText` when non-empty, else the last assistant transcript line, else a status line (`sa-N finished with no text output`), so a child whose last message was a tool call still delivers something meaningful
   - `pi.registerMessageRenderer("swarm-result", ...)` — status glyph + bold header `swarm sa-N · title · finished/failed`, collapsed = first 8 lines + `(ctrl+o to expand)`, expanded = full text
-  - `pi.on("session_shutdown")` → `manager.disposeAll()`
+  - `pi.on("session_shutdown", (ev) => …)` → `manager.disposeAll()` **only when `ev.reason === "quit"`** (verified `SessionShutdownEvent.reason: "quit" | "reload" | "new" | "resume" | "fork"` — session replacement must not kill running children); the manager is also keyed by session id so a replacement session starts clean
+  - Read `SKILL_PI_SWARM_MAX` (int, default `MAX_RUNNING`) at extension load and pass it as the manager's `maxRunning` constructor option; `SKILL_PI_SWARM` on/off gate (`0`/`false`/`off` disables the whole extension, mirroring `SKILL_PI_TODO`)
   - Resolve `agentDir` via `getAgentDir()` from `@earendil-works/pi-coding-agent`; resolve the skill-pi executable path with the verified wrapper mechanism (`bin/skill-pi.js:11`): `path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "bin", "skill-pi.js")` — `index.ts` sits in `extensions/pi-swarm/`, one level above `bin/` is the package root. If that file does not exist (standalone install via stock `pi install`), fall back to `process.argv[1]` when it ends in `skill-pi.js`, else fail the spawn with a clear tool error naming the missing binary
 
 - [ ] **Step 5: GREEN**
@@ -475,7 +477,7 @@ Remaining: check/send/cancel tools (Task 3), FleetView (Task 4-5), agent types +
 
 **SATISFIES:** R-check-and-list, R-send-steers, R-cancel-aborts
 
-- [ ] **Step 1: Extend `manager.spec.ts`** with: `send` while running → fake child's `send` called (steer path); `send` after settle → follow_up path; `check` returns preview bounded to `CHECK_BUDGET` and `CHECK_MAX_LINES` and leaves `consumed` false.
+- [ ] **Step 1: Extend `manager.spec.ts`** with: `send` while running → fake child's `send` called (steer path); `send` after settle → follow_up path; `check` returns preview bounded to `CHECK_BUDGET` and `CHECK_MAX_LINES` (≤2KB AND ≤20 lines, whichever hits first) and leaves `consumed` false; `cancel(id)` on a `queued` agent → removed from the queue, the next queued agent is promoted to `running` (subscribe fires).
 - [ ] **Step 2: RED** (`npx vitest run`)
 - [ ] **Step 3: Register tools in `index.ts`:** `swarm_check` (param `id`; returns status line + turns + ≤2KB/20-line preview; errors with the known-id list on unknown id), `swarm_send` (params `id`, `text`; steer/follow_up via manager), `swarm_cancel` (param `id`; bounded abort, reports per-id outcome incl. `was already <status>`)
 - [ ] **Step 4: Statusline** — `ctx.ui.setStatus("swarm", …)` driven by `manager.subscribe`; cleared when no agents.
@@ -502,7 +504,7 @@ Remaining: check/send/cancel tools (Task 3), FleetView (Task 4-5), agent types +
 - [ ] **Step 1: Write failing `format.spec.ts`** — `formatElapsed(61_000)` → `"1m01s"`; `formatElapsed(59_000)` → `"59s"`; `formatTokens(12_400)` → `"12.4k"`; `formatAgentRow` includes status glyph (`⠹` running / `✓` done / `✗` error / `■` interrupted / `…` queued), title truncated to fit, model label, tokens, elapsed.
 - [ ] **Step 2: RED**
 - [ ] **Step 3: Implement `format.ts`, then `fleetview.ts`:** rows `main` + one per agent (earliest-launched first); selection marker `❯` on selected, dim otherwise; hint row `esc to return · enter to open · x to stop`.
-- [ ] **Step 4: Mount + keybinding in `index.ts`:** FleetView renders below the prompt (pi-tui `widget` placement `belowEditor` if available, else the dashboard fallback from Task 5 — record which in `report.md`); `shift+tab` is NOT claimed here (that is Task 7's target key) — FleetView navigation keys are active only at an **empty prompt**: `↓`/`←` enter, `↑`/`↓` move, `Esc`/`↑`-above-main return, `Enter` open (Task 5), `x` stop.
+- [ ] **Step 4: Mount + keybinding in `index.ts`:** FleetView renders below the prompt via `ctx.ui.setWidget` with placement `belowEditor` (verified: `WidgetPlacement = "aboveEditor" | "belowEditor"` in pi 1.2.0); `shift+tab` is NOT claimed here (that is Task 7's target key) — FleetView navigation keys are active only at an **empty prompt**: `↓`/`←` enter, `↑`/`↓` move, `Esc`/`↑`-above-main return, `Enter` open (Task 5), `x` stop.
 - [ ] **Step 5: GREEN**
 - [ ] **Step 6: Commit** (`feat(pi-swarm): fleetview list + formatting`, Task 4)
 
@@ -523,7 +525,7 @@ Remaining: check/send/cancel tools (Task 3), FleetView (Task 4-5), agent types +
 
 - [ ] **Step 1: Extend `fleetview.spec.ts`** — selecting a running agent with N transcript lines renders them; a new snapshot with N+1 lines re-renders with the extra line (auto-follow); `x` twice → `cancel` called with the id; `x` once → not called.
 - [ ] **Step 2: RED**
-- [ ] **Step 3: Implement overlay** — reuse todo-card chrome (`cardTop`/`cardBottom` from `../skill-pi-tui/src/sidebar-layout.ts` if the sidebar is available, else a plain bordered component); 50ms render throttle on streaming snapshots (the davis design's proven cadence).
+- [ ] **Step 3: Implement overlay** — reuse todo-card chrome (`cardTop`/`cardBottom` from `../skill-pi-tui/src/card.ts` — verified location — if that module is importable, else a plain bordered component); 50ms render throttle on streaming snapshots (the davis design's proven cadence).
 - [ ] **Step 4: GREEN**
 - [ ] **Step 5: Commit** (`feat(pi-swarm): fleetview transcript overlay + stop`, Task 5)
 
@@ -540,7 +542,7 @@ Remaining: check/send/cancel tools (Task 3), FleetView (Task 4-5), agent types +
 - Deletion test: target selector (Task 7) and `swarm_spawn` `agent_type` validation re-scan the filesystem on every call
 - Adapters: 2 (real fs in `index.ts`; tmp-dir fs in spec)
 
-**Frontmatter format** (YAML, parsed with a minimal line parser — no new dependency; fields are flat strings/numbers only):
+**Frontmatter format** (YAML, parsed with pi's `parseFrontmatter` (exported by `@earendil-works/pi-coding-agent`); fields are flat strings/numbers only):
 ```
 ---
 description: Security Code Reviewer
@@ -557,7 +559,7 @@ You are a security auditor. Review code for vulnerabilities…
 - [ ] **Step 2: RED**
 - [ ] **Step 3: Implement `agents.ts`**
 - [ ] **Step 4: GREEN**
-- [ ] **Step 5: Wire into `index.ts`** — `swarm_spawn` with `agent_type`: resolve via `resolveAgentType`; unknown → tool error listing known names; resolved → child prompt prefixed with the agent's `systemPrompt` as the first system context (pi's `prompt` with the system prompt passed via the child's `--append-system-prompt` flag IF pi 1.2.0 supports it — verify during this task with `node bin/skill-pi.js --help`; if not supported, prepend it to the prompt text with a `## Agent instructions\n` marker — record which in `report.md`).
+- [ ] **Step 5: Wire into `index.ts`** — `swarm_spawn` with `agent_type`: resolve via `resolveAgentType`; unknown → tool error listing known names; resolved → the agent's `systemPrompt` is prepended to the prompt text with a `## Agent instructions` marker, followed by a blank line and the user's prompt (decided: pi 1.2.0's CLI has no `--append-system-prompt` flag — verified in `dist/cli/args.js`; the only CLI option is `--system-prompt`, which would replace the child's default system prompt and break its tool guidance, so prompt-prefixing is the ADR 0006-safe mechanism).
 - [ ] **Step 6: Commit** (`feat(pi-swarm): agent type discovery (.skill-pi/agents frontmatter)`, Task 6)
 
 ### Task 7: Prompt-target selector — `shift+tab` + build/plan/agent cycle
@@ -584,9 +586,9 @@ You are a security auditor. Review code for vulnerabilities…
 
 - [ ] **Step 1: Write failing `target.spec.ts`** — `createTargetSelector({ agents: [], planAvailable: false })` → `cycleList()` = `["build"]`, `current()` = `"build"`; with `{ agents: [auditor, explorer], planAvailable: true }` → `["build", "plan", "auditor", "explorer"]`; `cycle()` four times returns to `build`; `matchesAgent("auditor")` → the auditor `AgentType`, `matchesAgent("build")` → undefined.
 - [ ] **Step 2: RED**
-- [ ] **Step 3: Implement `target.ts` + the plan-build presence probe in `index.ts` (decided mechanism — no runtime fallback chain):** v1 detection = the `swarm:plan-present` bus event observed before the first target cycle, OR env `SKILL_PI_PLAN_BUILD=1`. The plan-build extension emits `swarm:plan-present` once on session start via `pi.events.emit` (one additive line in plan-build's `index.ts` — that is the ONLY plan-build edit in this whole change; commit it as its own work unit `feat(plan-build): emit swarm:plan-present on session start` so the two extensions stay independently revertable). Until plan-build is patched (or the env var is set), `plan` is simply absent from the cycle — which exactly matches the briefing ("when plan mode is installed add that too" = the event is observed). Record the actual observed behavior in `report.md`.
-- [ ] **Step 4: Keybinding + display in `index.ts`:** claim `shift+tab` (pi keybinding registration per the todo extension's `SKILL_PI_TODO_KEY` pattern — it reads a keybinding config string and registers it; mirror that: `SKILL_PI_SWARM_TARGET_KEY`, default `shift+tab`, `off` disables). Display: `ctx.ui.setStatus("swarm-target", "⌁ " + current)` — a statusline segment, color: dim for `build`, accent for `plan`, agent color from the frontmatter `color:` field if present (else theme primary).
-- [ ] **Step 5: Input interception in `index.ts`:** `pi.on("input", (ev) => …)` — if `ev.source === "interactive"` and `current()` is an agent target and `ev.text` is non-empty → `manager.spawn({ prompt: ev.text, agentType: current() })`, show `ctx.ui.notify("spawned sa-N: <title>")` (use the `notify` from the verified `ExtensionUIContext` surface — `select | confirm | input | notify`), return `{ action: "handled" }` (verified `InputEventResult` shape); otherwise return `{ action: "continue" }`. `build`/`plan` targets never intercept: `build` is today's behavior unchanged; `plan` is informational in v1 (plan-build owns its own flow via `/plan` and `alt+m` — the selector showing `plan` tells the user where the next prompt *would* go, it does not switch modes).
+- [ ] **Step 3: Implement `target.ts` + the plan-build presence probe in `index.ts` (decided mechanism — no runtime fallback chain):** v1 detection = the `swarm:plan-present` bus event, **evaluated lazily**: the cycle list is recomputed on every `shift+tab` press (not cached at session start), so whichever extension's `session_start` handler runs first, the event is observed by the first user keypress; OR env `SKILL_PI_PLAN_BUILD=1` (primary override for testing). The plan-build extension emits `swarm:plan-present` once on session start via `pi.events.emit` (one additive line in plan-build's `index.ts` — that is the ONLY plan-build edit in this whole change; commit it as its own work unit `feat(plan-build): emit swarm:plan-present on session start` so the two extensions stay independently revertable). Until plan-build is patched (or the env var is set), `plan` is simply absent from the cycle — which exactly matches the briefing ("when plan mode is installed add that too" = the event is observed). Record the actual observed behavior in `report.md`.
+- [ ] **Step 4: Keybinding + display in `index.ts`:** claim `shift+tab` (pi keybinding registration per the todo extension's `SKILL_PI_TODO_KEY` pattern — it reads a keybinding config string and registers it; mirror that: `SKILL_PI_SWARM_TARGET_KEY`, default `shift+tab`, `off` disables). Display: `ctx.ui.setStatus("swarm-target", "⌁ " + current)` — a statusline segment, color: dim for `build`, accent for `plan`, agent color from the frontmatter `color:` field if present (else theme primary). **Keybinding note (verified):** pi 1.2.0's default `shift+tab` binding is `app.thinking.cycle` (`dist/core/keybindings.d.ts`) — claiming `shift+tab` via `registerShortcut` overrides it for this session, so cycling targets no longer cycles the thinking level; document that in the README and keep `SKILL_PI_SWARM_TARGET_KEY` as the user's escape hatch (set it to `off` to restore the thinking cycle).
+- [ ] **Step 5: Input interception in `index.ts`:** `pi.on("input", (ev) => …)` — if `ev.source === "interactive"` and `current()` is an agent target and `ev.text` is non-empty and the FleetView is NOT in overlay mode (a child's steer/follow_up must not re-enter the interception — verified: steer/follow_up calls also emit `input` events) → `manager.spawn({ prompt: ev.text, agentType: current() })`, show `ctx.ui.notify("spawned sa-N: <title>")` (use the `notify` from the verified `ExtensionUIContext` surface — `select | confirm | input | notify`), return `{ action: "handled" }` (verified `InputEventResult` shape); otherwise return `{ action: "continue" }`. `build`/`plan` targets never intercept: `build` is today's behavior unchanged; `plan` is informational in v1 (plan-build owns its own flow via `/plan` and `alt+m` — the selector showing `plan` tells the user where the next prompt *would* go, it does not switch modes).
 - [ ] **Step 6: GREEN** (`npx vitest run && npx tsc --noEmit -p .`)
 - [ ] **Step 7: Commit** (`feat(pi-swarm): prompt-target selector, shift+tab cycle, agent-target spawning`, Task 7)
 
@@ -610,10 +612,10 @@ You are a security auditor. Review code for vulnerabilities…
   - `ping`: payload `{}` → reply payload `{ ok: true, version: 1, counts: { running: n, queued: n, tracked: n } }`
   - `spawn`: payload `{ prompt: string, title?: string, agentType?: string, model?: string }` → reply payload `{ id: string }` (or `{ error: string }`)
   - `steer`: payload `{ id: string, text: string }` → reply payload `{ ok: true }`
-  - `consume`: payload `{ id: string }` → reply payload `{ snapshot: AgentSnapshot }` (marks consumed — same semantics as `swarm_wait`)
+  - `consume`: payload `{ id: string }` → reply payload `{ snapshot: AgentSnapshot }` — **non-blocking**: returns the current snapshot immediately (like `swarm_check`) and marks the agent consumed so the deferred delivery is suppressed; for a running agent the snapshot is partial by design (the caller polls again if it needs the final state)
   - `stop`: payload `{ id: string }` → reply payload `{ ok: true, status: SwarmStatus }`
 - Reply envelope (outbound on `swarm:rpc:reply`): `{ v: 1, reqId: <same>, type: "reply", payload: … }`; unknown `v` → `{ v: 1, reqId, type: "reply", payload: { error: "unsupported_version", supported: [1] } }` with NO side effect; unknown `reqId` correlation failures → reply `{ error: "unknown_request" }`
-- Lifecycle events (outbound, no reply): `swarm:created`/`swarm:started`/`swarm:completed`/`swarm:failed`/`swarm:steered` with payload = `AgentSnapshot`; `swarm:usage` with payload `{ id, tokens, turns }` emitted on each settle (the spend ledger)
+- Lifecycle events (outbound, no reply): `swarm:created`/`swarm:started`/`swarm:completed`/`swarm:failed`/`swarm:steered` with payload = `AgentSnapshot`; `swarm:usage` with payload `{ id, tokens, turns }` where both are **deltas for the run that just settled** (not cumulative) — emitted once per settle (the spend ledger)
 - `swarm:ready` emitted on session start with payload `{ v: 1 }` (version handshake)
 
 **SATISFIES:** R-rpc-protocol, R-rpc-version
@@ -643,7 +645,7 @@ You are a security auditor. Review code for vulnerabilities…
 **SATISFIES:** (all scenarios remain covered; the dashboard is the management surface the FleetView hint `/swarm` points at)
 
 - [ ] **Step 1: Implement `dashboard.ts`** — reuse `formatAgentRow` + the Task 5 overlay component; the takeover view IS the FleetView overlay (shared component, not a copy).
-- [ ] **Step 2: Register `/swarm`** in `index.ts`; non-TUI mode (e.g. `--print`) → the command prints the `swarm_list` output as text (no crash).
+- [ ] **Step 2: Register `/swarm`** in `index.ts`; non-TUI mode (e.g. `--print`) → the command prints the `swarm_list` output as text (typically an empty list — children are TUI-session subprocesses; document that in the README).
 - [ ] **Step 3: Write `README.md`** — house style (per `extensions/todo/README.md`): what you get, install (bundled + standalone `pi install npm:@devopstales/pi-swarm`), how it works (ASCII diagram: tool → manager → rpc child → result delivery), configuration (env vars table: `SKILL_PI_SWARM` on/off, `SKILL_PI_SWARM_MAX` default 4, `SKILL_PI_SWARM_TARGET_KEY` default `shift+tab`), development (vitest + tsc), the RPC protocol reference (envelope + events — the contract from Task 8), license/sources (the four reference repos + MIT attribution).
 - [ ] **Step 4: Root README entry** — one bullet in the bundled-extensions list matching the existing entries' shape.
 - [ ] **Step 5: Full GREEN**
@@ -683,3 +685,32 @@ Expected: extension suite green (≥ 40 tests), tsc clean, root suite unchanged 
 - **Slicing:** 10 tasks → invoke `skillgrid:slicing` after this blueprint is reviewed; expected waves: [1], [2], [3,4], [5,6], [7], [8,9], [10].
 - **Testing discipline:** TDD per task (RED → GREEN shown in steps); every spec file lives next to its source (`src/*.spec.ts`), vitest include `src/**/*.spec.ts`.
 - **Known unknowns resolved in-task (recorded, not deferred):** exact RPC event `type` names (Task 1 door check), system-prompt injection mechanism (Task 6 Step 5), plan-build probe mechanism (Task 7 Step 3), FleetView widget placement (Task 4 Step 4). Each is pinned to a task with a record-in-report obligation — none is a silent "implement later".
+
+## Plan Review
+
+- Verdict: READY FOR EXECUTION (after one revision pass)
+- Findings: 3 Critical, 9 Important, 8 Minor — all 20 verified against the
+  codebase and fixed inline:
+  - C1 door-check command rewritten for RPC stdin JSONL (no `--print` in rpc mode)
+  - C2 `--append-system-prompt` dropped (not a pi 1.2.0 CLI flag) — systemPrompt
+    is prompt-prefixed with a `## Agent instructions` marker
+  - C3 `SKILL_PI_SWARM_MAX` / `SKILL_PI_SWARM` now read in Task 2 Step 4
+  - I4 `swarm:usage` pinned to per-run deltas
+  - I5 `shift+tab` overrides pi's default `app.thinking.cycle` — documented +
+    `SKILL_PI_SWARM_TARGET_KEY` escape hatch
+  - I6 wait budgets: per-agent reduced proportionally so total ≤ 48KB
+  - I7 `disposeAll()` only on `reason === "quit"`; manager keyed by session id
+  - I8 card chrome path corrected to `../skill-pi-tui/src/card.ts`
+  - I9 plan-build probe evaluated lazily (recomputed per `shift+tab`) + env override
+  - I10 input interception suppressed while FleetView overlay is open
+  - I11 `cancel` on a queued agent defined (queue promotes next)
+  - I12 empty `finalText` fallback (last assistant line, else status line)
+  - M13 pi's `parseFrontmatter` used instead of a hand-rolled parser
+  - M14 vitest config: default (todo has none to copy)
+  - M15 check preview: ≤2KB AND ≤20 lines, whichever hits first
+  - M16 `/swarm` in `--print` documented as typically empty
+  - M17 LRU pinned to `settledAt` ascending
+  - M19 `belowEditor` placement confirmed (no hedge)
+  - M20 `buildChildInvocation` cwd === spawn cwd asserted in test
+- Reviewed: 2026-10-16 (subagent plan review, all findings verified against
+  `node_modules/@earendil-works/pi-coding-agent/dist`)
