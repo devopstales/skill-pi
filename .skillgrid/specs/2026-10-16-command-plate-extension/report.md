@@ -33,7 +33,7 @@ rather than by a unit test.
 | 4 | `Ctrl+K` is a valid, unbound pi keybinding (not `Ctrl+X`) | `index.ts` registerShortcut | unit (config-derived) | verified against `pi-coding-agent/dist/core/keybindings.js` keybinding table | P0 | pr | covered |
 | 5 | Providers aggregated per-provider, sorted | `model-pick.ts::getProviders` | unit | `model-pick.spec.ts::providers are aggregated per provider and sorted` | P1 | pr | covered |
 | 6 | Thinking descriptions resolve for every level | `model-pick.ts::getThinkingDescription` | unit | `model-pick.spec.ts::thinking descriptions cover every level` | P1 | pr | covered |
-| 7 | Scoped-models resolution (enabledModels globs + `:thinking` suffix) | `model-pick.ts::loadScopedModels` | unit | manual RPC + code read (no dedicated unit test) | P1 | pr | pending |
+| 7 | Scoped-models resolution (enabledModels globs + `:thinking` suffix) | `model-pick.ts::loadScopedModels` | unit | `scoped-models.spec.ts` (8 tests: fallback, exact, glob, id-only, `:thinking` parse/attach, dedup, non-thinking colon) | P1 | pr | covered |
 | 8 | Full TUI palette render + drill-in + model switch on real input | `index.ts` overlay + `model-pick.ts` pickers | e2e (PTY) | manual render capture (theme-driven `OverlayFrame`) + live PTY | P1 | nightly | pending (env) |
 
 **Layer** — unit for pure logic (entry shape, command staging, provider aggregation, thinking descriptions); e2e/RPC for the boot-and-register wiring (the seam only observable with a live pi session); PTY for the full visual render (degraded to a render-capture because `node-pty` native spawn fails in this headless env).
@@ -46,9 +46,10 @@ rather than by a unit test.
 |-------------|-----------------|-------------------|-----------------|--------|
 | shortcut collision | `Ctrl+X` (upstream default) | skipped by pi (conflicts with `app.message.copy`) | RPC boot: 0 conflict lines after switch to `Ctrl+K` | covered |
 | shortcut collision | `Ctrl+K` (chosen) | registers, no built-in conflict | keybinding-table scan + RPC boot | covered |
-| scoped models | `enabledModels` empty | falls back to all available models | `loadScopedModels` code path (read) | pending |
-| scoped models | `provider/model:high` pattern | thinking suffix honored, model resolved | `loadScopedModels` code path (read) | pending |
-| scoped models | no models resolved | "No scoped models available" warning, no crash | `runScopedModels` guard (read) | pending |
+| scoped models | `enabledModels` empty | falls back to all available models | `scoped-models.spec.ts::empty enabledModels falls back` | covered |
+| scoped models | `provider/model:high` pattern | thinking suffix honored, model resolved | `scoped-models.spec.ts:::thinking suffix parsed/attached` | covered |
+| scoped models | `:banana` (non-thinking) colon | whole string is the pattern → no match | `scoped-models.spec.ts::trailing colon not a thinking level` | covered |
+| scoped models | duplicate patterns | deduped (no duplicate ids) | `scoped-models.spec.ts::duplicate patterns are deduped` | covered |
 
 ### Out of Scope
 
@@ -74,6 +75,7 @@ personal wf-contracts panel, fitting skill-pi extension conventions.
 | Level | Item | Evidence | Status |
 |-------|------|----------|--------|
 | Truth | Palette is a which-key leader palette with the intended chords | `index.spec.ts` (2 tests) + RPC `get_commands` shows `/cp` "Open Command Plate palette" | VERIFIED |
+| Truth | Scoped-models resolution resolves globs + `:thinking` suffix correctly | `scoped-models.spec.ts` (8 tests: fallback, exact, glob, id-only, `:thinking` parse, non-thinking colon, dedup) — all pass | VERIFIED |
 | Truth | Shortcut does not collide with a pi built-in | `Ctrl+K` absent from `keybindings.js` table; RPC boot prints 0 conflict lines (upstream `Ctrl+X` did conflict) | VERIFIED |
 | Artifact | Extension subpackage exists and is wired for auto-discovery | `extensions/command-plate/index.ts` present; wrapper `collectExtensionFiles` resolves it; RPC boot loads it | VERIFIED |
 | Artifact | Model pickers present (scoped + full switcher + thinking) | `model-pick.ts` exports `runScopedModels`/`runModelSwitcher`/`runThinkingPicker`; `model-pick.spec.ts` exercises `getProviders`/`getThinkingDescription` | VERIFIED |
@@ -99,20 +101,21 @@ personal wf-contracts panel, fitting skill-pi extension conventions.
 | `Ctrl+K` chosen over conflicting `Ctrl+X` | keybinding-table scan + RPC boot | yes | pass |
 | Providers aggregated + sorted | `model-pick.spec.ts::providers aggregated` | yes | pass |
 | Thinking descriptions resolve | `model-pick.spec.ts::thinking descriptions` | yes | pass |
-| Scoped-models resolution (globs + thinking suffix) | — | no | pending |
-| Full PTY palette render + model switch on input | — (node-pty unavailable) | no | pending |
+| Scoped-models resolution (globs + `:thinking` + dedup) | `scoped-models.spec.ts` (8 tests) | yes | pass |
+| Full PTY palette render + model switch on input | — (node-pty unavailable headless) | no | pending |
 
-**Coverage:** 6/8 behaviors covered by a test/probe that ran and passed. 2 pending (both named in Out of Scope / re-run path).
+**Coverage:** 7/8 behaviors covered by a test/probe that ran and passed. 1 pending (full PTY render — env-blocked, W023).
 
 ## Verification-Gap Audit
 
 | Gap | Location | Shape | Evidence | Smallest Regression |
 |-----|----------|-------|----------|---------------------|
-| Scoped-models resolution not unit-tested | `model-pick.ts::loadScopedModels` (globs, `:thinking` suffix, dedup, sort) | missing-test | no spec imports `loadScopedModels` (it is not exported); behavior read from source only | a wrong glob match or dropped `:thinking` suffix silently switches to the wrong model/thinking level |
-| Palette render + key-input interaction not tested | `index.ts::CommandPlateOverlay` | missing-test (env-blocked) | `node-pty` `posix_spawnp failed` in this env; only a manual theme-driven render capture exists | a broken `handleInput` branch (e.g. wrong key → wrong action) would not be caught by the 4 unit tests |
+| ~~Scoped-models resolution not unit-tested~~ **CLOSED (W022)** | `model-pick.ts::loadScopedModels` | was missing-test → now covered | `scoped-models.spec.ts` (8 tests) drives the real `loadScopedModels` via a stubbed registry + real `<cwd>/.pi/settings.json` | (closed) |
+| Palette render + key-input interaction not tested | `index.ts::CommandPlateOverlay` | missing-test (env-blocked) | `node-pty` `posix_spawnp failed` in this env; only a manual theme-driven render capture exists | a broken `handleInput` branch (e.g. wrong key → wrong action) would not be caught by the unit tests |
 
-**Gap shapes:** both are **missing-test** gaps (not broken-verification): the
-code is present and the pure-logic seams that *are* reachable are tested.
+**Gap shapes:** the remaining gap is a **missing-test** (env-blocked), not
+broken-verification: the code is present and every reachable pure-logic seam is
+now tested (12/12).
 
 ## TDD Evidence Audit
 
@@ -218,23 +221,23 @@ change; command-plate is the in-flight QA change and is recorded in this report.
 
 | Dimension | Verdict |
 |---|---|
-| Goal-backward verification (weakest truth) | PRESENT_BEHAVIOR_UNVERIFIED (2 key links + 1 data flow not driven by a test) |
-| Traceability (weakest scenario) | 6/8 covered; 2 pending (scoped-models resolution, PTY render) |
-| Verification-gap audit | 2 WARNING (missing-test gaps, both named) |
+| Goal-backward verification (weakest truth) | PRESENT_BEHAVIOR_UNVERIFIED (PTY render + interactive key handling not driven by a test; all pure-logic truths now VERIFIED) |
+| Traceability (weakest scenario) | 7/8 covered; 1 pending (full PTY render — env-blocked, W023) |
+| Verification-gap audit | 1 WARNING (PTY render, env-blocked); scoped-models gap CLOSED |
 | TDD evidence (weakest ticket) | MISSING_RED (documented, not CRITICAL — additive direct execution) |
 | Test quality audit | none |
 | Code-quality gates (weakest gate) | PASS |
 | Security audit | PASS |
 | Verification scope (composite) | COMPLETE |
 
-**FLOOR:** the weakest dimension is **Goal-backward verification =
-PRESENT_BEHAVIOR_UNVERIFIED** (the `m`→scoped-picker link, the `Ctrl+K`
-input→palette link, and the model-switch data flow are wired and present but not
-driven end-to-end by a test). That caps the gate at **CONCERNS** — it never
-reaches a clean PASS because two behaviors are `PRESENT_BEHAVIOR_UNVERIFIED` and
-two traceability rows are `pending`, and the floor rule says a non-VERIFIED
-truth is a non-answer the human clears by re-running with full scope (a PTY
-render test) or by accepting the residual.
+**FLOOR:** the weakest dimension is still **Goal-backward verification =
+PRESENT_BEHAVIOR_UNVERIFIED**, but the residual is now narrower: W022
+(scoped-models resolution) is CLOSED — that truth is VERIFIED by 8 named tests —
+leaving only the PTY render / interactive key handling (W023, env-blocked:
+`node-pty` native spawn fails headless). The gate stays **CONCERNS** (not a clean
+PASS) solely because the visual/interactive layer cannot be automated in this
+env; every logic seam, the registration wiring, and the scoped-models data flow
+are VERIFIED.
 
 ## Findings
 
@@ -244,10 +247,10 @@ render test) or by accepting the residual.
 
 ### WARNING (should fix before archive)
 
-- **W022** — Scoped-models resolution (`loadScopedModels`: glob matching,
-  `:thinking` suffix parsing, dedup, sort) has no unit test; the function is not
-  exported, so it is only verified by code read. Re-run path: export it (or test
-  through `runScopedModels` with a stubbed `modelRegistry`) and add a spec.
+- **W022** ~~— Scoped-models resolution…~~ **CLOSED** — `loadScopedModels` is
+  now exported and covered by `scoped-models.spec.ts` (8 tests: fallback, exact
+  match, `provider/*` glob, id-only, `:thinking` parse + attach, non-thinking
+  colon → no match, dedup). All pass; tsc clean. (12/12 subpackage suite.)
 - **W023** — Full PTY palette render + interactive key handling is not
   automated (`node-pty` native spawn fails headless). Re-run path: add a
   `tests/pty-settle.mjs`-style render-capture test that boots pi with the
@@ -271,19 +274,18 @@ render test) or by accepting the residual.
 **Verdict:** CONCERNS
 
 **Reasoning:** No CRITICAL findings, all hard code-quality gates PASS, Trivy
-clean, scope COMPLETE, and the load-bearing truths (palette registration, no
-shortcut conflict, command staging) are VERIFIED by named tests + a runtime
-probe. But the floor is capped at CONCERNS by (a) two `PRESENT_BEHAVIOR_UNVERIFIED`
-key links / data flow, and (b) two `pending` traceability rows (scoped-models
-resolution, full PTY render) — the latter env-blocked (node-pty headless) rather
-than code-incomplete. The change is safe to ship; full PASS requires re-running
-with a PTY render test and a scoped-models resolution spec.
+clean, scope COMPLETE, and the load-bearing truths are VERIFIED by named tests +
+a runtime probe — now including scoped-models resolution (W022 closed, 8 tests).
+The floor stays at CONCERNS for exactly one reason: the full PTY render +
+interactive key handling (W023) is `PRESENT_BEHAVIOR_UNVERIFIED` and
+env-blocked (`node-pty` native spawn fails headless), so the visual layer cannot
+be automated here. That is an env gap, not a code gap — every logic seam, the
+registration wiring, and the scoped-models data flow are VERIFIED. Safe to ship;
+full PASS requires a PTY render test in a node-pty-capable CI env.
 
 **Open items (if CONCERNS):**
-- **W022** — add a scoped-models resolution spec (export `loadScopedModels` or
-  drive `runScopedModels` with a stubbed registry). Fix now / defer to ticket.
 - **W023** — add a PTY render-capture e2e test (needs a node-pty-capable CI env).
-  Fix now / defer to ticket.
+  Defer to CI (the only remaining gap).
 - **W024** — (recorded, not fixable at the gate) spec zone was intentionally
   skipped for a small additive port; accepted.
 - **W025** — (SUGGESTION) decide whether `runModelSwitcher`/`runThinkingPicker`
