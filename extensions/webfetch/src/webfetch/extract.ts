@@ -95,15 +95,30 @@ function commandExists(command: string): boolean {
  * Falls back to the first binary that exists (extraction will download
  * trafilatura on first use).
  */
-export function detectPythonRunner(): PythonRunner | null {
-  const present = PYTHON_RUNNERS.filter(
-    (runner) => commandExists(runner.command),
-  );
+let detectedRunner: PythonRunner | null = null;
+let runnerDetectionDone = false;
+
+export function detectPythonRunner(
+  runners: PythonRunner[] = PYTHON_RUNNERS,
+): PythonRunner | null {
+  if (runnerDetectionDone) return detectedRunner;
+  const present = runners.filter((runner) => commandExists(runner.command));
   const ready = present.find((runner) => {
     const dir = runner.cacheDir();
     return dir !== undefined && existsSync(dir);
   });
-  return ready ?? present[0] ?? null;
+  detectedRunner = ready ?? present[0] ?? null;
+  runnerDetectionDone = true;
+  return detectedRunner;
+}
+
+/**
+ * Reset the cached detection. Exported for tests that swap the PATH between
+ * detections; production calls detect once per session.
+ */
+export function resetPythonRunnerDetection(): void {
+  detectedRunner = null;
+  runnerDetectionDone = false;
 }
 
 /**
@@ -125,26 +140,40 @@ export function extractMarkdown(
     let stderr = "";
     let settled = false;
 
-    const settle = (fn: () => void): void => {
-      if (!settled) {
-        settled = true;
-        proc.kill("SIGTERM");
-        fn();
-      }
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
     };
 
-    const onAbort = (): void => settle(() => reject(new Error("Aborted")));
+    // Settles the promise exactly once. The child is killed only when it has
+    // not exited on its own (abort / timeout / spawn error); on the close
+    // path it is already gone and killing it would race the exit. If the
+    // timeout fires and the kill then triggers a late `close`, settle is a
+    // no-op and the timeout reason is preserved.
+    const settle = (fn: () => void, kill = false): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (kill) proc.kill("SIGTERM");
+      fn();
+    };
+
+    const onAbort = (): void => settle(() => reject(new Error("Aborted")), true);
     signal?.addEventListener("abort", onAbort, { once: true });
 
-    const timer = setTimeout(() => {
-      settle(() =>
-        reject(
-          new Error(
-            `Trafilatura extraction timed out after ${EXTRACT_TIMEOUT_MS / 1000}s`,
-          ),
+    const timer = setTimeout(
+      () =>
+        settle(
+          () =>
+            reject(
+              new Error(
+                `Trafilatura extraction timed out after ${EXTRACT_TIMEOUT_MS / 1000}s`,
+              ),
+            ),
+          true,
         ),
-      );
-    }, EXTRACT_TIMEOUT_MS);
+      EXTRACT_TIMEOUT_MS,
+    );
 
     proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
@@ -153,17 +182,20 @@ export function extractMarkdown(
       stderr += data.toString();
     });
     proc.on("error", (err) =>
-      settle(() =>
-        reject(
-          new Error(
-            `Failed to run ${runner.command} trafilatura: ${err.message}`,
+      settle(
+        () =>
+          reject(
+            new Error(
+              `Failed to run ${runner.command} trafilatura: ${err.message}`,
+            ),
           ),
-        ),
+        true,
       ),
     );
     proc.on("close", (code) => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
+      // `settle` is idempotent: if the timeout/abort already rejected, the
+      // close caused by our own SIGTERM is a no-op. If the child exited on
+      // its own first, this settles with the real exit code.
       settle(() => {
         if (code !== 0) {
           reject(

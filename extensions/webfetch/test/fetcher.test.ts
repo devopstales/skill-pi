@@ -1,7 +1,11 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { fetchUrl } from "../src/webfetch/fetcher.ts";
+import {
+  fetchUrl,
+  MAX_RESPONSE_SIZE_BYTES,
+} from "../src/webfetch/fetcher.ts";
+import { WebfetchResponseTooLargeError } from "../src/webfetch/errors.ts";
 
 const servers: Server[] = [];
 
@@ -54,5 +58,63 @@ describe("fetchUrl", () => {
 		// then
 		expect(new TextDecoder().decode(result.body)).toBe("ready");
 		expect(result.url).toBe(`${baseUrl}/final`);
+	});
+
+	it("rejects when Content-Length exceeds the 5MB limit", async () => {
+		// given
+		const oversized = MAX_RESPONSE_SIZE_BYTES + 1024;
+		const server = createServer((request, response) => {
+			response.writeHead(200, {
+				"content-type": "text/plain; charset=utf-8",
+				"content-length": String(oversized),
+			});
+			response.end();
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (typeof address !== "object" || address === null) {
+			throw new Error("Expected TCP server address");
+		}
+		servers.push(server);
+
+		// when
+		const result = fetchUrl({
+			url: `http://127.0.0.1:${address.port}/big`,
+			format: "text",
+			timeoutSeconds: 5,
+		});
+
+		// then
+		await expect(result).rejects.toBeInstanceOf(WebfetchResponseTooLargeError);
+	});
+
+	it("truncates a body that grows past the 5MB limit while streaming", async () => {
+		// given
+		const chunk = Buffer.alloc(64 * 1024, 65);
+		const server = createServer((request, response) => {
+			response.writeHead(200, {
+				"content-type": "text/plain; charset=utf-8",
+			});
+			for (let i = 0; i < 100; i += 1) {
+				response.write(chunk);
+			}
+			response.end();
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (typeof address !== "object" || address === null) {
+			throw new Error("Expected TCP server address");
+		}
+		servers.push(server);
+
+		// when
+		const result = fetchUrl({
+			url: `http://127.0.0.1:${address.port}/stream`,
+			format: "text",
+			timeoutSeconds: 10,
+		});
+
+		// then
+		await expect(result).rejects.toBeInstanceOf(WebfetchResponseTooLargeError);
 	});
 });
