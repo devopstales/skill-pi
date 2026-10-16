@@ -566,7 +566,7 @@ function toEntry(model: Model<any>, thinking?: ModelThinkingLevel): ScopedModelE
   };
 }
 
-function loadScopedModels(ctx: ExtensionContext): ScopedModelEntry[] {
+export function loadScopedModels(ctx: ExtensionContext): ScopedModelEntry[] {
   const settings = SettingsManager.create(ctx.cwd);
   const patterns = settings.getEnabledModels();
   const availableModels = ctx.modelRegistry.getAvailable();
