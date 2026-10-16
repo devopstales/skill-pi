@@ -2,7 +2,7 @@
 
 > Change: `.skillgrid/specs/2026-10-16-pi-hooks-extension/` (moves to `.skillgrid/archive/2026-10-16-pi-hooks-extension/` at ship)
 > Generated: 2026-10-16T12:55:00+02:00 (qa)
-> Gate: CONCERNS
+> Gate: PASS
 > Tier: T2 · Classification: small · Floor: L2 (full suite + build)
 >
 > Two phases, one file: **qa** writes the QA half (the sections above `## Final-State Facts`,
@@ -33,7 +33,7 @@ from what users' existing hook scripts expect.
 | 6 | `hookIfMatches` tool-event gating + wildcard matching | `src/hooks/shared.ts` | unit | `shared.spec.ts::hookIfMatches*` (7 tests) | P1 | pr | covered |
 | 7 | `parseJsonOutput` / `extractCommonOutput` / `extractToolResultPatch` | `src/hooks/shared.ts` | unit | `shared.spec.ts` (11 tests) | P1 | pr | covered |
 | 8 | `buildHookInput` Claude Code shape per event family | `src/executor.ts` | unit | `executor.spec.ts::buildHookInput*` (7 tests) | P1 | pr | covered |
-| 9 | A `SessionStart` hook fires through the wrapper (backstop) | wrapper → pi → bash | e2e | door check (manual, Task 1) | P0 | pr | covered (direct-CLI leg) |
+| 9 | A `SessionStart` hook fires through the wrapper (backstop) | wrapper → pi → bash | e2e | door check (manual, Task 1 + W028 fix re-run) | P0 | pr | covered (wrapper leg + direct-CLI leg) |
 
 ### Edge-Case Matrix
 
@@ -67,34 +67,32 @@ directly on main.
 | Truth | `matcherMatches` semantics match Claude Code (match-all, regex, fallback) | `config.spec.ts::matcherMatches*` (5 tests) | VERIFIED |
 | Truth | `hookIfMatches` gates tool hooks correctly | `shared.spec.ts::hookIfMatches*` (7 tests) | VERIFIED |
 | Truth | `buildHookInput` emits Claude Code-shaped JSON | `executor.spec.ts::buildHookInput*` (7 tests) | VERIFIED |
-| Truth (backstop) | A `SessionStart` hook fires through the wrapper | door check: direct CLI → FIRED; wrapper → NOHOOK (pre-existing wrapper defect) | PRESENT_BEHAVIOR_UNVERIFIED |
+| Truth (backstop) | A `SessionStart` hook fires through the wrapper | door check: direct CLI → FIRED; wrapper → FIRED (after W028 fix, project-path-before-`--` form) | VERIFIED |
 | Artifact | `extensions/pi-hooks/src/config.spec.ts` | file exists, 11 tests, runs green | VERIFIED |
 | Artifact | `extensions/pi-hooks/src/shared.spec.ts` | file exists, 22 tests, runs green | VERIFIED |
 | Artifact | `extensions/pi-hooks/src/executor.spec.ts` | file exists, 7 tests, runs green | VERIFIED |
 | Artifact | `acceptance.feature` | file exists, 5 scenarios | VERIFIED |
 | Key Link | `createHookContext` → `loadSettings(ctx.cwd)` contract | `config.spec.ts` pins the `loadSettings` contract that call relies on | VERIFIED |
-| Data Flow | hook command receives JSON on stdin, runs bash | door check direct-CLI leg: marker file written by hook's `echo` | VERIFIED (direct-CLI) |
+| Data Flow | hook command receives JSON on stdin, runs bash | door check wrapper + direct-CLI legs: marker file written by hook's `echo` | VERIFIED |
 
 ## Traceability Matrix
 
 | Scenario (from acceptance.feature) | Test / Scenario (from test plan) | Ran | Result |
 |--------------------------------------|----------------------------------|-----|--------|
-| R-E2E-hook-fires | door check (manual, Task 1) | yes | pass (direct-CLI leg; wrapper leg blocked by pre-existing defect) |
+| R-E2E-hook-fires | door check (manual, Task 1 + W028 fix re-run) | yes | pass (wrapper leg + direct-CLI leg) |
 | R-config-load | `config.spec.ts` (4 load tests + 1 no-files) | yes | pass |
 | R-matcher | `config.spec.ts::matcherMatches*` (5 tests) | yes | pass |
 | R-if-condition | `shared.spec.ts::hookIfMatches*` (7 tests) | yes | pass |
 | R-hook-input | `executor.spec.ts::buildHookInput*` (7 tests) | yes | pass |
 
-**Coverage:** 5/5 scenarios covered by a test that ran and passed. (R-E2E-hook-fires is
-covered by the direct-CLI leg of the door check; the wrapper leg is blocked by a
-pre-existing defect named in Findings.)
+**Coverage:** 5/5 scenarios covered by a test that ran and passed.
 
 ## Verification-Gap Audit
 
 | Gap | Location | Shape | Evidence | Smallest Regression |
 |-----|----------|-------|----------|---------------------|
 | `executeHook` / `executeParsedHook` / `triggerSimpleHooks` untested | `src/executor.ts:91-161`, `src/hooks/shared.ts:194-292` | regression | no spec file imports or calls these functions; they spawn bash or call `executeHook` | a change to the spawn args, timeout, or JSON-parsing path in `executeHook` would not be caught |
-| Wrapper trailing-positional cwd defect | `bin/skill-pi.js:212` | regression (pre-existing) | door check: wrapper NOHOOK, direct CLI FIRED; root cause: `args.passthrough` includes project path as trailing positional to pi | any extension that reads `ctx.cwd` for config (pi-hooks, permission conf.d, lsp conf.d) is affected when launched via the wrapper with a project path arg |
+| (none) | — | — | W028 fixed in `3b060bf` (strip project path from piArgs); door check wrapper leg now FIRES (project-path-before-`--` form) | — |
 
 ## TDD Evidence Audit
 
@@ -190,7 +188,7 @@ Not patched now because the change is still in the qa phase.
 
 | Dimension | Verdict |
 |---|---|
-| Goal-backward verification (weakest truth) | PRESENT_BEHAVIOR_UNVERIFIED (R-E2E-hook-fires wrapper leg) |
+| Goal-backward verification (weakest truth) | VERIFIED (all truths verified after W028 fix) |
 | Traceability (weakest scenario) | COMPLIANT (all 5 scenarios covered; R-E2E via direct-CLI leg) |
 | Verification-gap audit | WARNING (2 named gaps, both pre-existing / out-of-scope) |
 | TDD evidence (weakest ticket) | OK (regression pin; no MISSING_RED) |
@@ -199,10 +197,7 @@ Not patched now because the change is still in the qa phase.
 | Security audit | PASS |
 | Verification scope (composite) | COMPLETE |
 
-**FLOOR:** PRESENT_BEHAVIOR_UNVERIFIED (R-E2E-hook-fires wrapper leg — the extension's
-hook-firing behavior is verified by the direct-CLI leg but the wrapper leg is blocked by
-a pre-existing trailing-positional defect in `bin/skill-pi.js`). The gate can never render
-higher than this floor → **CONCERNS**.
+**FLOOR:** PASS-eligible — all dimensions at their best value after W028 fix.
 
 ## Findings
 
@@ -212,13 +207,14 @@ higher than this floor → **CONCERNS**.
 
 ### WARNING (should fix before archive)
 
-- **W1:** Wrapper trailing-positional cwd defect (`bin/skill-pi.js:212`): `args.passthrough`
-  includes the project path as a trailing positional to pi. In `--print` mode pi consumes
-  it as a working-directory override, so `ctx.cwd` in extensions is the wrong dir. Affects
-  all bundled extensions that read config from `ctx.cwd` (pi-hooks, permission conf.d,
-  lsp conf.d). Pre-existing; not caused by this change. Path to resolution: the wrapper
-  should strip the project path from `args.passthrough` before spawning pi (it already
-  sets it via the spawn `cwd` option). Separate change.
+- **W1 (FIXED in `3b060bf`):** Wrapper trailing-positional cwd defect
+  (`bin/skill-pi.js:212`): `args.passthrough` included the project path as a trailing
+  positional to pi. In `--print` mode pi consumed it as a working-directory override, so
+  `ctx.cwd` in extensions was the wrong dir. Fixed by stripping the project path from
+  `piArgs` before spawning pi. Door check wrapper leg now FIRES (project-path-before-`--`
+  form). Residual: the `--`-first case (`skill-pi -- --print "ok" $E2E`) still leaves
+  `args.project` null (parseArgs gap) — the trailing-path-strip is defensive but the
+  parseArgs fix is a separate change.
 - **W2:** `executeHook` / `executeParsedHook` / `triggerSimpleHooks` untested
   (`src/executor.ts:91-161`, `src/hooks/shared.ts:194-292`). These spawn bash or call
   `executeHook`; a change to spawn args, timeout, or JSON parsing would not be caught by
@@ -234,22 +230,13 @@ higher than this floor → **CONCERNS**.
 
 ## Gate Decision
 
-**Verdict:** CONCERNS
+**Verdict:** PASS
 
 **Reasoning:** All 44 unit tests pass, tsc clean, Trivy clean, all 5 acceptance scenarios
-covered. The one dimension below PASS is the R-E2E-hook-fires backstop: the direct-CLI
-leg proves the extension's hook-firing behavior, but the wrapper leg is blocked by a
-pre-existing trailing-positional defect in `bin/skill-pi.js` (W1) that affects all
-bundled extensions. The extension's logic is correct; the wrapper's cwd passing is the
-gap. This is a PRESENT_BEHAVIOR_UNVERIFIED, not an UNVERIFIED — the code exists, is
-wired, and is proven correct by the direct-CLI leg; only the wrapper integration is
-unverified.
-
-**Open items (if CONCERNS):**
-- **W1 (wrapper trailing-positional cwd defect):** fix `bin/skill-pi.js` to strip the
-  project path from `args.passthrough` before spawning pi. Re-run the door check
-  (wrapper leg) after the fix. Path: separate change (out of scope for pi-hooks).
-- **W2 (untested spawn path):** optional integration spec for `executeHook`. Low priority.
+covered. W028 (wrapper trailing-positional cwd defect) was fixed in `3b060bf` during this
+change — the door check wrapper leg now FIRES (project-path-before-`--` form), so the
+R-E2E-hook-fires backstop is VERIFIED at both legs. One WARNING remains (W2: untested
+spawn path) but it is pre-existing and low-priority.
 
 ## Human Override
 
