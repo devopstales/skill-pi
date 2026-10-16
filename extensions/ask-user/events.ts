@@ -27,14 +27,6 @@ export interface AskUserPromptOption {
 
 export const ASK_USER_ANSWER_EVENT = "ask_user:answer" as const;
 
-export interface AskUserAnswerEventPayload {
-  toolCallId: string;
-  requestId?: string;
-  answers?: ReadonlyArray<AskUserAnswerEntry>;
-  globalNote?: string;
-  cancel?: boolean;
-}
-
 export interface AskUserAnswerEntry {
   questionIndex: number;
   optionIndexes?: readonly number[];

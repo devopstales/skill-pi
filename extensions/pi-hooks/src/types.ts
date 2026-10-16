@@ -1,5 +1,3 @@
-export type HookType = "command";
-
 export type SessionStartMatcher = "startup" | "resume" | "compact";
 export type SessionEndReason = "other";
 export type CompactTrigger = "manual" | "auto";
