@@ -207,9 +207,27 @@ async function main() {
   }
   extensionFlags.push("--no-extensions");
 
+  // The project path is already set via the spawn `cwd` option. If it also
+  // appears in passthrough (e.g. `skill-pi -- --print "ok" /path/to/project`),
+  // pi would consume it as a positional working-directory override, making
+  // ctx.cwd wrong in extensions. Strip it from the pi args. When `--` is the
+  // first arg, parseArgs leaves args.project null (the `--` branch breaks
+  // before the project check), so also strip trailing absolute-path
+  // positionals — pi treats them as working-directory overrides.
+  const projectArg = args.project ?? process.cwd();
+  const piArgs = [];
+  for (let i = 0; i < args.passthrough.length; i++) {
+    const a = args.passthrough[i];
+    if (a === projectArg) continue;
+    // Strip trailing positionals that look like absolute paths (pi would
+    // consume them as cwd overrides). Only strip if no flag follows.
+    if (a.startsWith("/") && (i + 1 >= args.passthrough.length || args.passthrough[i + 1].startsWith("-"))) continue;
+    piArgs.push(a);
+  }
+
   const spawn = spawnSync(
     process.execPath,
-    [cli, ...extensionFlags, ...args.passthrough],
+    [cli, ...extensionFlags, ...piArgs],
     {
       cwd,
       stdio: "inherit",
