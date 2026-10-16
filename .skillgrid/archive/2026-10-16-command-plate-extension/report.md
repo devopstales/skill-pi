@@ -296,22 +296,35 @@ full PASS requires a PTY render test in a node-pty-capable CI env.
 > A human decision always overrides this machine verdict.
 > An epic that fails its criteria with no human decision is recorded as **not accepted** — never as silently accepted.
 
-**Human decision (fill in):** <accept / accept-with-open-items / reject> — <name> — <date>
+**Human decision (fill in):** accept-with-open-items — paladm (user `ship`) — 2026-10-16
 
-<!-- reflect completes this half at archive time -->
+The user directed `ship` with the gate at CONCERNS. Recorded as an explicit
+human override: the open items are acknowledged and accepted as-is (W023
+env-blocked, W024 recorded-not-fixable, W025 suggestion). None is a code defect.
 
 ## Final-State Facts
 
-**Shipped:** <what actually shipped>
-**Base branch:** main · **Chain strategy:** stacked-to-main
+**Shipped:** the `command-plate` pi extension — a which-key-style leader palette
+(`Ctrl+K` + `/cp`) with a scoped-model picker (`Ctrl+M`) and full model/thinking
+pickers, ported and homogenized from tomsej/pi-ext `leader-key`, wf-contracts
+dropped. 11 files, purely additive, on `main`.
+**Base branch:** main · **Chain strategy:** same-branch (work landed directly on
+main, nothing stacked on top)
+**Commits (main):** `4ec2648` feat · `9b9479a` docs · `caf0f66` Ctrl+K fix ·
+`9aa4af6` scoped-models spec (closes W022) · `08826aa` review fixes (phantom
+`typebox` dep removed, `files` list completed)
+**Post-review state at close:** `tsc --noEmit` clean, vitest 12/12 (3 files),
+`npm pack` ships a complete 9-file package. A concurrent session (lsp / pi-hooks
+/ pi-swarm) committed other work to `main` in the same window — not this change's,
+left untouched.
 
 ## Gates
 
 | Gate | Result |
 |------|--------|
-| Ship gate | <pending> |
-| QA gate | CONCERNS — human override pending |
-| Verdict gate (advisory) | <pending> |
+| Ship gate | ✅ success — folder moved to `archive/`, `diff -r` readback empty (ship envelope) |
+| QA gate | CONCERNS — human override recorded (user `ship`, 2026-10-16) |
+| Verdict gate (advisory) | accepted-with-open-items — recorded, not enforced |
 
 ## Decisions
 
@@ -346,26 +359,60 @@ full PASS requires a PTY render test in a node-pty-capable CI env.
 
 _Written by `skillgrid:environment-retro` (a reflect sub-phase), not qa._
 
+Existing guardrails read first: no `.github/workflows/` CI; `pre-commit` +
+`commit-msg` hooks are symlinks to `~/.dotfiles/git_template` (the skillgrid
+protected-ref hook only — it blocks committing on `main`, not a lint gate);
+root `package.json` has only a `test` script (`node --test`); `config.yaml
+testing.runner = node --test`, no lint/check at root. Each extension is
+self-contained (ADR-0007) with its own `check`/`test`.
+
 | Category | Finding | Fix lands in | Source |
 |----------|---------|--------------|--------|
-| | | | |
+| Automated checks | subpackage `package.json` had a phantom prod dep (`typebox:*`) + an incomplete `files` list — both caught only at three-axis review, and a `files` error would have shipped a broken package at ADR-0004 promotion | add a `pack-check` (or CI job) to each self-contained extension: `npm pack --dry-run` and assert every imported local module (`*.ts`) is in the tarball; optionally a `no-phantom-deps` check that every `dependencies` entry is actually imported | `08826aa` (typebox + files fix, caught at review not by any pre-merge check) |
+| Automated checks | `registerShortcut(Key.ctrl("x"))` collided with a pi built-in (`app.message.copy`) — discovered only after a manual RPC probe, not by any check | a pre-merge check for new extensions: parse the extension's `registerShortcut` keys and diff them against the installed `pi-coding-agent/dist/core/keybindings.js` table (fail on collision) | `caf0f66` (Ctrl+X→Ctrl+K fix, found via manual RPC `get_commands` probe) |
+| Information access | `node-pty`'s native `spawn-helper` fails headless (`posix_spawnp failed`), so PTY render e2e cannot be scripted here — the W023 env gap | a node-pty-capable CI runner (a real terminal) for the PTY-render e2e layer; document that unit tests cover logic, PTY render needs CI | W023; the pty probe runs this session |
+| Tool economy | the first reviewer subagent lost ~15 min while `shell` was denied before recovering | not a code fix — a harness/permission config issue; note for the session-runner, not a repo change | subagent session `ses_ebbe121d8ffetlqI6sPaHWpivS` |
+
+Two of these (pack-check, shortcut-collision check) are real builds → offered as
+follow-up tickets; the node-pty CI runner is env provisioning. None implemented
+inline (this skill proposes, doesn't implement).
 
 ## Acceptance Verdict
 
-**Verdict:** <pending human>
+**Verdict:** accepted-with-open-items
 
 **Grounding:** goal = command-plate extension (which-key palette + model pickers),
 homogenized, no wf-contracts. Evidence: palette registered + no shortcut conflict
-(VERIFIED), command staging + entry shape (VERIFIED), pickers present + pure logic
-(VERIFIED); scoped-models resolution and full PTY render present-but-unverified.
+(VERIFIED via RPC `get_commands` probe), command staging + entry shape (VERIFIED,
+`index.spec.ts`), pickers present + pure logic (VERIFIED, `model-pick.spec.ts`);
+scoped-models resolution now VERIFIED (8 tests, `scoped-models.spec.ts`, W022
+closed); full PTY render present-but-unverified (W023, env-blocked).
 
-**Reasoning:** <pending human>
+**Reasoning:** The goal is met and the load-bearing paths are proven by named
+tests + a runtime probe. The extension is accepted with the open items carried
+forward (W023 env-blocked PTY render; W024 no-spec-zone recorded; W025 unwired
+full switcher). Per the human override the user accepted these at `ship` time.
+None is a code defect; all three are either env-blocked or explicitly out-of-scope
+by user choice.
 
 ## Open Items (→ next change)
 
-- W022 — scoped-models resolution spec
-- W023 — PTY render-capture e2e (node-pty-capable env)
-- W025 — decide wiring for `runModelSwitcher`/`runThinkingPicker`
+Final state at close (ranked per Final-State Authority — the QA half listed W022
+open at its write time; it is now closed, not carried):
+
+- **W022** — ~~scoped-models resolution spec~~ **CLOSED** by `9aa4af6`
+  (`scoped-models.spec.ts`, 8 tests; `loadScopedModels` exported).
+- **W023** — PTY render-capture e2e (needs a node-pty-capable CI env). Env-blocked,
+  not a code gap; the visual layer cannot be automated here.
+- **W024** — spec zone intentionally skipped for a small additive port. Recorded,
+  not fixable at the gate.
+- **W025** — (SUGGESTION) decide whether `runModelSwitcher`/`runThinkingPicker`
+  get a palette/command entry. Note: the divergent `getProviders`/`isModelEnabled`
+  path (a review-deferred Important) is only reachable from the unwired
+  `runModelSwitcher` — wiring it should come with the single-`isEnabled` dedup.
+- **Review-deferred** — (a) enabled-models dedup (latent until the full switcher
+  is wired); (b) document `runCommand`'s `setTimeout(() => process.stdin.emit(
+  "data","\r"),0)` or find a pi submit API. Both from `review.md`.
 
 ## Prior-Change Follow-Through
 
@@ -376,17 +423,32 @@ homogenized, no wf-contracts. Evidence: palette registered + no shortcut conflic
 ## Move Evidence (from ship context)
 
 **From:** `.skillgrid/specs/2026-10-16-command-plate-extension/` → **To:** `.skillgrid/archive/2026-10-16-command-plate-extension/`
-**`diff -r` readback:** <pending>
+**`diff -r` readback:** EMPTY (pass) — pre-move snapshot → `git mv` → readback
+empty; source dir removed; both files tracked in archive (`report.md` 392 lines,
+`review.md` 86 lines) at ship time.
+**Same-branch ship:** work already on `main` (`4ec2648..08826aa`); no merge needed.
 
 ## Overrides / Waivers / Contradictions
 
-- None recorded yet (CONCERNS — pending human decision).
+- **QA CONCERNS** — human override recorded: user `ship` (paladm, 2026-10-16),
+  accepted W023 (env-blocked) + W024 (recorded) + W025 (suggestion) as-is.
+- **Review floor met-with-fixes** — 2 Important deferred with named re-run paths
+  (enabled-models dedup, stdin-emit doc); 2 Important fixed at `08826aa`.
+- No contradictions: every Final-State fact above is corroborated by the repo at
+  close (git log, file presence, test run) or the ship envelope; no unrankable
+  conflicts.
 
 ## Lineage (observation IDs)
 
 - briefing: none (executed directly from plan)
 - blueprint: none
 - tasks: none
-- ship: pending
-- report (QA half): this file
-- research / findings / ADRs: ADR-0007 (self-contained package shape), ADR-0002 (isolation)
+- ship: pending — Mnemonic save returned FK constraint error 787 this session; the
+  ship context was recovered from the ship Return Envelope (this conversation) and
+  git history, which is authoritative here. Not a missing-artifact condition.
+- report (QA half): this file (`.skillgrid/archive/2026-10-16-command-plate-extension/report.md`)
+- review: `review.md` (three-axis, Grade B ×3, floor met-with-fixes; 2 Important
+  deferred, 2 fixed at `08826aa`)
+- research / findings / ADRs: ADR-0007 (self-contained package shape), ADR-0002
+  (isolation), ADR-0001 (loading via dir manifest), ADR-0005 (package naming),
+  ADR-0004 (separate publication — the `files` fix prepares for this)
