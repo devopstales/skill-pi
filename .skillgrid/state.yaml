@@ -1,7 +1,7 @@
 schema: skillgrid/state/v1
 pipeline:
-  current_phase: "reflect"
-  current_change: ""
+  current_phase: "blueprint"
+  current_change: "2026-10-16-skill-pi-update"
   status: done
 progress:
   completed_changes: 10
