@@ -37,7 +37,7 @@ export interface LoadedSession {
 
 export const loadSessionMessages = (file: string): LoadedSession => {
   const entries = loadEntriesFromFile(file);
-  const sessionEntries = entries.filter((entry) => entry.type !== "header");
+  const sessionEntries = (entries as any[]).filter((entry: any) => entry.type !== "header");
   const context = buildSessionContext(sessionEntries as any);
   const messages = (context.messages as any[]).filter(
     (msg): msg is Message =>
