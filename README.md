@@ -222,6 +222,15 @@ visible error in the TUI.
 `npm install -g @devopstales/skill-pi@latest` updates the wrapper *and* the pi version in one step.
 There is no `pi update` interaction: the two installs are independent packages.
 
+### Updating
+
+`skill-pi update` refreshes the wrapper and its bundled pi
+(`npm install` + `npm link --force` in the skill-pi checkout) and prints the
+resulting pi version transition. This is what the in-TUI "Update Available"
+banner (pi's own version check) points at — the banner stays as a passive
+heads-up; running the command updates skill-pi, never stock pi. Bundled
+extensions update via their own package lifecycle (`@devopstales/pi-*`).
+
 ## Limitations
 
 - The shim-cwd trick means pi reports the shim directory as its working directory in
