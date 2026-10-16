@@ -1,0 +1,13 @@
+{
+  "ignore": [
+    "node_modules",
+    "**/dist/**",
+    "**/package-lock.json",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.sh",
+    ".skillgrid",
+    ".backlog"
+  ],
+  "threshold": 2
+}
