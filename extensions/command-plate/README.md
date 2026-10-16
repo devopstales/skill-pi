@@ -8,47 +8,57 @@ homogenized into skill-pi extension conventions.
 
 | Key | Action |
 | --- | --- |
-| `Ctrl+Q` then a key | Run a plate action (see below) |
-| `/cp` | List the plate actions (command form) |
+| `Ctrl+Q` then `?` | Open the command plate palette |
+| `Ctrl+Q` then a key | Run a plate action directly (see below) |
+| `/cp` | Open the palette (command form) |
+| `/models` | Scoped-models picker directly (bypasses palette) |
 
 `Ctrl+Q` is unbound by pi by default, so the leader is always available and
 needs no keybinding configuration.
 
 ## Palette
 
-`Ctrl+Q` then a chord key to run the action.
+`Ctrl+Q` then a chord key to run the action directly (without opening the
+palette first).
 
 | Key | Action |
 | --- | --- |
+| `Ctrl+Q` + `?` | Open the command plate palette |
 | `Ctrl+Q` + `m` | Models — scoped model picker (respects `enabledModels`) |
-| `Ctrl+Q` + `a` + `s` | `/subagents` |
-| `Ctrl+Q` + `a` + `p` | `/ps` |
-| `Ctrl+Q` + `t` | `/tree` |
+| `Ctrl+Q` + `s` | `/subagents` |
 | `Ctrl+Q` + `q` | Quit pi |
 
-## Scoped Models picker
+Opening the palette (`Ctrl+Q` `?` or `/cp`) shows all actions as a selectable
+list; you can also type a chord while the palette is open to jump to an action.
 
-Resolves the `enabledModels` patterns from settings (exact `provider/model`,
-globs, and `:thinking` suffixes like `anthropic/claude-sonnet:high`), falling
-back to all available models when the scope is empty.
+## Scoped model picker
 
-- `j`/`k`, `1`-`9` jump, `left`/`right` cycle the thinking level
-- `o`/`i`/`l`/`m`/`h`/`x` set thinking (off/minimal/low/medium/high/xhigh)
-- `Enter` switches model + thinking level
+`/models` (or `Ctrl+Q` + `m`) opens a scoped model picker that respects your
+`enabledModels` config. The picker is two-level: pick a model, then a
+context window size if the model supports more than one.
 
-## Exported utilities (`model-pick.ts`)
+## Configuration
 
-- `runModelSwitcher(pi, ctx)` — full searchable provider → model → thinking flow
-- `runThinkingPicker(pi, ctx)` — searchable thinking-level picker
-- `searchableSelect(ctx, title, items, ...)` — reusable fuzzy-search select overlay
-- `getProviders(ctx)` / `getModelsForProvider(ctx, provider)` — enabled-model awareness
+`$PI_CODING_AGENT_DIR/skill-pi-command-plate.json` (i.e.
+`~/.skill-pi/agent/skill-pi-command-plate.json`):
 
-These are not wired into the palette (matching upstream, where the full
-switcher is a utility); call them from your own extension commands if needed.
-
-## Development
-
-```sh
-npm run check   # tsc --noEmit
-npm test        # vitest run
+```json
+{
+  "thinkingDefault": 4000,
+  "thinkingValues": [
+    { "label": "low", "value": 1000 },
+    { "label": "medium", "value": 4000 },
+    { "label": "high", "value": 8000 }
+  ],
+  "defaultContextWindow": 200000,
+  "contextValues": [128000, 200000, 500000]
+}
 ```
+
+All keys are optional; missing file → defaults. Malformed JSON → warning +
+defaults.
+
+## Disabling
+
+Uninstall the extension to disable. The scoped-models picker and the plate
+leader are all-or-nothing with the extension.

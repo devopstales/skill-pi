@@ -1,0 +1,10 @@
+{
+  "extends": "../skill-pi-tui/tsconfig.json",
+  "compilerOptions": {
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": false,
+    "types": ["node", "bun"]
+  },
+  "include": ["index.ts", "src/**/*.ts", "tests/**/*.ts"]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "@devopstales/pi-vcc",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Algorithmic conversation compactor for pi (no LLM calls). Vendored from sting8k/pi-vcc (MIT), Czech patterns removed, homogenized for the skill-pi agent dir.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "coding-agent",
+    "compaction",
+    "vcc",
+    "view-oriented-conversation-compiler"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/node": "^24.0.0",
+    "bun": "^1.2.0",
+    "typescript": "^5.5.0"
+  }
+}

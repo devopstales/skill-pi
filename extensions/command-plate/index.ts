@@ -22,32 +22,11 @@ export function buildEntries(
       action: openScopedModels,
     },
     {
-      type: "group",
-      group: {
-        key: "a",
-        label: "Agents",
-        items: [
-          {
-            key: "s",
-            label: "Subagents",
-            description: "open the subagents panel",
-            action: (ctx) => runCommand(ctx, "/subagents"),
-          },
-          {
-            key: "p",
-            label: "Processes",
-            description: "show running processes",
-            action: (ctx) => runCommand(ctx, "/ps"),
-          },
-        ],
-      },
-    },
-    {
       type: "action",
-      key: "t",
-      label: "Tree",
-      description: "open native session tree",
-      action: (ctx) => runCommand(ctx, "/tree"),
+      key: "s",
+      label: "Subagents",
+      description: "open the subagents panel",
+      action: (ctx) => runCommand(ctx, "/subagents"),
     },
     {
       type: "action",
@@ -353,11 +332,63 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
       try {
         await selected.action(ctx);
       } catch (err) {
-        const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+        const detail = err instanceof Error ? err.stack ?? err.message : String(err);
         ctx.ui.notify(`Action failed: ${detail}`, "error");
       }
     }
   }
+
+  const plateLeader: { stop: (() => void) | undefined } = { stop: undefined };
+  let plateArmed = false;
+
+  function startPlateLeader(ctx: ExtensionContext) {
+    plateLeader.stop?.();
+    plateLeader.stop = undefined;
+    if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
+    plateArmed = false;
+    plateLeader.stop = ctx.ui.onTerminalInput((data) => {
+      if (parseKey(data) === "ctrl+q") {
+        plateArmed = true;
+        return { consume: true };
+      }
+      if (plateArmed) {
+        plateArmed = false;
+        const key = parseKey(data);
+        if (key === "escape") return undefined;
+        if (key === "?") {
+          void openCommandPlate(ctx).catch((err) => {
+            const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+            ctx.ui.notify(`Action failed: ${detail}`, "error");
+          });
+          return { consume: true };
+        }
+        if (key && key.length === 1) {
+          const entries = buildEntries(pi, openScopedModels);
+          const action = entries.find((e) => e.type === "action" && e.key === key.toLowerCase());
+          if (action?.type === "action") {
+            void (async () => {
+              try {
+                await action.action(ctx);
+              } catch (err) {
+                const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+                ctx.ui.notify(`Action failed: ${detail}`, "error");
+              }
+            })();
+          }
+          return { consume: true };
+        }
+        return undefined;
+      }
+      return undefined;
+    }) as () => void;
+  }
+
+  pi.on("session_start", (_event, ctx) => startPlateLeader(ctx));
+  pi.on("session_shutdown", () => {
+    plateLeader.stop?.();
+    plateLeader.stop = undefined;
+    plateArmed = false;
+  });
 
   pi.registerCommand("cp", {
     description: "Open Command Plate palette",

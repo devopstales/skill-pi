@@ -50,12 +50,12 @@ Mapping (defaults, all rebindable per extension):
 
 | Chord | Action | Extension |
 |---|---|---|
+| `Ctrl+Q` `?` | Open the command plate palette | command-plate |
+| `Ctrl+Q` `m` | Scoped-models picker (respects `enabledModels`) | command-plate |
+| `Ctrl+Q` `s` | `/subagents` | command-plate |
 | `Ctrl+Q` `t` | Collapse/expand the todo card | todo |
 | `Ctrl+Q` `p` | Enter Plan mode | plan-build |
 | `Ctrl+Q` `b` | Enter Build mode | plan-build |
-| `Ctrl+Q` `m` | Scoped-models picker (respects `enabledModels`) | command-plate |
-| `Ctrl+Q` `a` `s` | `/subagents` | command-plate |
-| `Ctrl+Q` `a` `p` | `/ps` | command-plate |
 | `Ctrl+Q` `q` | Quit pi | command-plate |
 | `Ctrl+Q` `Tab` | Cycle agent target | pi-swarm |
 
@@ -67,9 +67,10 @@ Mechanics, carried forward and refined from ADR-0009:
   leader listener, so no standalone `Ctrl+Q` is ever registered.
 - **The command plate is command-only** (`/cp`), unchanged from ADR-0009; its
   palette keys are also reachable as leader actions.
-- **Letter/Tab keys are reserved in this space.** A new extension action key is
-  `Ctrl+Q` + one unassigned key. Unassigned: c, d, e, f, g, h, i, j, k, l, n,
-  o, r, u, v, w, x, y, z.
+- **Letter/Tab/? keys are reserved in this space.** A new extension action key
+  is `Ctrl+Q` + one unassigned key. Assigned: `?`, `m`, `s`, `t`, `p`, `b`,
+  `q`, `Tab`. Unassigned: c, d, e, f, g, h, i, j, k, l, n, o, r, u, v, w, x,
+  y, z.
 - **Per-extension overrides rebind the action key only.** `SKILL_PI_TODO_KEY`
   (default `t`), plan-build `shortcuts.planMode` / `shortcuts.buildMode`
   (default `["p"]` / `["b"]`), and pi-swarm `SKILL_PI_SWARM_TARGET_KEY`
