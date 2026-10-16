@@ -9,3 +9,4 @@
 | **manifest dir** | A directory whose own `package.json` carries a `pi` manifest — skill-pi uses `extensions/`. |
 | **`PI_CODING_AGENT_DIR`** | Env var pointing pi at the agent dir for all user-level path resolution. |
 | **`PI_PACKAGE_DIR`** | Env var overriding pi's package dir; skill-pi does *not* set it. |
+| **`webfetch`** | Bundled extension (`extensions/webfetch`) exposing a `webfetch` tool: static undici fetch (no headless browser) + trafilatura HTML→markdown extraction, with a 5MB response cap, bounded timeout, `beforeFetch` site short-circuits, and the `SKILL_PI_WEBFETCH` toggle. |
