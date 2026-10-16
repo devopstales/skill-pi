@@ -146,6 +146,19 @@ Currently bundled:
   modes; `--plan` / `--build` set the start mode; config at
   `~/.skill-pi/agent/skill-pi-plan-build.json`. See
   [`extensions/plan-build/README.md`](extensions/plan-build/README.md).
+- **[`pi-hooks`](extensions/pi-hooks/)** — Claude Code-compatible command hooks.
+  Hook groups are declared in the `hooks` key of `settings.json` (project
+  `.skill-pi/settings.json`, merged over `~/.skill-pi/agent/settings.json`) and
+  run as bash commands that receive Claude Code-style JSON on stdin and may
+  answer with Claude Code-style JSON on stdout. Supported events: `SessionStart`,
+  `SessionEnd`, `PreCompact`, `PostCompact`, `PreToolUse`, `PostToolUse`,
+  `PostToolUseFailure`, `UserPromptSubmit`, `Stop`; `PreToolUse` / `PostToolUse` /
+  `PostToolUseFailure` support per-handler `if` conditions and a tool-name
+  `matcher`; `Stop` and `UserPromptSubmit` can block and continue for one more
+  turn. Forked from
+  [hsingjui/pi-hooks](https://github.com/hsingjui/pi-hooks) (MIT), homogenized for
+  the isolated agent dir. See
+  [`extensions/pi-hooks/README.md`](extensions/pi-hooks/README.md).
 
 ## Choosing a model
 
