@@ -1,7 +1,7 @@
 # Report — webfetch (bundled URL retrieval with trafilatura extraction)
 
 > Change: `.skillgrid/specs/2026-10-16-webfetch-extension/`
-> Generated: 2026-10-16T14:35:00-05:00 (qa)
+> Generated: 2026-10-16T14:35:00-05:00 (qa) · re-verified 2026-10-16T15:20:00-05:00 (qa, open items fixed)
 > Gate: PASS
 >
 > Two phases, one file: **qa** writes the QA half (the sections above `## Final-State Facts`,
@@ -212,8 +212,10 @@ No user-facing file or state mutation.
 | P0 pass rate | rows 1,2,4,5,6,8,10,13,14 from the test plan | 100 | 100% (all named P0 tests ran and passed) | PASS |
 | P1 pass rate | rows 3,7,9,11,12 from the test plan | 95 | 100% | PASS |
 | Trivy security | `trivy fs --severity CRITICAL --scanners vuln,secret,misconfig .` | CRITICAL | 0 findings ≥ CRITICAL | PASS |
-| Extension suite | `npx vitest run` (extensions/webfetch) | 0 failures | 32/32 pass, 5 files | PASS |
+| Extension suite | `npx vitest run` (extensions/webfetch) | 0 failures | 41/41 pass, 6 files (incl. new extract.test.ts + fetcher size/timeout tests) | PASS |
 | Root regression | `node --test --test-timeout=15000` (7 deterministic suites) | 0 failures | 35 pass / 0 fail | PASS |
+| State drift | `state-drift-check.mjs` (run directly) | DRIFT: none | `DRIFT: none` / `SCOPE: COMPLETE` | PASS |
+| Size budget | `skill-size-budget.mjs check` (run directly) | no overage | "No SKILL.md files found" (exit 0) | PASS |
 
 **Quality config status:** configured (`quality:` present; coverage/mutation disabled at 0)
 
@@ -223,17 +225,20 @@ No user-facing file or state mutation.
 
 > `state-drift-check.mjs` — compares `.skillgrid/state.yaml` against the spec zone.
 
-**Verdict:** PARSE ERROR — script unavailable in this environment (`Cannot find package 'yaml'`); qa-gate.mjs reported exit 2 / "script not found" for the state and size-budget sub-checks.
+**Verdict:** DRIFT: none — `state-drift-check.mjs` ran clean after its `yaml` dependency
+was installed in `~/.agents/skills/verification/qa/scripts/node_modules` (the W031 fix).
 
-| Field | Stale (state.yaml) | Derived (spec zone) |
-|-------|-------------------|---------------------|
-| pipeline.current_change | (pre-edit) 2026-10-16-skill-pi-update | 2026-10-16-webfetch-extension (newest spec dir) |
-| pipeline.current_phase | (pre-edit) blueprint | qa (report.md present) |
+| Field | state.yaml | Derived (spec zone) |
+|-------|-----------|---------------------|
+| pipeline.current_change | 2026-10-16-webfetch-extension | 2026-10-16-webfetch-extension (newest spec dir) |
+| pipeline.current_phase | qa | qa (report.md present) |
 
-**Fix applied:** state.yaml patched to `current_change: 2026-10-16-webfetch-extension`,
-`current_phase: qa` to match the spec zone.
+**History:** the first gate run hit `Cannot find package 'yaml'` (exit 2) and the drift was
+reconciled manually (state.yaml patched to `current_change: 2026-10-16-webfetch-extension`,
+`current_phase: qa`). After the W031 fix the guard was re-run and confirmed `DRIFT: none`
+/ `SCOPE: COMPLETE`, making the manual reconciliation redundant-but-consistent.
 
-**Scope (from the guard's `SCOPE:` line):** n/a (script not run; qa-gate composite was COMPLETE for the checks that did run)
+**Scope (from the guard's `SCOPE:` line):** COMPLETE
 
 ## Verification Scope
 
@@ -243,7 +248,7 @@ No user-facing file or state mutation.
 |---|---|---|
 | Traceability matrix | COMPLETE — all 9 scenarios in `acceptance.feature` read in full | none |
 | Verification-gap audit | COMPLETE — all changed behaviors enumerated from the diff (19 files: 8 src, 5 test, 6 doc/meta) | none |
-| State Drift (9.5) | UNSCOPED — sub-check script missing (`yaml` package) | n/a |
+| State Drift (9.5) | COMPLETE — guard ran clean (`DRIFT: none`, `SCOPE: COMPLETE`) after W031 fix | none |
 | Structure Drift (9.6) | COMPLETE (skip: "no base ref in tasks.md") | n/a |
 
 **Stale-verification:** `STALE: none` — no prior verification existed for this change; this run's evidence (named tests + E2E output above) is current.
@@ -261,12 +266,11 @@ No user-facing file or state mutation.
 | Test quality audit | none |
 | Code-quality gates (weakest gate) | PASS |
 | Security audit | PASS |
-| Verification scope (composite) | UNSCOPED (state-drift sub-check script missing; all other derivations COMPLETE) |
+| Verification scope (composite) | COMPLETE (all four derivations COMPLETE) |
 
-**FLOOR:** verification-scope (composite) — UNSCOPED, because the `state-drift-check.mjs`
-sub-check could not run (`yaml` package absent from the skill scripts' resolution
-environment). Per the fail-closed rule, a non-COMPLETE scope routes the gate off PASS.
-Every other dimension is at its best value.
+**FLOOR:** verification-gap audit — SUGGESTION (4 low regression gaps, all named in the
+Findings). Every gate is PASS, every truth VERIFIED, every scenario COMPLIANT, and the
+composite verification scope is COMPLETE.
 
 ## Findings
 
@@ -280,44 +284,54 @@ Every other dimension is at its best value.
 ### WARNING (should fix before archive)
 
 - **Pre-existing environment defect (not this diff):** `test/rpc.test.js :: rpc mode
-  runs pi from the real project dir (no shim)` times out at 15s on this machine (pi
-  subprocess spawn hangs), which makes the config-runner `node --test "test/**/*.test.js"`
-  hang on the full suite. All 7 deterministic root suites pass (35/35). Unrelated to the
-  webfetch change — no wrapper/extension file in the diff touches the rpc path. Re-run in
-  a clean environment to confirm.
-- **State-drift guard unavailable:** `state-drift-check.mjs` / `skill-size-budget.mjs`
-  fail with `Cannot find package 'yaml'` when invoked from the project root (the scripts
-  live in `~/.agents/skills/verification/qa/scripts/` and resolve `yaml` relative to
-  themselves). Manual state.yaml reconciliation done in lieu (see State Drift section).
+  runs pi from the real project dir (no shim)` times out at 15s on this machine — the
+  pi RPC subprocess never emits its `get_state` response during startup (verified:
+  `[lsp]` config warning fires, then silence; `bin/` and `lib/` contain no webfetch
+  reference, so the hang is in pi's rpc startup, not this diff). This makes the
+  config-runner `node --test "test/**/*.test.js"` hang on the full suite. All 7
+  deterministic root suites pass (35/35). Re-run in a clean environment to confirm.
+- **RESOLVED (W031):** `state-drift-check.mjs` / `skill-size-budget.mjs` previously
+  failed with `Cannot find package 'yaml'`. Fixed by installing `yaml` into
+  `~/.agents/skills/verification/qa/scripts/node_modules`; both guards now run clean
+  (`DRIFT: none`, `SCOPE: COMPLETE`; budget exit 0).
 
 ### SUGGESTION (nice to have)
 
-- Add a fake-runner unit test for `extract.ts`: a stubbed `uvx` (a shell script on
-  `PATH` returning canned markdown / empty stdout / non-zero exit) would cover the
-  "no content" error, the non-zero-exit error, and the timeout path without network.
-- Add a fetcher test for the >5MB oversized-body path and the 120s timeout cap (a local
-  server with a large `Content-Length` makes both cheap).
+- **DONE (W032):** fake-runner unit tests for `extract.ts` added
+  (`test/extract.test.ts`, 7 tests): runner detection (cache preference + priority),
+  markdown stdout, no-content rejection, non-zero-exit rejection with stderr, missing
+  binary, and the 30s extraction timeout.
+- **DONE (W033):** fetcher tests added for the >5MB paths
+  (`test/fetcher.test.ts`): oversized `Content-Length` rejects before streaming and a
+  body that grows past 5MB mid-stream rejects with `WebfetchResponseTooLargeError`.
+  (The 120s timeout cap remains E2E-verified only — a 120s unit test is not worth it.)
 - The `google-docs-redirect` handler references `google_workspace_mcp` tools that are not
   bundled with skill-pi; the redirect message is still useful as a "don't scrape" hint,
   but could be softened to "use a Google Workspace integration if available".
 
 ## Gate Decision
 
-**Verdict:** CONCERNS
+**Verdict:** PASS
 
 **Reasoning:** Every truth is VERIFIED by named tests + live E2E, all 9 scenarios are
-COMPLIANT, no CRITICAL finding exists, and all code-quality and security gates PASS. The
-verdict is capped at CONCERNS — not by the code, but by the fail-closed scope rule: the
-`state-drift-check.mjs` sub-check could not run in this environment (missing `yaml`
-package), leaving the composite verification scope UNSCOPED. The state.yaml
-reconciliation was done manually and is recorded; the drift guard itself needs a
-re-run where its dependencies resolve.
+COMPLIANT, no CRITICAL finding exists, every code-quality and security gate is PASS, and
+the composite verification scope is COMPLETE — the state-drift guard now runs clean
+(`DRIFT: none`, `SCOPE: COMPLETE`) after its `yaml` dependency was installed (W031).
+The two test-coverage suggestions (W032/W033) were implemented as part of the fix; the
+only remaining open items are the pre-existing rpc hang (not this diff) and one cosmetic
+wording suggestion on the google-docs handler.
 
-**Open items (if CONCERNS):**
-- Re-run `node .agents/skills/verification/qa/scripts/qa-gate.mjs .` in an environment
-  where the skill scripts' `yaml` dependency resolves (e.g. `cd ~/.agents/skills/verification/qa/scripts && npm i yaml` or a global install), and confirm the state-drift verdict is DRIFT: none. Path: 1 command, then update the State Drift section of this report.
-- Optionally confirm the pre-existing `test/rpc.test.js` timeout in a clean environment
-  (not a blocker for this diff).
+**Resolved items (were CONCERNS):**
+- W031 state-drift guard `yaml` dependency — fixed; guard re-run clean.
+- W032 extract.ts fake-runner unit tests — added (7 tests).
+- W033 fetcher >5MB unit tests — added (2 tests).
+- W030 rpc hang — investigated: pi's rpc subprocess never emits `get_state` during
+  startup on this machine; confirmed pre-existing and unrelated (no webfetch code on
+  the rpc path).
+
+**Open (non-blocking):**
+- Confirm the pre-existing `test/rpc.test.js` timeout in a clean environment (W030).
+- Optional: soften the `google-docs-redirect` message (SUGGESTION).
 
 **Waiver (if WAIVED):** n/a
 
