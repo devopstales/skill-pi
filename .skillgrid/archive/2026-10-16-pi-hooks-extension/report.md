@@ -243,4 +243,106 @@ spawn path) but it is pre-existing and low-priority.
 > A human decision always overrides this machine verdict.
 > An epic that fails its criteria with no human decision is recorded as **not accepted** — never as silently accepted.
 
-**Human decision (fill in):** <accept / accept-with-open-items / reject> — <name> — <date>
+**Human decision (fill in):** accept — user — 2026-10-16
+
+<!-- reflect completes this half at archive time -->
+
+## Final-State Facts
+
+**Shipped:** the `pi-hooks` extension (vendored from hsingjui/pi-hooks, MIT) with 44 unit tests pinning its config-path, matcher, if-condition, and Claude Code I/O contracts; plus the W028 wrapper fix (strip project path from pi passthrough args).
+**Base branch:** main · **Chain strategy:** same-branch (work already on main)
+**Integration:** merged @ e5a8995 (archive move); code commits 9087cbc..3a19f1e
+
+## Gates
+
+| Gate | Result |
+|------|--------|
+| Ship gate | ✅ success + `diff -r` empty |
+| QA gate | ✅ PASS |
+| Verdict gate (advisory) | accepted — user, 2026-10-16 |
+
+## Decisions
+
+**Every entry MUST cite a source** — a file:line, a commit, a ticket ID, or a scenario name. No source = undiagnosed, not a learning.
+
+| Decision | Tradeoff | Why | Source |
+|----------|----------|-----|--------|
+| Fix W028 (wrapper cwd) inside this change rather than defer | Broader scope than "tests only" | User chose "fix W028 in this change" at the QA CONCERNS gate; the door-check backstop needs the wrapper leg to pass | `report.md` Gate Decision; `3b060bf` |
+| Strip project path + trailing absolute paths from piArgs, not just the project path | Slightly broader than the minimal fix | The `--`-first case leaves `args.project` null (parseArgs gap), so the project path isn't the only value pi misreads as a cwd override | `bin/skill-pi.js:210-226`; `report.md` W1 |
+| Accept the spec-zone blemish (4 spec files swept into keybindings commit `3808103`) | Commit hygiene not perfect | Shared-tree concurrency accident; the [skillgrid-context] block is on record; re-splitting retroactively is costlier than accepting | `progress.md:75-81`; `task-2-report.md:77-90` |
+| Treat W029 (untested spawn path) as deferred, not fixed | `executeHook`/`executeParsedHook`/`triggerSimpleHooks` remain untested | Pre-existing (upstream shipped no tests); the functions are thin wrappers around `node:child_process` spawn; low regression risk | `report.md` W2 |
+
+## Lessons
+
+| Lesson | Root Cause | Do Differently | Source |
+|--------|-----------|----------------|--------|
+| A vendored extension with zero tests leaves its homogenization edits unverified | The direct-landing session (b2507f9) skipped the SDD pipeline — no spec folder, no tests | When vendoring + homogenizing, the config-path edits are the highest-risk change (silent failure); write the regression pin in the same session as the homogenization | `report.md` Risk Ranking; `b2507f9` |
+| The door check's value is disproving the implementer's hypothesis, not just confirming the happy path | The implementer hypothesized a TTY/timing issue; the parent's bisect (direct CLI vs wrapper vs spawnSync replica) found the actual root cause (trailing positional) | For e2e door checks that fail, the parent re-verification should bisect (single extension, direct CLI, spawnSync replica with controlled cwd) before accepting the implementer's root-cause hypothesis | `progress.md:27-46` (Task 1 parent re-verification) |
+| A concurrent session's commit can sweep uncommitted spec files into an unrelated commit | The tree was shared; the zone guard prevents spec+code mixing but not spec+another-change's-code | When executing a work unit in a shared tree, commit the spec files before dispatching the implementer (so the tree is clean when the implementer commits) | `task-2-report.md:77-90`; `3808103` |
+
+## Patterns
+
+| Pattern | Reuse | Source |
+|---------|-------|--------|
+| Regression-pin test suite for a vendored fork: mock the single impure import (`getAgentDir`), use real temp dirs for the rest, assert the exact contract the production code relies on | Any vendored extension that changes config paths or I/O contracts during homogenization | `config.spec.ts:55-64` (mock seam + real temp dirs); `executor.spec.ts` (per-event-family `toMatchObject`) |
+| Door-check bisect for e2e failures: single extension → direct CLI → spawnSync replica with controlled cwd → isolate the wrapper's env/argv delta | Any e2e test that passes in isolation but fails through the wrapper | `progress.md:27-46` (the W028 root-cause bisection) |
+
+## Surprises
+
+| Surprise | Signal | Source |
+|----------|--------|--------|
+| pi's `--print` mode consumes a trailing positional as a working-directory override, not as a prompt | `skill-pi -- --print "ok" $E2E` → pi's cwd was the repo root, not `$E2E`; the model's reply said "What would you like to work on?" (it saw the repo, not the scratch dir) | `progress.md:27-46`; `/tmp/pi-wrapper-again.txt` |
+| `parseArgs` leaves `args.project` null when `--` is the first arg (the `--` branch breaks before the project check) | `parseArgs(['--', '--print', 'ok', '/tmp/project'])` → `project: null`, `passthrough: ['--print','ok','/tmp/project']` | `bin/skill-pi.js:96-98`; the parseArgs simulation in the session |
+| The `lsp` extension's `session_start` handler fires even when pi-hooks' hook doesn't (the handler runs, but `loadSettings(ctx.cwd)` reads the wrong cwd) | `[lsp] session_start config load skipped` in wrapper stderr, but no pi-hooks marker file | `/tmp/pi-w028-stderr.txt`; the direct-CLI control (lsp + pi-hooks → FIRED) |
+
+## Environment Retro
+
+**Written by `skillgrid:environment-retro` (a reflect sub-phase), not qa.** Improvements to the *agent environment*, never the code.
+
+| Category | Finding | Fix lands in | Source |
+|----------|---------|--------------|--------|
+| Automated checks | The repo has no pre-commit lint/typecheck hook — tsc errors and test failures are only caught at the QA gate, not at commit time. This session's Task 2 implementer committed 44 tests without a pre-commit gate; the tsc check ran as part of the task's verification step, not as a commit guard. | Add a pre-commit hook (or a `git commit` wrapper in the Taskfile) that runs `tsc --noEmit` on the changed extension + `vitest run` on the changed extension's spec files. The Taskfile already has per-extension `check`/`test` tasks; the hook would call them. | session: no tsc/test ran between the implementer's edits and the commit; `task-2-report.md` G1-G2 gates |
+| Automated checks | The root test suite's e2e tests (ask-user-e2e, dynamic-allow-e2e, providers.e2e, integration, rpc) all hang on the W028 wrapper defect when run with a project-path arg. The QA gate's "run the full suite" step timed out at 300s, forcing a manual exclusion of the e2e tests. | After W028 is fully fixed (including the `--`-first parseArgs gap), re-enable the full root suite in the QA gate. Until then, the QA test plan should name the e2e exclusion explicitly rather than relying on a timeout. | `report.md` G3 note; the 300s timeout in the session's root-suite re-run |
+| Tool economy | The `sdd-workspace` script (`scripts/sdd-workspace`) fails when run with `node` (it's a bash script, not JS). The agent had to fall back to `sh` and then to `mkdir -p` manually. | Either add a shebang + `chmod +x` to the script, or document in the skill that it must be run with `sh`, not `node`. | session: `node .agents/skills/execution/subagent-execution/scripts/sdd-workspace ...` → SyntaxError; `sh ...` → worked |
+| Information access | The `state-drift-check.mjs` script requires the `yaml` npm package, which is not in the project's `node_modules` (it's a dev tool for the skill, not a project dependency). The QA gate's state-drift check fell back to a manual read. | Either add `yaml` to the skill's own `package.json` (if the skill has one), or make the script use a YAML parser that's already in the project's `node_modules` (e.g. `@earendil-works/pi-coding-agent`'s transitive deps), or document that the check is manual when `yaml` is unavailable. | session: `node .agents/skills/verification/qa/scripts/state-drift-check.mjs` → `ERR_MODULE_NOT_FOUND: yaml` |
+
+## Acceptance Verdict
+
+**Verdict:** accepted
+
+**Grounding:** The briefing's goal — "give the vendored `extensions/pi-hooks/` the test coverage and pipeline artifacts it skipped" — is met: 44 unit tests pin the config-path, matcher, if-condition, and I/O contracts; the QA gate is PASS; the three-axis review is PASS; the W028 wrapper defect (which blocked the E2E backstop) was fixed in this change; the change folder is archived.
+
+**Reasoning:** All 5 acceptance scenarios SATISFIED. All truths VERIFIED (including the E2E backstop at both legs after W028). No CRITICAL findings. The 1 Important (spec-zone blemish) is accepted. The 2 Medium security findings are by-design trust boundaries (Claude Code parity), not code defects.
+
+## Open Items (→ next change)
+
+- **W028 residual (parseArgs `--`-first gap):** `skill-pi -- --print "ok" $E2E` still leaves `args.project` null. Fix: in `parseArgs`, when the `--` branch fires and `args.project` is null, scan the passthrough for a trailing absolute path and set `args.project` to it. This makes the W028 trailing-path-strip heuristic deletable.
+- **W029 (untested spawn path):** `executeHook` / `executeParsedHook` / `triggerSimpleHooks` have no integration spec. Low priority (thin wrappers around `node:child_process` spawn).
+- **Pre-commit hook:** the repo has no commit-time guardrail. Add a hook that runs `tsc --noEmit` + `vitest run` on changed extensions.
+
+## Prior-Change Follow-Through
+
+| Prior open item (from previous archived change) | Addressed by this change? | Evidence |
+|--------------------------------------------------|---------------------------|----------|
+| W028 (wrapper cwd defect, from command-plate / lsp changes) | yes (partially) | `3b060bf` fixes the project-path-before-`--` case; the `--`-first parseArgs gap remains (named in Open Items) |
+
+## Move Evidence (from ship context)
+
+**From:** `.skillgrid/specs/2026-10-16-pi-hooks-extension/` → **To:** `.skillgrid/archive/2026-10-16-pi-hooks-extension/`
+**`diff -r` readback:** empty → PASS
+
+## Overrides / Waivers / Contradictions
+
+- None. (The QA gate initially rendered CONCERNS on the W028 wrapper leg; the user chose "fix W028 in this change" and the gate was re-rendered PASS. No waiver — the fix closed the gap.)
+
+## Lineage (observation IDs)
+
+Every artifact read this close, for traceability:
+
+- briefing: `2026-10-16-pi-hooks-extension/briefing.md` (in-repo; no mnemonic observation — search returned 0)
+- blueprint: `2026-10-16-pi-hooks-extension/blueprint.md` (in-repo; no mnemonic observation)
+- tasks: none (small fast-track, no slicing)
+- ship: `e5a8995` (git commit; no mnemonic observation)
+- report (QA half): `75a8f2a` (git commit)
+- review: `3a19f1e` (git commit; floor PASS, Standards 0I/5M Grade B, Spec 0C/1I-accepted/4M Grade B, Security 0CH/2M-by-design/2L Grade B)
+- research / findings / ADRs: ADR-0001, ADR-0002, ADR-0006, ADR-0007 (in-force, cited in briefing + blueprint)
