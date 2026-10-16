@@ -260,75 +260,101 @@ The most likely thing to break in production: the vendored pi-free base (~20k LO
 
 ## Final-State Facts
 
-**Shipped:** <what actually shipped>
-**Base branch:** <base-branch> · **Chain strategy:** <strategy>
-**Integration:** <merged @ <commit> | PR <url> | kept branch <name>> (from ship context)
+**Shipped:** One bundled pi extension (`extensions/providers/`) that registers the union of three upstream plugins: `pi-free@2.8.4` (26 free/paid providers + filter/telemetry/fallback/quota/diagnostics, vendored as-is with 4 ADR-0002 fixes), `opencode-zen-oauth@1.2.6` (device-flow OAuth), and `pi-agy@0.6.1` (antigravity OAuth multi-account). 41 tests / 39 pass / 0 fail / 2 skip. 1 WARNING (pre-existing wrapper spawn defect).
+**Base branch:** main · **Chain strategy:** stacked-to-main
+**Integration:** merged to main @ `3b44edb` (12 commits: `2faff36`→`3b44edb`)
 
 ## Gates
 
 | Gate | Result |
 |------|--------|
-| Ship gate | ✅ success + `diff -r` empty (or: blocked — {reason}) |
-| QA gate | ✅ {PASS \| WAIVED \| CONCERNS — human override recorded} |
-| Verdict gate (advisory) | {accepted \| accepted-with-open-items \| rejected} — recorded, not enforced |
+| Ship gate | ✅ success + `diff -r` empty |
+| QA gate | ✅ PASS |
+| Verdict gate (advisory) | accepted — recorded, not enforced |
 
 ## Decisions
 
 | Decision | Tradeoff | Why | Source |
 |----------|----------|-----|--------|
+| G3 imports bare specifier `@earendil-works/pi-ai/compat` in a child process, not the full `dist/index.js` | G3 proves the declared-dep fast path, not the full import graph | pi-free's 7-tier disk-walk fallback (`pi-ai-loader.js`) masks the missing pi-ai in a full import; the bare-specifier import isolates the resolution failure to Node's module resolver | Task 1 ruling; `test/providers.load.test.js` G3 |
+| `extensions/package.json` is a new file, not a modification | The brief said "MODIFIED" but the file did not exist | ADR-0001's dir-level manifest was removed when the wrapper moved to explicit enumeration; re-creating it is consistent with ADR-0001 + blueprint | Task 1 ruling; `extensions/package.json` |
+| Accept door check at base-load level (not exit-0) | `task providers:load` remains red in this environment | The wrapper's `spawnSync` ENOENT host defect is out of the ticket's file ownership (`bin/skill-pi.js`); the base-load proof is genuine (marker + 25 providers + `failures:[]`) | Task 2 ruling; `lib/providers-load.sh` |
+| Parallel worktree commit attribution split (T03/T04) | "Independently-revertable" only holds as a group | T03's SHAs carry T04's `index.ts` + seam test edits; the tree state is correct but commit boundaries overlap | Task 3/4 ruling; `cbd7b48`/`5fb5a5c`/`3515c3d` |
+| E2E uses `PI_CODING_AGENT_DIR` env instead of `--agent-dir` | The brief's fallback used `--agent-dir` | The wrapper's `spawnSync` ENOENT blocks the wrapper path, and the direct pi CLI has no `--agent-dir` flag; `PI_CODING_AGENT_DIR` is the same env var the wrapper sets | Task 7 ruling; `test/providers.e2e.test.js` |
+| 4 minimal pi-free dist edits (ADR-0002) | Vendored tree is no longer byte-identical to upstream | `paths.js` `PI_DATA_DIR` + `resolveAgentDir()`, `config.js` `readAuthJsonKey`, `telemetry.js` path, `cosy.js` machine-id fallback — all resolve through `PI_CODING_AGENT_DIR`; recorded in README provenance table | Task 6; `extensions/providers/README.md` |
 
 ## Lessons
 
 | Lesson | Root Cause | Do Differently | Source |
 |--------|-----------|----------------|--------|
+| Transitive deps (pi-ai, undici, jiti) resolve but aren't declared — fragile to lockfile re-resolve | npm hoists transitive deps but they're not pinned; a `npm ci` or lockfile update can drop them | When vendoring a package, re-derive the full import graph from the actual code (not just the tarball's `package.json`) and declare every non-builtin import in `extensions/package.json` | Task 1 (pi-ai), Task 4 (undici), final review (jiti) |
+| pi-free's disk-walk fallback masks missing deps in a full import | `pi-ai-loader.js` has 7 tiers (walk-up → agent-nested → host-entry → home → Windows global → exec → vendored bundle) | Test module resolution with a bare-specifier import in a shadow tree (no `node_modules`), not a full entry import | Task 1 G3 |
+| The wrapper's `spawnSync(process.execPath)` returns `ENOENT` in the nix-store node context | The wrapper's process context differs from a fresh node; `process.execPath` resolves to a nix-store binary that `spawnSync` can't find in the wrapper's exec context | Add a follow-up ticket to fix the wrapper spawn (use `execFileSync` with explicit `env`, or resolve `process.execPath` through a fresh exec); until then, use the direct pi CLI as a fallback for door checks and e2e | Task 2 concern; Task 7 e2e |
+| pi-free's `paths.js` hardcodes `PI_DATA_DIR = join(homedir(), ".pi")` — reads HOME, not `PI_CODING_AGENT_DIR` | Upstream pi-free predates the isolation requirement; it was written for stock pi | When vendoring a package that writes state, grep for `homedir()`, `os.homedir`, `HOME`, `~/.pi` BEFORE loading it — classify each hit (safe vs hardcoded write) in the provenance table | Task 1 finding; Task 6 fix |
+| Parallel subagents in the same worktree split commit attribution | Both subagents write to the same `index.ts` + `test/providers.seam.test.js`; git commits are atomic per-subagent | Run parallel tickets in separate worktrees (each branches from the post-T02 main), or run them sequentially in the same worktree. The integration gate (T05) is where the combined state is verified | Task 3/4 ruling |
 
 ## Patterns
 
 | Pattern | Reuse | Source |
 |---------|-------|--------|
+| **Vendor-as-is + minimal ADR-0002 edits** — copy the upstream `dist/` tree byte-identical, then apply only the minimal set of edits needed for state confinement (recorded in the provenance table) | Any future vendored extension that writes state; the provenance table is the audit trail for "what did we change from upstream and why" | Task 1 (vendor), Task 6 (ADR-0002 edits), `extensions/providers/README.md` |
+| **Base-load door check before OAuth investment** — prove the vendored base loads (stub + real session) before adding any OAuth provider; if the base doesn't load, the whole approach is invalidated | Any change that vendors a large base + adds providers on top; the tracer-thread build shape makes the door check the first ticket | Task 1 (stub load), Task 2 (real session), blueprint Build Shape |
+| **Enable seam as single decision point** — one `isEnabled(name, disabledSet)` function gates each OAuth provider; the entry must NOT call `registerX` outside the gated branch | Any composition entry with per-provider toggles; the seam is the one place to add/remove providers without touching the registration logic | Task 5, `extensions/providers/index.ts` |
+| **Capturing stub ExtensionAPI** — a permissive stub that records `registerProvider`/`registerCommand`/`on` calls; the full entry runs against it in-process (no real pi process needed for registration tests) | Any extension that registers providers/commands/handlers; the stub is the cheapest way to test registration wiring without a full pi runtime | All 5 provider test files |
+| **Byte-offset scoping of shared log files** — snapshot the log's byte size before the run, scan only appended bytes after; avoids matching a stale run's marker | Any test that reads a shared append-only log file (e.g. `~/.pi/free.log`); deterministic without file locking | `lib/providers-load.sh` |
 
 ## Surprises
 
 | Surprise | Signal | Source |
 |----------|--------|--------|
+| pi-free's `pi-ai-loader.js` has a 7-tier disk-walk fallback that masks missing transitive deps | G3 test passed on a full `dist/index.js` import even with pi-ai absent from `node_modules` — the walk-up path found it transitively | Task 1 G3; `extensions/providers/pi-free/dist/lib/pi-ai-loader.js` |
+| The wrapper's `spawnSync(process.execPath)` returns `ENOENT` in the nix-store node context, but the identical call works from a fresh node | `node bin/skill-pi.js --print` exits 1 with 0 bytes on stdout+stderr; direct `node node_modules/.bin/pi --print` works | Task 2 concern; reviewer independent confirmation |
+| pi-free writes to `~/.pi` on load even when `PI_CODING_AGENT_DIR` is set | `~/.pi/free.json` + `free.log` appear after a session with `--agent-dir` pointing to a temp dir; `paths.js` reads `HOME`, not `PI_CODING_AGENT_DIR` | Task 1 finding; Task 2 observation; Task 6 fix |
+| The `extensions/package.json` did not exist (the brief said "MODIFIED") | ADR-0001's dir-level manifest was removed when the wrapper moved to explicit enumeration; the file was absent from the repo | Task 1; `extensions/package.json` (new) |
+| `jiti` was transitively hoisted via `pi-coding-agent` but not declared in any `package.json` | 4 of 5 provider test files `import("jiti")`; it resolved only transitively; same defect class as `undici` | Final standards review; `package.json` devDependencies |
 
 ## Environment Retro
 
 | Category | Finding | Fix lands in | Source |
 |----------|---------|--------------|--------|
+| Automated checks | Repo has no lint/typecheck for raw-TS extensions — a syntax error in a new `.ts` file only surfaces at load time (the jiti parse check in Task 7 was a manual loop, not a wired check) | Add a `task providers:syntax` (or `task typecheck`) that runs the jiti parse loop over `extensions/**/*.ts`; wire it into `task test` or a pre-commit hook | Task 7 Step 4 (manual `for f in ...; do npx jiti --check "$f"`); repo has no tsconfig or typecheck task |
+| Automated checks | Transitive deps (pi-ai, undici, jiti) were undeclared — a `npm ci` or lockfile update could silently drop them. The same defect class was found twice (undici in Task 4, jiti in final review) | Add a CI check (or `task deps:verify`) that resolves every non-builtin import in `extensions/**/*.ts` + `extensions/**/*.js` and asserts it's declared in `extensions/package.json` or `package.json` | Task 1 (pi-ai), Task 4 (undici), final review (jiti) |
+| Navigation | The `spawnSync` ENOENT host defect was discovered in Task 2 but not documented in any steering file — a future agent running `task providers:load` will hit the same wall without the context | Add a one-line note in `AGENTS.md` or `extensions/providers/README.md`: "Known host issue: `bin/skill-pi.js` `spawnSync` ENOENT in nix-store node context; use direct pi CLI for door checks until fixed" | Task 2 concern; `lib/providers-load.sh` |
+| Tool economy | The review-package script produced a 5MB diff for the whole branch (47 commits, 4.9MB) — the reviewer had to read a 5MB file to find the authored surface | For large vendor-heavy changes, generate a scoped review package (authored surface only, excluding `dist/` + `src/` vendor trees) so the reviewer reads ~20KB instead of ~5MB | Final review; `scripts/review-package` output |
 
 ## Acceptance Verdict
 
-**Verdict:** accepted | accepted-with-open-items | rejected
+**Verdict:** accepted-with-open-items
 
-**Grounding:** <goal from briefing.md + the Goal-Backward Verification / Traceability Matrix evidence above that supports the verdict>
+**Grounding:** Goal from briefing.md: "Bundle one pi extension that registers the union of the three upstreams so a single `skill-pi` install exposes all of them." Goal-Backward Verification: all 10 truths VERIFIED by named tests. Traceability Matrix: 20/20 scenarios covered by a test that ran and passed. QA gate: PASS. Final review: Standards A- / Spec A, 0 blockers, 0 majors.
 
-**Reasoning:** <2–3 sentences: what drove the verdict>
+**Reasoning:** The change achieves its stated goal — one bundled extension, three upstreams, state confined to the agent dir, no pi source changes. The one open item is the pre-existing wrapper `spawnSync` ENOENT host defect (WARNING, not a defect in this change) which blocks a full exit-0 `task providers:load` in this environment. The base-load and e2e are proven via the direct pi CLI fallback.
 
 ## Open Items (→ next change)
 
-- <item + path to resolution> (or "None")
+- **Wrapper `spawnSync` ENOENT host defect** — `bin/skill-pi.js`'s `spawnSync(process.execPath)` returns `ENOENT` in the nix-store node process context. Blocks a full exit-0 `task providers:load` and the wrapper path of `task providers:e2e`. Fix: use `execFileSync` with explicit `env: process.env`, or resolve `process.execPath` through a fresh exec. Until fixed, use the direct pi CLI as a fallback.
 
 ## Prior-Change Follow-Through
 
 | Prior open item (from previous archived change) | Addressed by this change? | Evidence |
 |--------------------------------------------------|---------------------------|----------|
+| None (first change with open items carried forward) | — | — |
 
 ## Move Evidence (from ship context)
 
 **From:** `.skillgrid/specs/2026-10-14-unified-providers/` → **To:** `.skillgrid/archive/2026-10-14-unified-providers/`
-**`diff -r` readback:** <empty → PASS | verbatim output → FAIL>
+**`diff -r` readback:** empty → PASS
 
 ## Overrides / Waivers / Contradictions
 
-- <QA waiver, human CONCERNS override, size-exception, or "None">
-- <Unrankable contradiction: both statements + sources + when written — or "None">
+- None (QA PASS, no human override needed)
+- None
 
 ## Lineage (observation IDs)
 
-- briefing: <id>
-- blueprint: <id>
-- tasks: <id>
-- ship: <id>
-- report (QA half): <id>
-- research / findings / ADRs: <ids or "none">
+- briefing: `2026-10-14-unified-providers/briefing.md`
+- blueprint: `2026-10-14-unified-providers/blueprint.md`
+- tasks: `2026-10-14-unified-providers/tasks.md`
+- ship: `3b44edb` (archive move commit)
+- report (QA half): `4b82a44` (QA gate commit)
+- research / findings / ADRs: `adr.md` (in-force ADR set: 0001, 0002, 0003, 0006)
