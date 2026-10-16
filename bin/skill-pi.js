@@ -77,6 +77,7 @@ function parseArgs(argv) {
     importAuthFrom: null,
     agentDir: null,
     version: false,
+    update: false,
     passthrough: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -96,6 +97,8 @@ function parseArgs(argv) {
     } else if (a === "--") {
       args.passthrough.push(...argv.slice(i + 1));
       break;
+    } else if (a === "update") {
+      args.update = true;
     } else if (!args.project && !a.startsWith("-")) {
       args.project = resolve(a);
     } else {
@@ -104,6 +107,10 @@ function parseArgs(argv) {
   }
   if (!args.project && !args.importAuthFrom) args.project = process.cwd();
   return args;
+}
+
+function isUpdateCommand(args) {
+  return args.update === true;
 }
 
 function expandHome(p) {
@@ -143,6 +150,7 @@ Usage:
   skill-pi [PROJECT] [pi args...]            Launch the agent for PROJECT (default: cwd)
   skill-pi --import-auth DIR                 Copy auth.json + models.json from DIR (default ~/.pi/agent)
   skill-pi --agent-dir DIR [pi args...]      Override the agent directory
+  skill-pi update                       Update skill-pi + bundled pi (npm install + npm link --force)
 
 Isolation:
   Global config:  ~/.skill-pi/agent (override: $SKILL_PI_AGENT_DIR or --agent-dir)
@@ -174,6 +182,11 @@ async function main() {
   if (args.version) {
     await printVersion();
     return;
+  }
+
+  if (isUpdateCommand(args)) {
+    const { runUpdate } = await import("../lib/update.js");
+    process.exit(runUpdate());
   }
 
   if (args.importAuthFrom) {
@@ -241,4 +254,8 @@ async function main() {
   process.exit(spawn.status ?? 1);
 }
 
-main();
+export { parseArgs, isUpdateCommand, printHelp };
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

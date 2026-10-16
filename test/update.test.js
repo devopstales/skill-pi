@@ -80,3 +80,44 @@ test("runUpdate exits non-zero with a hint when npm install fails", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("runUpdate reports '?' placeholders when versions cannot be read", () => {
+  const root = makeSandbox();
+  rmSync(join(root, "node_modules", "@earendil-works", "pi-coding-agent", "package.json"));
+  const spawn = () => ({ status: 0 });
+  try {
+    const { status, stdout } = withStreams(() => runUpdate({ spawn, pkgRoot: root }));
+    assert.equal(status, 0);
+    assert.match(stdout, /Updated pi from \? to \?/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("parseArgs: bare 'update' is consumed, not passed through", async () => {
+  const { parseArgs } = await import("../bin/skill-pi.js");
+  const args = parseArgs(["update"]);
+  assert.equal(args.update, true);
+  assert.deepEqual(args.passthrough, []);
+  assert.equal(args.project, process.cwd());
+});
+
+test("parseArgs: 'update' with a project still routes to update", async () => {
+  const { parseArgs } = await import("../bin/skill-pi.js");
+  const args = parseArgs(["/tmp/foo", "update"]);
+  assert.equal(args.update, true);
+  assert.deepEqual(args.passthrough, []);
+});
+
+test("parseArgs: '--update' (flag form) is NOT the subcommand", async () => {
+  const { parseArgs } = await import("../bin/skill-pi.js");
+  const args = parseArgs(["--update"]);
+  assert.equal(args.update, false);
+  assert.deepEqual(args.passthrough, ["--update"]);
+});
+
+test("printHelp documents the update subcommand", async () => {
+  const { printHelp } = await import("../bin/skill-pi.js");
+  const { stdout } = withStreams(() => printHelp());
+  assert.match(stdout, /skill-pi update/);
+});
