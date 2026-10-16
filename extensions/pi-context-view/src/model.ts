@@ -1,0 +1,520 @@
+/**
+ * Semantic data model shared by capture, measurement, and UI. Pure types —
+ * no pi access. Hierarchy and provenance live in typed fields; UI code must
+ * never parse labels to recover source, kind, or parent/child relationships.
+ */
+
+import type { PayloadChangeLine } from "./snapshot.ts";
+
+export const PI_SOURCE_ID = "pi";
+export const AGGREGATE_SOURCE_ID = "aggregate:extensions";
+
+/** Everything pi itself assembles: its prompt, context files, skills, and built-in tools. */
+export const PI_SOURCE: InjectionSource = { id: PI_SOURCE_ID, label: "pi", native: true };
+
+/**
+ * Content from an extension that cannot be identified: prompt changes of
+ * unknown source, unregistered tools, custom messages, request-only message
+ * changes, and payload changes. Pi adds no custom messages to the context
+ * (its `pi.share` custom type is a session entry only), so they all come
+ * from some extension.
+ */
+export const AGGREGATE_SOURCE: InjectionSource = {
+	id: AGGREGATE_SOURCE_ID,
+	label: "unattributed",
+	native: false,
+};
+
+/** Pi source kinds whose extensions are loose files, identified only by their path. */
+const PATH_SOURCE_KINDS: ReadonlySet<string> = new Set(["auto", "local", "cli"]);
+
+/** Provenance Pi reports for an extension's tool or command: its source kind and entry path. */
+export interface ExtensionProvenance {
+	/** Source kind, e.g. `npm:pi-web-providers`, `cli`, or `local`. */
+	readonly source: string;
+	readonly path?: string;
+}
+
+/**
+ * Injection source for one non-builtin extension. A package source such as
+ * `npm:pi-web-providers` names itself. Every path extension (`auto`, `local`,
+ * `cli`) gets its own source, labelled like Pi's startup list: the shortest
+ * path tail no other path extension in `roster` ends with, without a trailing
+ * `index.ts` or `index.js`.
+ */
+export function extensionSource(
+	provenance: ExtensionProvenance,
+	roster: readonly ExtensionProvenance[] = [],
+): InjectionSource {
+	const { source, path } = provenance;
+	if (!PATH_SOURCE_KINDS.has(source) || path === undefined) {
+		return { id: `tool-source:${source}`, label: source, native: false };
+	}
+	const others = roster
+		.filter((entry) => PATH_SOURCE_KINDS.has(entry.source) && entry.path !== undefined && entry.path !== path)
+		.map((entry) => pathSegments(entry.path ?? ""));
+	return { id: `tool-source:${source}:${path}`, label: compactPathLabel(pathSegments(path), others), native: false };
+}
+
+/** Shortest tail of `segments` that no other path ends with; the whole path when none is unique. */
+function compactPathLabel(segments: readonly string[], others: readonly string[][]): string {
+	for (let count = 1; count <= segments.length; count++) {
+		const tail = segments.slice(-count).join("/");
+		if (others.every((other) => other.slice(-count).join("/") !== tail)) return tail;
+	}
+	return segments.join("/");
+}
+
+/** Path segments, without a trailing `index.ts` or `index.js` that names no extension. */
+function pathSegments(path: string): string[] {
+	const segments = path.replaceAll("\\", "/").split("/").filter((segment) => segment.length > 0);
+	const last = segments.at(-1);
+	if (segments.length > 1 && (last === "index.ts" || last === "index.js")) segments.pop();
+	return segments;
+}
+
+/** Shared name of pi's own prompt; Usage and Injections must present it identically. */
+export const SYSTEM_PROMPT_LABEL = "System Prompt";
+
+/** Shared name of pi's context files; Usage and Injections must present it identically. */
+export const INSTRUCTION_FILES_LABEL = "Instruction Files";
+
+/** Shared name of pi's skill records; Usage and Injections must present it identically. */
+export const SKILLS_LABEL = "Skills";
+
+/** Shared name of pi's built-in tools; Usage and Injections must present it identically. */
+export const BUILT_IN_TOOLS_LABEL = "Built-in Tools";
+
+/**
+ * How a request-only change touched a contribution, relative to the session:
+ *   added      only the request has it; counted
+ *   modified   the request version differs from the session; the request version is counted
+ *   deleted    the request removed it; reads 0 tokens, text is the session original
+ *   forced     the request carried an extension's forced system prompt instead of pi's; counted
+ */
+export type RequestChange = "added" | "modified" | "deleted" | "forced";
+
+/**
+ * Tokens a contribution gained and lost against its base: pi's default prompt
+ * for rows under pi, the session for extension tools and messages, and the
+ * captured request for payload changes. Rounded so that the base estimate plus
+ * `added` minus `removed` equals the contribution's estimate exactly.
+ * Diff-only rows repeat these numbers without a value of their own.
+ */
+export interface TokenDiff {
+	readonly added: number;
+	readonly removed: number;
+}
+
+/**
+ * Who made a contribution's change, as far as the request shows:
+ *   extension   an extension whose own prompt lines make up the change; `guess` when inferred from the text
+ *   unknown     any other change: Pi reports no editor for prompt, tool, or message edits
+ */
+export type ChangeEditor =
+	| { readonly type: "extension"; readonly source: InjectionSource; readonly attribution?: "guess" }
+	| { readonly type: "unknown" };
+
+/**
+ * What kind of context data an injection item is. Injections lists all
+ * messages in one `message` row and all payload changes in one
+ * `payload-change` row, each with one labeled part per message or finding.
+ */
+export type InjectionKind =
+	| "base-prompt"
+	| "append-prompt"
+	| "context-file"
+	| "skills"
+	| "tool"
+	| "prompt-addition"
+	| "message"
+	| "payload-change";
+
+/** Who contributed one or more injection items. */
+export interface InjectionSource {
+	/** Stable internal id, namespaced by source kind. */
+	readonly id: string;
+	/** Human-readable group label. */
+	readonly label: string;
+	/** True for pi-native components. */
+	readonly native: boolean;
+}
+
+/** Half-open `[start, end)` character range within captured text. */
+export interface TextSpan {
+	readonly start: number;
+	readonly end: number;
+}
+
+/**
+ * Character range of a JSON document embedded in preview text, known from how
+ * the text was built rather than from inspecting it. Full-content previews
+ * expand the run; the compact provider-bound form still backs every estimate.
+ */
+export interface JsonSpan {
+	readonly start: number;
+	readonly end: number;
+}
+
+/**
+ * An extension's line inside the text of a System Prompt part, annotated with
+ * its source in prompt previews. The range covers the line including its
+ * leading line break; the line counts like the rest of the part's text.
+ */
+export interface InjectedReference extends TextSpan {
+	readonly source: InjectionSource;
+	/**
+	 * Tool or slash command of `source` this text belongs to, e.g. `web_search`
+	 * or `/ask`. Qualifies the rendered source label only.
+	 */
+	readonly tool?: string;
+	/**
+	 * Present when the source was inferred from the text itself. Pi reports no
+	 * per-extension provenance for chained prompt edits, so such an attribution
+	 * is a guess and must be rendered as one.
+	 */
+	readonly attribution?: "guess";
+}
+
+/** One labeled part of an item's raw text, used only to shape its preview. */
+export interface InjectionSection {
+	/** Section name rendered as a preview subheader. */
+	readonly label: string;
+	/** Preview text; zero-token dropped and deleted parts do not add to the item's text. */
+	readonly text: string;
+	/** Share of the parent estimate; sections sum exactly to the item total. A diff-only part has no share. */
+	readonly tokens: number;
+	/**
+	 * True when a `--system-prompt` replacement suppressed this part: pi never
+	 * sent its text, so it carries no counted characters and always reads 0 tokens.
+	 */
+	readonly dropped?: boolean;
+	/**
+	 * True when an extension moved this part out of the region pi renders it
+	 * into. Pi still sends the text, so it counts exactly as an unmoved part.
+	 */
+	readonly moved?: boolean;
+	/** Request-only change of this part; a deleted part carries no counted characters. */
+	readonly change?: RequestChange;
+	/** Tokens this part gained and lost against its base; absent when unchanged. */
+	readonly diff?: TokenDiff;
+	/** True when the message or child row this part stands for is request-only; see `InjectionItem.requestOnly`. */
+	readonly requestOnly?: boolean;
+	/** True for a part of a diff-only item: its subheader shows the diff without a token share. */
+	readonly diffOnly?: boolean;
+	/** Present when the part's diff belongs to an owner inferred from the text itself. */
+	readonly attribution?: "guess";
+	/**
+	 * True when the part is a tool declaration a payload change touched: its
+	 * label carries a `tool:` prefix, so it reads apart from a `tool call` part.
+	 */
+	readonly toolDeclaration?: boolean;
+	/**
+	 * Changed lines of a payload change, in payload order, rendered instead of
+	 * `text`. `text` holds only the added lines, which the share counts.
+	 */
+	readonly changedLines?: readonly PayloadChangeLine[];
+	/** Injections message metadata; its presence enables the diff body, even for an unchanged message. */
+	readonly message?: {
+		/** User prompts through the source entry on the whole branch; absent before the first genuine prompt. */
+		readonly userPrompt?: number;
+		/** Content-only session version of a modified message, redacted like `text` and never counted again. */
+		readonly original?: { readonly text: string; readonly jsonSpan?: JsonSpan };
+	};
+	/** Serialized JSON inside `text`, e.g. a tool's parameter schema. */
+	readonly jsonSpan?: JsonSpan;
+	/** Extension lines inside `text`, annotated with their source in previews. */
+	readonly injectedReferences?: readonly InjectedReference[];
+}
+
+/** One measured context injection. */
+export interface InjectionItem {
+	/** Stable id, unique within a snapshot. */
+	readonly id: string;
+	readonly kind: InjectionKind;
+	readonly source: InjectionSource;
+	/** Human-readable item label without embedded hierarchy or source. */
+	readonly label: string;
+	readonly chars: number;
+	/** Estimated tokens (chars/4 heuristic unless measured as a message). */
+	readonly tokens: number;
+	/** Raw injected text for preview. Process-local; never log or persist. */
+	readonly text: string;
+	/** Serialized JSON inside `text`, e.g. non-string message content. */
+	readonly jsonSpan?: JsonSpan;
+	/** Labeled parts of `text`, e.g. a tool's prompt lines and definition; never extra tokens. */
+	readonly sections?: readonly InjectionSection[];
+	/** True when a `--system-prompt` replacement suppressed this item; it reads 0 tokens. */
+	readonly dropped?: boolean;
+	/** True when an extension moved this part out of the region pi renders it into. */
+	readonly moved?: boolean;
+	/** Request-only change of this contribution; a deleted one reads 0 tokens. */
+	readonly change?: RequestChange;
+	/** Tokens this contribution gained and lost against its base; a parent sums its children. */
+	readonly diff?: TokenDiff;
+	/**
+	 * True when the request sent other content than the session keeps: a
+	 * request-only addition, edit, or deletion, alone or mixed with saved
+	 * changes, or forced prompt text that differs from the session's. Only
+	 * Injections measures it; parents and payload changes never carry it.
+	 */
+	readonly requestOnly?: boolean;
+	/**
+	 * True when the session's own version already differs from the base, so
+	 * part of the diff is saved: extension lines in a pi part, an extension's
+	 * own part the session keeps, or `system prompt` row changes the session
+	 * has. Only System Prompt parts and `system prompt` rows carry it; every
+	 * other row compares with the session.
+	 */
+	readonly savedChange?: boolean;
+	/** False when a request-only prompt/tool leaf has no original in the session; absent outside Injections. */
+	readonly sessionOriginal?: boolean;
+	/**
+	 * Who made a System Prompt part's diff, in prompt order, as its `system
+	 * prompt` rows split it. Absent means unknown, as for every other row.
+	 */
+	readonly editors?: readonly ChangeEditor[];
+	/**
+	 * True for a row that shows only the diff of text another row counts: an
+	 * extension's or unattributed `system prompt` row, whose changes System
+	 * Prompt and its siblings already count. It reads 0 tokens, and its diff
+	 * adds to neither its group nor the total.
+	 */
+	readonly diffOnly?: boolean;
+	/** Extension lines inside `text` of a standalone System Prompt part child. */
+	readonly injectedReferences?: readonly InjectedReference[];
+	/** Constituent sub-items (e.g. individual built-in tools or skills), largest first. */
+	readonly children?: readonly InjectionItem[];
+}
+
+/** Items of one source, with a precomputed total. */
+export interface InjectionGroup {
+	readonly source: InjectionSource;
+	readonly items: readonly InjectionItem[];
+	readonly totalTokens: number;
+	/** Sum of the token diffs of the items it counts, leaving out diff-only items; absent when none changed. */
+	readonly diff?: TokenDiff;
+}
+
+/**
+ * Measured contributions of one request, grouped by source: what the Injections
+ * view presents, and the prompt/tool measurement Usage classifies.
+ */
+export interface InjectionSnapshot {
+	readonly groups: readonly InjectionGroup[];
+	readonly totalTokens: number;
+	/** Names of declared tools Pi hid from the model; the groups leave them out. Absent means none. */
+	readonly hiddenTools?: readonly string[];
+}
+
+/** How an invisible reasoning-token estimate was derived without retaining raw signature bytes. */
+export interface InvisibleReasoningEstimate {
+	/** Invisible-token estimate; signature-size proxies are not added to category totals. */
+	readonly tokens: number;
+	/** Whether the estimate came from a provider usage breakdown or opaque signature length. */
+	readonly basis: "provider-reported" | "signature-proxy";
+	/** Whether the message carries an opaque replay signature. */
+	readonly encoded: boolean;
+}
+
+/** One estimated usage category, optionally with a constituent breakdown. */
+export interface UsageCategory {
+	/** Stable id, unique within a usage snapshot level. */
+	readonly id: string;
+	readonly label: string;
+	/** Estimated tokens (chars/4 heuristic unless provider-reported reasoning is available). */
+	readonly tokens: number;
+	/** Breakdown of the parent (e.g. per tool or per customType), not additional totals. */
+	readonly children?: readonly UsageCategory[];
+	/** Content entries backing the category preview; leaves only. */
+	readonly entries?: readonly UsagePreviewEntry[];
+}
+
+/** One content entry shown in a Usage category preview. */
+export interface UsagePreviewEntry {
+	/** Message time (epoch ms); absent for prompt and tool components. */
+	readonly timestamp?: number;
+	/** Bracket header cells, e.g. ["assistant", "read"] or ["code-style"]. */
+	readonly breadcrumb: readonly string[];
+	/** Tokens this entry contributes to its category, including any counted invisible reasoning. */
+	readonly tokens: number;
+	/** Visible-text share shown before invisible reasoning metadata. */
+	readonly visibleTokens?: number;
+	/** Message-level invisible reasoning metadata, attached once without retaining raw signature bytes. */
+	readonly invisibleReasoning?: InvisibleReasoningEstimate;
+	/** Raw content for preview. Process-local; never log or persist. */
+	readonly text: string;
+	/** Serialized JSON inside `text`, e.g. tool-call arguments. */
+	readonly jsonSpan?: JsonSpan;
+	/** Labeled parts of `text`, carried from the measured item; never extra tokens. */
+	readonly sections?: readonly InjectionSection[];
+	/** Request-only change of the measured item; Usage measures only `forced`. */
+	readonly change?: RequestChange;
+}
+
+/** Pi-reported usage; tokens/percent are omitted when unknown (e.g. right after compaction). */
+export interface ReportedContextUsage {
+	readonly tokens?: number;
+	readonly contextWindow: number;
+	readonly percent?: number;
+}
+
+/** On-demand estimated context composition presented by the Usage view. */
+export interface ContextUsageSnapshot {
+	readonly computedAt: Date;
+	readonly modelLabel?: string;
+	readonly reported?: ReportedContextUsage;
+	readonly categories: readonly UsageCategory[];
+	/** Sum of the top-level category estimates. */
+	readonly estimatedTokens: number;
+	/** Auto-compaction reserve (settings `reserveTokens`); absent when auto-compaction is disabled. */
+	readonly autoCompactReserveTokens?: number;
+}
+
+/**
+ * Group measured items by source. Pi-native components come first, extension
+ * sources follow by total size, and the unattributable aggregate comes last.
+ * Items inside each group follow the order pi assembles them into a request
+ * (base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools), then a `system prompt` row, messages, and payload changes. Returned
+ * objects own all nested data; later mutation of the input cannot change the
+ * groups.
+ */
+export function groupInjections(items: readonly InjectionItem[]): InjectionGroup[] {
+	const groups = new Map<string, MutableGroup>();
+	for (const input of items) {
+		const item = copyItem(input);
+		let group = groups.get(item.source.id);
+		if (group === undefined) {
+			group = { source: item.source, items: [], totalTokens: 0 };
+			groups.set(item.source.id, group);
+		}
+		group.items.push(item);
+		group.totalTokens += item.diffOnly === true ? 0 : item.tokens;
+	}
+	for (const group of groups.values()) {
+		group.items.sort(compareItems);
+		// A diff-only row repeats changes other rows already count
+		group.diff = sumTokenDiffs(group.items.filter((item) => item.diffOnly !== true).map((item) => item.diff));
+	}
+	return [...groups.values()].sort(compareGroups);
+}
+
+/** Sum of token diffs, or undefined when none adds or removes a token. */
+export function sumTokenDiffs(diffs: Iterable<TokenDiff | undefined>): TokenDiff | undefined {
+	let added = 0;
+	let removed = 0;
+	for (const diff of diffs) {
+		added += diff?.added ?? 0;
+		removed += diff?.removed ?? 0;
+	}
+	return added === 0 && removed === 0 ? undefined : { added, removed };
+}
+
+/** Build an owned snapshot from measured items. */
+export function buildSnapshot(items: readonly InjectionItem[]): InjectionSnapshot {
+	const groups = groupInjections(items);
+	return {
+		groups,
+		totalTokens: groups.reduce((sum, group) => sum + group.totalTokens, 0),
+	};
+}
+
+/** Internal accumulator for groupInjections before freezing into InjectionGroup. */
+interface MutableGroup {
+	source: InjectionSource;
+	items: InjectionItem[];
+	totalTokens: number;
+	diff?: TokenDiff;
+}
+
+/** Owned copy of an item, including its nested source, spans, and children. */
+function copyItem(item: InjectionItem): InjectionItem {
+	return {
+		...item,
+		source: { ...item.source },
+		jsonSpan: copyJsonSpan(item.jsonSpan),
+		diff: copyTokenDiff(item.diff),
+		editors: item.editors?.map((editor) =>
+			editor.type === "extension" ? { ...editor, source: { ...editor.source } } : { ...editor }),
+		injectedReferences: copyInjectedReferences(item.injectedReferences),
+		sections: item.sections?.map((section) => ({
+			...section,
+			diff: copyTokenDiff(section.diff),
+			changedLines: section.changedLines?.map((line) => ({ ...line })),
+			message: section.message === undefined ? undefined : {
+				...section.message,
+				original: section.message.original === undefined ? undefined : {
+					...section.message.original, jsonSpan: copyJsonSpan(section.message.original.jsonSpan),
+				},
+			},
+			jsonSpan: copyJsonSpan(section.jsonSpan),
+			injectedReferences: copyInjectedReferences(section.injectedReferences),
+		})),
+		children: item.children?.map((child) => copyItem(child)),
+	};
+}
+
+/** Own reference records and their nested provenance. */
+function copyInjectedReferences(
+	references: readonly InjectedReference[] | undefined,
+): InjectedReference[] | undefined {
+	return references?.map((reference) => ({ ...reference, source: { ...reference.source } }));
+}
+
+/** Owned copy of an optional token diff. */
+function copyTokenDiff(diff: TokenDiff | undefined): TokenDiff | undefined {
+	return diff === undefined ? undefined : { ...diff };
+}
+
+/** Owned copy of an optional span. */
+function copyJsonSpan(span: JsonSpan | undefined): JsonSpan | undefined {
+	return span === undefined ? undefined : { ...span };
+}
+
+/**
+ * Order items within a group by the order pi assembles them into a request:
+ * base prompt, appended prompt, context files, skills, built-in tools, other
+ * tools, then a `system prompt` row, messages, and payload changes. Items of
+ * one rank follow by size descending.
+ */
+function compareItems(a: InjectionItem, b: InjectionItem): number {
+	const rankDelta = itemRank(a) - itemRank(b);
+	if (rankDelta !== 0) return rankDelta;
+	return b.tokens - a.tokens;
+}
+
+/** Fixed display rank by kind; built-in tools precede other tools. */
+function itemRank(item: InjectionItem): number {
+	switch (item.kind) {
+		case "base-prompt":
+			return 0;
+		case "append-prompt":
+			return 1;
+		case "context-file":
+			return 2;
+		case "skills":
+			return 3;
+		case "tool":
+			return item.id === "tool:builtin" ? 4 : 5;
+		case "prompt-addition":
+			return 6;
+		case "message":
+			return 7;
+		case "payload-change":
+			return 8;
+	}
+}
+
+/** Order groups: pi-native first, then extensions by size, and the aggregate last. */
+function compareGroups(a: InjectionGroup, b: InjectionGroup): number {
+	const rankDelta = groupRank(a.source) - groupRank(b.source);
+	if (rankDelta !== 0) return rankDelta;
+	return b.totalTokens - a.totalTokens;
+}
+
+/** Fixed display rank by source kind; extension sources share one rank. */
+function groupRank(source: InjectionSource): number {
+	if (source.native) return 0;
+	return source.id === AGGREGATE_SOURCE_ID ? 2 : 1;
+}

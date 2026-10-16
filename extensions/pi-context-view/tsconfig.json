@@ -1,0 +1,7 @@
+{
+  "extends": "../skill-pi-tui/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023"
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+}

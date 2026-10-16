@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1103" viewBox="0 0 920 1103" role="img" aria-labelledby="title desc">
+  <title id="title">Pi dark theme color palette</title>
+  <desc id="desc">Swatches for Pi semantic theme colors, grouped by purpose.</desc>
+  <rect width="920" height="1103" rx="12" fill="#18181e"/>
+  <text x="24" y="33" fill="#d4d4d4" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="18" font-weight="700">Pi built-in dark theme</text>
+  <style>
+    .section { fill: #f0c674; font: 700 15px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .name { fill: #d4d4d4; font: 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .hex { fill: #808080; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; text-anchor: end; }
+    .swatch { stroke: #808080; stroke-width: 1; }
+  </style>
+  <rect x="18" y="54" width="432" height="1031" rx="8" fill="#1e1e24"/>
+  <text class="section" x="34" y="85">Core UI</text>
+  <rect class="swatch" x="34" y="112" width="42" height="18" rx="3" fill="#8abeb7"/>
+  <text class="name" x="90" y="126">accent</text>
+  <text class="hex" x="434" y="126">#8abeb7</text>
+  <rect class="swatch" x="34" y="139" width="42" height="18" rx="3" fill="#5f87ff"/>
+  <text class="name" x="90" y="153">border</text>
+  <text class="hex" x="434" y="153">#5f87ff</text>
+  <rect class="swatch" x="34" y="166" width="42" height="18" rx="3" fill="#00d7ff"/>
+  <text class="name" x="90" y="180">borderAccent</text>
+  <text class="hex" x="434" y="180">#00d7ff</text>
+  <rect class="swatch" x="34" y="193" width="42" height="18" rx="3" fill="#505050"/>
+  <text class="name" x="90" y="207">borderMuted</text>
+  <text class="hex" x="434" y="207">#505050</text>
+  <rect class="swatch" x="34" y="220" width="42" height="18" rx="3" fill="#b5bd68"/>
+  <text class="name" x="90" y="234">success</text>
+  <text class="hex" x="434" y="234">#b5bd68</text>
+  <rect class="swatch" x="34" y="247" width="42" height="18" rx="3" fill="#cc6666"/>
+  <text class="name" x="90" y="261">error</text>
+  <text class="hex" x="434" y="261">#cc6666</text>
+  <rect class="swatch" x="34" y="274" width="42" height="18" rx="3" fill="#ffff00"/>
+  <text class="name" x="90" y="288">warning</text>
+  <text class="hex" x="434" y="288">#ffff00</text>
+  <rect class="swatch" x="34" y="301" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="90" y="315">muted</text>
+  <text class="hex" x="434" y="315">#808080</text>
+  <rect class="swatch" x="34" y="328" width="42" height="18" rx="3" fill="#666666"/>
+  <text class="name" x="90" y="342">dim</text>
+  <text class="hex" x="434" y="342">#666666</text>
+  <rect class="swatch" x="34" y="355" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="369">text</text>
+  <text class="hex" x="434" y="369">#d4d4d4</text>
+  <rect class="swatch" x="34" y="382" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="90" y="396">thinkingText</text>
+  <text class="hex" x="434" y="396">#808080</text>
+  <rect class="swatch" x="34" y="409" width="42" height="18" rx="3" fill="#505050"/>
+  <text class="name" x="90" y="423">scrollbarTrack</text>
+  <text class="hex" x="434" y="423">#505050</text>
+  <rect class="swatch" x="34" y="436" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="450">scrollbarThumb</text>
+  <text class="hex" x="434" y="450">#d4d4d4</text>
+  <text class="section" x="34" y="489">Backgrounds and content</text>
+  <rect class="swatch" x="34" y="516" width="42" height="18" rx="3" fill="#3a3a4a"/>
+  <text class="name" x="90" y="530">selectedBg</text>
+  <text class="hex" x="434" y="530">#3a3a4a</text>
+  <rect class="swatch" x="34" y="543" width="42" height="18" rx="3" fill="#3a3a4a"/>
+  <text class="name" x="90" y="557">searchMatchBg</text>
+  <text class="hex" x="434" y="557">#3a3a4a</text>
+  <rect class="swatch" x="34" y="570" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="584">searchMatchText</text>
+  <text class="hex" x="434" y="584">#d4d4d4</text>
+  <rect class="swatch" x="34" y="597" width="42" height="18" rx="3" fill="#343541"/>
+  <text class="name" x="90" y="611">userMessageBg</text>
+  <text class="hex" x="434" y="611">#343541</text>
+  <rect class="swatch" x="34" y="624" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="638">userMessageText</text>
+  <text class="hex" x="434" y="638">#d4d4d4</text>
+  <rect class="swatch" x="34" y="651" width="42" height="18" rx="3" fill="#2d2838"/>
+  <text class="name" x="90" y="665">customMessageBg</text>
+  <text class="hex" x="434" y="665">#2d2838</text>
+  <rect class="swatch" x="34" y="678" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="692">customMessageText</text>
+  <text class="hex" x="434" y="692">#d4d4d4</text>
+  <rect class="swatch" x="34" y="705" width="42" height="18" rx="3" fill="#9575cd"/>
+  <text class="name" x="90" y="719">customMessageLabel</text>
+  <text class="hex" x="434" y="719">#9575cd</text>
+  <rect class="swatch" x="34" y="732" width="42" height="18" rx="3" fill="#282832"/>
+  <text class="name" x="90" y="746">toolPendingBg</text>
+  <text class="hex" x="434" y="746">#282832</text>
+  <rect class="swatch" x="34" y="759" width="42" height="18" rx="3" fill="#283228"/>
+  <text class="name" x="90" y="773">toolSuccessBg</text>
+  <text class="hex" x="434" y="773">#283228</text>
+  <rect class="swatch" x="34" y="786" width="42" height="18" rx="3" fill="#3c2828"/>
+  <text class="name" x="90" y="800">toolErrorBg</text>
+  <text class="hex" x="434" y="800">#3c2828</text>
+  <rect class="swatch" x="34" y="813" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="90" y="827">toolTitle</text>
+  <text class="hex" x="434" y="827">#d4d4d4</text>
+  <rect class="swatch" x="34" y="840" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="90" y="854">toolOutput</text>
+  <text class="hex" x="434" y="854">#808080</text>
+  <text class="section" x="34" y="893">Tool diffs</text>
+  <rect class="swatch" x="34" y="920" width="42" height="18" rx="3" fill="#b5bd68"/>
+  <text class="name" x="90" y="934">toolDiffAdded</text>
+  <text class="hex" x="434" y="934">#b5bd68</text>
+  <rect class="swatch" x="34" y="947" width="42" height="18" rx="3" fill="#cc6666"/>
+  <text class="name" x="90" y="961">toolDiffRemoved</text>
+  <text class="hex" x="434" y="961">#cc6666</text>
+  <rect class="swatch" x="34" y="974" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="90" y="988">toolDiffContext</text>
+  <text class="hex" x="434" y="988">#808080</text>
+  <text class="section" x="34" y="1027">Bash mode</text>
+  <rect class="swatch" x="34" y="1054" width="42" height="18" rx="3" fill="#b5bd68"/>
+  <text class="name" x="90" y="1068">bashMode</text>
+  <text class="hex" x="434" y="1068">#b5bd68</text>
+  <rect x="470" y="54" width="432" height="1031" rx="8" fill="#1e1e24"/>
+  <text class="section" x="486" y="85">Markdown</text>
+  <rect class="swatch" x="486" y="112" width="42" height="18" rx="3" fill="#f0c674"/>
+  <text class="name" x="542" y="126">mdHeading</text>
+  <text class="hex" x="886" y="126">#f0c674</text>
+  <rect class="swatch" x="486" y="139" width="42" height="18" rx="3" fill="#81a2be"/>
+  <text class="name" x="542" y="153">mdLink</text>
+  <text class="hex" x="886" y="153">#81a2be</text>
+  <rect class="swatch" x="486" y="166" width="42" height="18" rx="3" fill="#666666"/>
+  <text class="name" x="542" y="180">mdLinkUrl</text>
+  <text class="hex" x="886" y="180">#666666</text>
+  <rect class="swatch" x="486" y="193" width="42" height="18" rx="3" fill="#8abeb7"/>
+  <text class="name" x="542" y="207">mdCode</text>
+  <text class="hex" x="886" y="207">#8abeb7</text>
+  <rect class="swatch" x="486" y="220" width="42" height="18" rx="3" fill="#b5bd68"/>
+  <text class="name" x="542" y="234">mdCodeBlock</text>
+  <text class="hex" x="886" y="234">#b5bd68</text>
+  <rect class="swatch" x="486" y="247" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="542" y="261">mdCodeBlockBorder</text>
+  <text class="hex" x="886" y="261">#808080</text>
+  <rect class="swatch" x="486" y="274" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="542" y="288">mdQuote</text>
+  <text class="hex" x="886" y="288">#808080</text>
+  <rect class="swatch" x="486" y="301" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="542" y="315">mdQuoteBorder</text>
+  <text class="hex" x="886" y="315">#808080</text>
+  <rect class="swatch" x="486" y="328" width="42" height="18" rx="3" fill="#808080"/>
+  <text class="name" x="542" y="342">mdHr</text>
+  <text class="hex" x="886" y="342">#808080</text>
+  <rect class="swatch" x="486" y="355" width="42" height="18" rx="3" fill="#8abeb7"/>
+  <text class="name" x="542" y="369">mdListBullet</text>
+  <text class="hex" x="886" y="369">#8abeb7</text>
+  <text class="section" x="486" y="408">Syntax highlighting</text>
+  <rect class="swatch" x="486" y="435" width="42" height="18" rx="3" fill="#6a9955"/>
+  <text class="name" x="542" y="449">syntaxComment</text>
+  <text class="hex" x="886" y="449">#6a9955</text>
+  <rect class="swatch" x="486" y="462" width="42" height="18" rx="3" fill="#569cd6"/>
+  <text class="name" x="542" y="476">syntaxKeyword</text>
+  <text class="hex" x="886" y="476">#569cd6</text>
+  <rect class="swatch" x="486" y="489" width="42" height="18" rx="3" fill="#dcdcaa"/>
+  <text class="name" x="542" y="503">syntaxFunction</text>
+  <text class="hex" x="886" y="503">#dcdcaa</text>
+  <rect class="swatch" x="486" y="516" width="42" height="18" rx="3" fill="#9cdcfe"/>
+  <text class="name" x="542" y="530">syntaxVariable</text>
+  <text class="hex" x="886" y="530">#9cdcfe</text>
+  <rect class="swatch" x="486" y="543" width="42" height="18" rx="3" fill="#ce9178"/>
+  <text class="name" x="542" y="557">syntaxString</text>
+  <text class="hex" x="886" y="557">#ce9178</text>
+  <rect class="swatch" x="486" y="570" width="42" height="18" rx="3" fill="#b5cea8"/>
+  <text class="name" x="542" y="584">syntaxNumber</text>
+  <text class="hex" x="886" y="584">#b5cea8</text>
+  <rect class="swatch" x="486" y="597" width="42" height="18" rx="3" fill="#4ec9b0"/>
+  <text class="name" x="542" y="611">syntaxType</text>
+  <text class="hex" x="886" y="611">#4ec9b0</text>
+  <rect class="swatch" x="486" y="624" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="542" y="638">syntaxOperator</text>
+  <text class="hex" x="886" y="638">#d4d4d4</text>
+  <rect class="swatch" x="486" y="651" width="42" height="18" rx="3" fill="#d4d4d4"/>
+  <text class="name" x="542" y="665">syntaxPunctuation</text>
+  <text class="hex" x="886" y="665">#d4d4d4</text>
+  <text class="section" x="486" y="704">Thinking-level borders</text>
+  <rect class="swatch" x="486" y="731" width="42" height="18" rx="3" fill="#505050"/>
+  <text class="name" x="542" y="745">thinkingOff</text>
+  <text class="hex" x="886" y="745">#505050</text>
+  <rect class="swatch" x="486" y="758" width="42" height="18" rx="3" fill="#6e6e6e"/>
+  <text class="name" x="542" y="772">thinkingMinimal</text>
+  <text class="hex" x="886" y="772">#6e6e6e</text>
+  <rect class="swatch" x="486" y="785" width="42" height="18" rx="3" fill="#5f87af"/>
+  <text class="name" x="542" y="799">thinkingLow</text>
+  <text class="hex" x="886" y="799">#5f87af</text>
+  <rect class="swatch" x="486" y="812" width="42" height="18" rx="3" fill="#81a2be"/>
+  <text class="name" x="542" y="826">thinkingMedium</text>
+  <text class="hex" x="886" y="826">#81a2be</text>
+  <rect class="swatch" x="486" y="839" width="42" height="18" rx="3" fill="#b294bb"/>
+  <text class="name" x="542" y="853">thinkingHigh</text>
+  <text class="hex" x="886" y="853">#b294bb</text>
+  <rect class="swatch" x="486" y="866" width="42" height="18" rx="3" fill="#d183e8"/>
+  <text class="name" x="542" y="880">thinkingXhigh</text>
+  <text class="hex" x="886" y="880">#d183e8</text>
+  <rect class="swatch" x="486" y="893" width="42" height="18" rx="3" fill="#ff5fff"/>
+  <text class="name" x="542" y="907">thinkingMax</text>
+  <text class="hex" x="886" y="907">#ff5fff</text>
+  <text class="section" x="486" y="946">HTML export</text>
+  <rect class="swatch" x="486" y="973" width="42" height="18" rx="3" fill="#18181e"/>
+  <text class="name" x="542" y="987">pageBg</text>
+  <text class="hex" x="886" y="987">#18181e</text>
+  <rect class="swatch" x="486" y="1000" width="42" height="18" rx="3" fill="#1e1e24"/>
+  <text class="name" x="542" y="1014">cardBg</text>
+  <text class="hex" x="886" y="1014">#1e1e24</text>
+  <rect class="swatch" x="486" y="1027" width="42" height="18" rx="3" fill="#3c3728"/>
+  <text class="name" x="542" y="1041">infoBg</text>
+  <text class="hex" x="886" y="1041">#3c3728</text>
+</svg>

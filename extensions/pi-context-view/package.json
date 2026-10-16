@@ -1,0 +1,60 @@
+{
+  "name": "@devopstales/pi-context-view",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Pi extension to visualize context usage and inspect the hidden parts (base prompt, tool definitions, extension injections). Based on dimk90's pi-context-view (MIT), homogenized for the skill-pi agent dir and conf.d config contract.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-package",
+    "extension",
+    "coding-agent",
+    "context",
+    "tokens",
+    "usage",
+    "injections",
+    "tui"
+  ],
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "test": "node test/run.ts",
+    "check": "tsc --noEmit -p ."
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "image": "https://media.githubusercontent.com/media/dimk90/pi-context-view/9a9f9f4fafaa09c77759485d53c42f8694650755/doc/images/pi-context-view.png"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.2.0",
+    "@earendil-works/pi-tui": "1.2.0",
+    "@types/node": "^22.20.1",
+    "typescript": "^7.0.2"
+  }
+}
