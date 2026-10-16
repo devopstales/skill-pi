@@ -104,13 +104,16 @@ export async function triggerPreToolUseHooks(
   return result;
 }
 
-export async function triggerPostToolUseHooks(
+type PostToolUseEventName = "PostToolUse" | "PostToolUseFailure";
+
+async function triggerPostToolUseVariant(
+  eventName: PostToolUseEventName,
   toolName: string,
   context: HookExecutionContext,
   settings: SettingsFile | undefined,
   notify?: NotifyFn,
 ): Promise<PostToolUseResult> {
-  const groups = getHookGroups(settings, "PostToolUse");
+  const groups = getHookGroups(settings, eventName);
   const result: PostToolUseResult = {};
 
   for (const group of groups) {
@@ -121,10 +124,10 @@ export async function triggerPostToolUseHooks(
 
       try {
         const { hookResult, plainStdout, jsonOutput, commonOutput } =
-          await executeParsedHook(hook, context, "PostToolUse");
+          await executeParsedHook(hook, context, eventName);
 
         if (hookResult.exitCode === 2) {
-          notify?.(`PostToolUse feedback: ${hookResult.stderr}`, "warning");
+          notify?.(`${eventName} feedback: ${hookResult.stderr}`, "warning");
           continue;
         }
 
@@ -147,27 +150,36 @@ export async function triggerPostToolUseHooks(
             additionalContext,
           );
 
-          const patch = extractToolResultPatch("PostToolUse", jsonOutput);
+          const patch = extractToolResultPatch(eventName, jsonOutput);
           if (patch.content !== undefined) result.content = patch.content;
           if (patch.details !== undefined) result.details = patch.details;
           if (patch.isError !== undefined) result.isError = patch.isError;
         } else if (hookResult.exitCode === 0 && plainStdout) {
-          notify?.(`PostToolUse output: ${plainStdout}`, "info");
+          notify?.(`${eventName} output: ${plainStdout}`, "info");
         }
 
         if (hookResult.exitCode !== 0 && hookResult.exitCode !== 2) {
           notify?.(
-            `PostToolUse hook failed (exit ${hookResult.exitCode}): ${hookResult.stderr}`,
+            `${eventName} hook failed (exit ${hookResult.exitCode}): ${hookResult.stderr}`,
             "error",
           );
         }
       } catch (err) {
-        notify?.(`PostToolUse hook error: ${String(err)}`, "error");
+        notify?.(`${eventName} hook error: ${String(err)}`, "error");
       }
     }
   }
 
   return result;
+}
+
+export async function triggerPostToolUseHooks(
+  toolName: string,
+  context: HookExecutionContext,
+  settings: SettingsFile | undefined,
+  notify?: NotifyFn,
+): Promise<PostToolUseResult> {
+  return triggerPostToolUseVariant("PostToolUse", toolName, context, settings, notify);
 }
 
 export async function triggerPostToolUseFailureHooks(
@@ -176,67 +188,7 @@ export async function triggerPostToolUseFailureHooks(
   settings: SettingsFile | undefined,
   notify?: NotifyFn,
 ): Promise<PostToolUseResult> {
-  const groups = getHookGroups(settings, "PostToolUseFailure");
-  const result: PostToolUseResult = {};
-
-  for (const group of groups) {
-    if (!matcherMatches(group.matcher, toolName)) continue;
-
-    for (const hook of group.hooks ?? []) {
-      if (hook.if && !hookIfMatches(context, hook.if)) continue;
-
-      try {
-        const { hookResult, plainStdout, jsonOutput, commonOutput } =
-          await executeParsedHook(hook, context, "PostToolUseFailure");
-
-        if (hookResult.exitCode === 2) {
-          notify?.(`PostToolUseFailure feedback: ${hookResult.stderr}`, "warning");
-          continue;
-        }
-
-        if (hookResult.exitCode === 0 && jsonOutput) {
-          const hookSpecific = commonOutput?.hookSpecificOutput;
-
-          if (commonOutput?.stopProcessing) {
-            result.stopProcessing = true;
-            result.stopReason = commonOutput.stopReason;
-          }
-
-          const additionalContext = getStringField(
-            hookSpecific?.additionalContext,
-            jsonOutput.additionalContext,
-            jsonOutput.decision === "block" ? jsonOutput.reason : undefined,
-          );
-
-          result.additionalContext = appendAdditionalContext(
-            result.additionalContext,
-            additionalContext,
-          );
-
-          const patch = extractToolResultPatch(
-            "PostToolUseFailure",
-            jsonOutput,
-          );
-          if (patch.content !== undefined) result.content = patch.content;
-          if (patch.details !== undefined) result.details = patch.details;
-          if (patch.isError !== undefined) result.isError = patch.isError;
-        } else if (hookResult.exitCode === 0 && plainStdout) {
-          notify?.(`PostToolUseFailure output: ${plainStdout}`, "info");
-        }
-
-        if (hookResult.exitCode !== 0 && hookResult.exitCode !== 2) {
-          notify?.(
-            `PostToolUseFailure hook failed (exit ${hookResult.exitCode}): ${hookResult.stderr}`,
-            "error",
-          );
-        }
-      } catch (err) {
-        notify?.(`PostToolUseFailure hook error: ${String(err)}`, "error");
-      }
-    }
-  }
-
-  return result;
+  return triggerPostToolUseVariant("PostToolUseFailure", toolName, context, settings, notify);
 }
 
 export function registerToolHooks(pi: ExtensionAPI, shared: HookModuleContext) {
