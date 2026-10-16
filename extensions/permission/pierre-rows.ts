@@ -130,13 +130,7 @@ function buildUnifiedRows(
           rows.push({
             kind: "line",
             lineType: "context",
-            lineNumber: additionLineNumber + offset,
-            spans: flattenHighlightedLine(
-              highlighted.additionLines[additionLineIndex + offset],
-              palette,
-              palette.contextRowBg,
-              cleanDiffLine(metadata.additionLines[additionLineIndex + offset]),
-            ),
+            ...diffLineContent(additionLineNumber + offset, highlighted.additionLines, additionLineIndex + offset, metadata.additionLines, additionLineIndex + offset, palette.contextRowBg, palette),
           });
         }
 
@@ -151,13 +145,7 @@ function buildUnifiedRows(
         rows.push({
           kind: "line",
           lineType: "deletion",
-          lineNumber: deletionLineNumber + offset,
-          spans: flattenHighlightedLine(
-            highlighted.deletionLines[deletionLineIndex + offset],
-            palette,
-            palette.deletionRowBg,
-            cleanDiffLine(metadata.deletionLines[deletionLineIndex + offset]),
-          ),
+          ...diffLineContent(deletionLineNumber + offset, highlighted.deletionLines, deletionLineIndex + offset, metadata.deletionLines, deletionLineIndex + offset, palette.deletionRowBg, palette),
         });
       }
 
@@ -165,13 +153,7 @@ function buildUnifiedRows(
         rows.push({
           kind: "line",
           lineType: "addition",
-          lineNumber: additionLineNumber + offset,
-          spans: flattenHighlightedLine(
-            highlighted.additionLines[additionLineIndex + offset],
-            palette,
-            palette.additionRowBg,
-            cleanDiffLine(metadata.additionLines[additionLineIndex + offset]),
-          ),
+          ...diffLineContent(additionLineNumber + offset, highlighted.additionLines, additionLineIndex + offset, metadata.additionLines, additionLineIndex + offset, palette.additionRowBg, palette),
         });
       }
 
@@ -221,23 +203,11 @@ function buildSplitRows(
             kind: "line",
             left: {
               lineType: "context",
-              lineNumber: deletionLineNumber + offset,
-              spans: flattenHighlightedLine(
-                highlighted.deletionLines[deletionLineIndex + offset],
-                palette,
-                palette.contextRowBg,
-                cleanDiffLine(metadata.deletionLines[deletionLineIndex + offset]),
-              ),
+              ...diffLineContent(deletionLineNumber + offset, highlighted.deletionLines, deletionLineIndex + offset, metadata.deletionLines, deletionLineIndex + offset, palette.contextRowBg, palette),
             },
             right: {
               lineType: "context",
-              lineNumber: additionLineNumber + offset,
-              spans: flattenHighlightedLine(
-                highlighted.additionLines[additionLineIndex + offset],
-                palette,
-                palette.contextRowBg,
-                cleanDiffLine(metadata.additionLines[additionLineIndex + offset]),
-              ),
+              ...diffLineContent(additionLineNumber + offset, highlighted.additionLines, additionLineIndex + offset, metadata.additionLines, additionLineIndex + offset, palette.contextRowBg, palette),
             },
           });
         }
@@ -259,13 +229,7 @@ function buildSplitRows(
           left: hasDeletion
             ? {
                 lineType: "deletion",
-                lineNumber: deletionLineNumber + offset,
-                spans: flattenHighlightedLine(
-                  highlighted.deletionLines[deletionLineIndex + offset],
-                  palette,
-                  palette.deletionRowBg,
-                  cleanDiffLine(metadata.deletionLines[deletionLineIndex + offset]),
-                ),
+                ...diffLineContent(deletionLineNumber + offset, highlighted.deletionLines, deletionLineIndex + offset, metadata.deletionLines, deletionLineIndex + offset, palette.deletionRowBg, palette),
               }
             : {
                 lineType: "empty",
@@ -275,13 +239,7 @@ function buildSplitRows(
           right: hasAddition
             ? {
                 lineType: "addition",
-                lineNumber: additionLineNumber + offset,
-                spans: flattenHighlightedLine(
-                  highlighted.additionLines[additionLineIndex + offset],
-                  palette,
-                  palette.additionRowBg,
-                  cleanDiffLine(metadata.additionLines[additionLineIndex + offset]),
-                ),
+                ...diffLineContent(additionLineNumber + offset, highlighted.additionLines, additionLineIndex + offset, metadata.additionLines, additionLineIndex + offset, palette.additionRowBg, palette),
               }
             : {
                 lineType: "empty",
@@ -313,6 +271,26 @@ function buildSplitRows(
   return rows;
 }
 
+function diffLineContent(
+  lineNumber: number,
+  highlightedLines: Array<HastNode | undefined>,
+  highlightedIndex: number,
+  rawLines: Array<string | undefined>,
+  rawIndex: number,
+  emphasisBg: string,
+  palette: PierreTerminalPalette,
+): { lineNumber: number; spans: DiffSpan[] } {
+  return {
+    lineNumber,
+    spans: flattenHighlightedLine(
+      highlightedLines[highlightedIndex],
+      palette,
+      emphasisBg,
+      cleanDiffLine(rawLines[rawIndex]),
+    ),
+  };
+}
+
 function renderUnifiedRow(
   row: UnifiedDiffRow,
   width: number,
@@ -326,36 +304,9 @@ function renderUnifiedRow(
     }));
   }
 
-  const style = getLineStyle(row.lineType, palette);
-  const prefixText = `${lineMarker(row.lineType)}${formatLineNumber(row.lineNumber, lineNumberWidth)} `;
-  const prefixWidth = visibleWidth(prefixText);
-  const contentWidth = Math.max(8, width - prefixWidth);
-
-  const prefix = renderSegments(
-    [
-      { text: lineMarker(row.lineType), fg: style.fg, bg: style.bg },
-      { text: formatLineNumber(row.lineNumber, lineNumberWidth), fg: palette.lineNumberFg, bg: style.bg },
-      { text: " ", fg: palette.lineNumberFg, bg: style.bg },
-    ],
-    { fg: style.fg, bg: style.bg },
-  );
-
-  const continuationPrefix = renderSegments(
-    [{ text: " ".repeat(prefixWidth), fg: style.fg, bg: style.bg }],
-    { fg: style.fg, bg: style.bg },
-  );
-
-  const content = renderSegments(row.spans.length > 0 ? row.spans : [{ text: " " }], { fg: style.fg, bg: style.bg });
-  const wrapped = wrapTextWithAnsi(content, contentWidth);
+  const { lines, prefixWidth, style } = renderRow(row.lineType, row.lineNumber, row.spans, width, lineNumberWidth, palette, 8);
   const sourceLineKey = getUnifiedSourceLineKey(row);
-  if (wrapped.length === 0) {
-    return [{ text: padRenderedLine(`${prefix}`, width, style), sourceLineKeys: [sourceLineKey] }];
-  }
-
-  return wrapped.map((segment, index) => ({
-    text: padRenderedLine(`${index === 0 ? prefix : continuationPrefix}${segment}`, width, style),
-    sourceLineKeys: [sourceLineKey],
-  }));
+  return lines.map((text) => ({ text, sourceLineKeys: [sourceLineKey] }));
 }
 
 function renderSplitCell(
@@ -370,14 +321,29 @@ function renderSplitCell(
     return { lines: [padRenderedLine("", width, style)] };
   }
 
-  const prefixText = `${lineMarker(cell.lineType)}${formatLineNumber(cell.lineNumber, lineNumberWidth)} `;
+  const { lines } = renderRow(cell.lineType, cell.lineNumber, cell.spans, width, lineNumberWidth, palette, 6);
+  const sourceLineKey = getSplitCellSourceLineKey(cell);
+  return { lines, sourceLineKey };
+}
+
+function renderRow(
+  lineType: "context" | "addition" | "deletion",
+  lineNumber: number | undefined,
+  spans: DiffSpan[],
+  width: number,
+  lineNumberWidth: number,
+  palette: PierreTerminalPalette,
+  minWidth: number,
+): { lines: string[]; prefixWidth: number; style: { fg: string; bg: string } } {
+  const style = getLineStyle(lineType, palette);
+  const prefixText = `${lineMarker(lineType)}${formatLineNumber(lineNumber, lineNumberWidth)} `;
   const prefixWidth = visibleWidth(prefixText);
-  const contentWidth = Math.max(6, width - prefixWidth);
+  const contentWidth = Math.max(minWidth, width - prefixWidth);
 
   const prefix = renderSegments(
     [
-      { text: lineMarker(cell.lineType), fg: style.fg, bg: style.bg },
-      { text: formatLineNumber(cell.lineNumber, lineNumberWidth), fg: palette.lineNumberFg, bg: style.bg },
+      { text: lineMarker(lineType), fg: style.fg, bg: style.bg },
+      { text: formatLineNumber(lineNumber, lineNumberWidth), fg: palette.lineNumberFg, bg: style.bg },
       { text: " ", fg: palette.lineNumberFg, bg: style.bg },
     ],
     { fg: style.fg, bg: style.bg },
@@ -388,18 +354,18 @@ function renderSplitCell(
     { fg: style.fg, bg: style.bg },
   );
 
-  const content = renderSegments(cell.spans.length > 0 ? cell.spans : [{ text: " " }], { fg: style.fg, bg: style.bg });
+  const content = renderSegments(spans.length > 0 ? spans : [{ text: " " }], { fg: style.fg, bg: style.bg });
   const wrapped = wrapTextWithAnsi(content, contentWidth);
-  const sourceLineKey = getSplitCellSourceLineKey(cell);
   if (wrapped.length === 0) {
-    return { lines: [padRenderedLine(`${prefix}`, width, style)], sourceLineKey };
+    return { lines: [padRenderedLine(`${prefix}`, width, style)], prefixWidth, style };
   }
 
   return {
     lines: wrapped.map((segment, index) =>
       padRenderedLine(`${index === 0 ? prefix : continuationPrefix}${segment}`, width, style),
     ),
-    sourceLineKey,
+    prefixWidth,
+    style,
   };
 }
 
