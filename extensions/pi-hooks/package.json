@@ -1,0 +1,45 @@
+{
+  "name": "@devopstales/pi-hooks",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Claude Code-compatible command hooks for pi, integrated with skill-pi. Based on hsingjui's pi-hooks (MIT), homogenized for the skill-pi agent dir.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "coding-agent",
+    "hooks",
+    "command-hooks",
+    "claude-code"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^5.0.0"
+  }
+}
