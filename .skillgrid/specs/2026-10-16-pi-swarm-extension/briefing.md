@@ -2,7 +2,7 @@
 
 > **STATUS:** `accepted` (2026-10-16) — change agreed with user in-session:
 > swarm of isolated child agents, FleetView, cross-extension RPC protocol,
-> agent-target selector with `shift+tab`.
+> agent-target selector with `Ctrl+Q` `Tab` (skill-pi leader).
 
 ## Problem / Intent
 
@@ -30,7 +30,7 @@ settle — while the user keeps working in the parent.
 - Mid-run steering works: `swarm_send` injects a message into a running child
   (RPC `steer`) or queues one for its next turn (RPC `follow_up`).
 - The TUI shows **which agent will handle the next prompt** — an agent-target
-  selector — and `shift+tab` cycles targets. Default target is `build` (no
+  selector — and `Ctrl+Q` `Tab` cycles targets. Default target is `build` (no
   agent config, exactly today's behavior). When `plan-build` is installed,
   `plan` is in the cycle; every agent type in `.skill-pi/agents/` /
   `~/.skill-pi/agent/agents/` is in the cycle too. Selecting an agent target
@@ -62,9 +62,10 @@ settle — while the user keeps working in the parent.
   (global), as YAML-frontmatter markdown. The stock-pi `.pi/agents`
   convention is NOT used (ADR 0002 separation).
 - No comments in code unless asked. Minimal scoped changes.
-- Keybinding `shift+tab` for target cycling must not collide with plan-build's
-  `alt+m` mode toggle (plan-build keeps that key; the selector is a second
-  handle on mode state, not a rival).
+- Keybinding `Ctrl+Q` `Tab` for target cycling is a skill-pi leader action
+  (ADR-0010); it does not collide with plan-build's `Ctrl+Q` `p` / `Ctrl+Q` `b`
+  mode chords or with pi's `shift+tab` thinking-level cycle (that key stays
+  untouched).
 - Exactly one edit outside `extensions/pi-swarm/`: plan-build's `index.ts`
   gains one additive `pi.events.emit("swarm:plan-present", …)` line on
   session start (the v1 probe for the target cycle — blueprint Task 7 Step 3),

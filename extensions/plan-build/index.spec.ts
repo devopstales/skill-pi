@@ -112,8 +112,8 @@ it("registers all plan tools, commands, flags, and shortcuts", () => {
 	}
 	assert.ok(pi.flags.has("plan"), "plan flag");
 	assert.ok(pi.flags.has("build"), "build flag");
-	assert.ok(pi.shortcuts.includes("ctrl+a"), "ctrl+a plan mode shortcut");
-	assert.ok(pi.shortcuts.includes("ctrl+b"), "ctrl+b build mode shortcut");
+	assert.equal(pi.shortcuts.length, 0, "mode keys are leader chords, not standalone shortcuts");
+	assert.ok(pi.events.has("session_start"), "mode leader wired on session_start");
 });
 
 it("registers entry renderers for state, review, notices, and validation", () => {

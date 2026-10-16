@@ -238,10 +238,10 @@ it("env: SKILL_PI_TODO=0 disables the extension", () => {
 });
 
 it("env: SKILL_PI_TODO_KEY customizes or disables the collapse key", () => {
-  assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "alt+t" } as NodeJS.ProcessEnv), "alt+t");
+  assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "x" } as NodeJS.ProcessEnv), "x");
   assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "off" } as NodeJS.ProcessEnv), undefined);
   assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "" } as NodeJS.ProcessEnv), undefined);
-  assert.equal(todoCollapseKey({} as NodeJS.ProcessEnv), "ctrl+a");
+  assert.equal(todoCollapseKey({} as NodeJS.ProcessEnv), "t");
 });
 
 it("main-view widget renders nothing (todo lives only in the sidebar rail)", async () => {

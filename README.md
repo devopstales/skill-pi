@@ -121,7 +121,7 @@ Currently bundled:
 - **`todo`** — a `todo` tool (`write`/`add`/`update`/`clear`/`list`) that gives the model
   a task list you can see, drawn as a card in the `skill-pi-tui` sidebar (widget above the
   editor on narrow terminals). The open snapshot is mirrored into the transcript, so the
-  list survives `/reload`, compaction, and branch navigation. `Ctrl+A` then `t`
+  list survives `/reload`, compaction, and branch navigation. `Ctrl+Q` then `t`
   collapses, `alt+shift+up/down` scrolls; a stale warning appears after several
   untouched turns.
   Published standalone as
@@ -143,7 +143,7 @@ Currently bundled:
   the mode rail is a footer status line. Core lifecycle forked from
   [janvitos/pi-plan-build](https://github.com/janvitos/pi-plan-build) (MIT);
   composer, 64-column panel, per-mode model memory, and the question tool are
-  replaced by the sidebar integration and `ask_user`. `Ctrl+A` enters Plan mode and `Ctrl+B` enters Build mode; `--plan` / `--build` set the start mode; config at
+  replaced by the sidebar integration and `ask_user`. `Ctrl+Q` then `p` enters Plan mode and `Ctrl+Q` then `b` enters Build mode; `--plan` / `--build` set the start mode; config at
   `~/.skill-pi/agent/skill-pi-plan-build.json`. See
   [`extensions/plan-build/README.md`](extensions/plan-build/README.md).
 - **[`pi-hooks`](extensions/pi-hooks/)** — Claude Code-compatible command hooks.

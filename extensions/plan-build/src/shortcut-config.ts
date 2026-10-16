@@ -32,12 +32,12 @@ export interface LoadedShortcutConfig {
 }
 
 const DEFAULT_CONFIG: ShortcutConfig = {
-	planMode: ["ctrl+a"],
-	buildMode: ["ctrl+b"],
+	planMode: ["p"],
+	buildMode: ["b"],
 };
 
 export const SHORTCUT_PRESETS: Record<string, ShortcutConfig> = {
-	"Ctrl+A / Ctrl+B": DEFAULT_CONFIG,
+	"Ctrl+Q p / Ctrl+Q b": DEFAULT_CONFIG,
 	"Disabled": { planMode: [], buildMode: [] },
 };
 

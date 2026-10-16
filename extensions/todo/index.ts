@@ -41,7 +41,7 @@ import { buildTheme, type TodoTheme } from "./src/theme.ts";
 import { invalidateSidebar } from "../skill-pi-tui/src/sidebar-layout.ts";
 import { sidebarPart, sidebarState } from "../skill-pi-tui/src/sidebar.ts";
 
-const COLLAPSE_KEY_DEFAULT = "ctrl+a";
+const COLLAPSE_KEY_DEFAULT = "t";
 const REMIND_AFTER_TOOL_TURNS = 4;
 const WIDGET_KEY = "pi-todo";
 const STATUS_ENUM = ["pending", "in_progress", "blocked", "done", "dropped"] as const;
@@ -293,14 +293,14 @@ export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proces
   const collapseListener: { stop: (() => void) | undefined } = { stop: undefined };
   let armed = false;
   let armedCtx: ExtensionContext | undefined;
-  let pendingKey = "";
+  const pendingKey = collapseKey?.toLowerCase() ?? "";
 
   const startLeaderListener = (ctx: ExtensionContext) => {
     collapseListener.stop?.();
     collapseListener.stop = undefined;
     if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
     collapseListener.stop = ctx.ui.onTerminalInput((data) => {
-      if (parseKey(data) === "ctrl+a") {
+      if (parseKey(data) === "ctrl+q") {
         armed = true;
         armedCtx = ctx;
         return { consume: true };

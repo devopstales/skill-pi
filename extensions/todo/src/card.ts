@@ -28,7 +28,7 @@ export function todoCardRows(state: TodoState, theme: TodoCardTheme, width: numb
   const summary = todoSummary(state);
   const tone = todoCardTone(options.staleTurns);
   const subtitle = `${summary.done}/${summary.total} · ${summary.open} open`;
-  let hint = options.collapsed ? (options.collapseKey ? options.collapseKey : undefined) : undefined;
+  let hint = options.collapsed ? (options.collapseKey ? `ctrl+q ${options.collapseKey}` : undefined) : undefined;
   if (options.staleTurns !== undefined && options.staleTurns >= STALE_THRESHOLD && hint) {
     hint = `stale · ${hint}`;
   }

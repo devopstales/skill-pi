@@ -14,7 +14,7 @@ then thickens with steering, FleetView, agent types, and the RPC protocol)
 
 **Goal:** A bundled pi extension that spawns, tracks, steers, and inspects
 parallel isolated child skill-pi agents, with a FleetView UI, an agent-target
-prompt selector (`shift+tab`), and a versioned cross-extension RPC protocol.
+prompt selector (`Ctrl+Q` `Tab`), and a versioned cross-extension RPC protocol.
 
 **Architecture:** Children are `skill-pi --mode rpc` subprocesses (JSONL
 commands on stdin, JSONL events on stdout — pi 1.2.0 `dist/modes/rpc/`), each
@@ -85,7 +85,7 @@ on the RPC stream contract.
   (above `main`) or `Esc` returns; `Enter` on a child opens its live
   transcript; `x` aborts the selected child.
 - The target selector shows `build` by default with no agent config; the
-  `shift+tab` cycle is `build → plan (only if plan-build is loaded) → <agent
+  `Ctrl+Q` `Tab` cycle is `build → plan (only if plan-build is loaded) → <agent
   types, load order> → build…`; submitting a prompt while an agent type is
   selected spawns that child and the text does NOT enter the main
   conversation.
@@ -145,8 +145,9 @@ on the RPC stream contract.
 - No comments in code unless asked; minimal scoped changes.
 - Commit per work unit; spec-zone artifacts (this folder, `state.yaml`)
   committed separately from code (work-unit-commits zone guard).
-- Keybinding `shift+tab` is claimed by pi-swarm; plan-build keeps `alt+m`
-  (its mode toggle) — the two are independent handles.
+- Keybinding `Ctrl+Q` `Tab` is the pi-swarm target-cycle leader action
+  (ADR-0010); plan-build keeps `Ctrl+Q` `p` / `Ctrl+Q` `b` (its mode chords) —
+  the two are independent handles on the same leader.
 - Verification floor L2 (standard): full extension vitest + `tsc --noEmit` +
   root `node --test` unchanged green + one live door-check E2E recorded in
   `report.md`.
@@ -504,7 +505,7 @@ Remaining: check/send/cancel tools (Task 3), FleetView (Task 4-5), agent types +
 - [ ] **Step 1: Write failing `format.spec.ts`** — `formatElapsed(61_000)` → `"1m01s"`; `formatElapsed(59_000)` → `"59s"`; `formatTokens(12_400)` → `"12.4k"`; `formatAgentRow` includes status glyph (`⠹` running / `✓` done / `✗` error / `■` interrupted / `…` queued), title truncated to fit, model label, tokens, elapsed.
 - [ ] **Step 2: RED**
 - [ ] **Step 3: Implement `format.ts`, then `fleetview.ts`:** rows `main` + one per agent (earliest-launched first); selection marker `❯` on selected, dim otherwise; hint row `esc to return · enter to open · x to stop`.
-- [ ] **Step 4: Mount + keybinding in `index.ts`:** FleetView renders below the prompt via `ctx.ui.setWidget` with placement `belowEditor` (verified: `WidgetPlacement = "aboveEditor" | "belowEditor"` in pi 1.2.0); `shift+tab` is NOT claimed here (that is Task 7's target key) — FleetView navigation keys are active only at an **empty prompt**: `↓`/`←` enter, `↑`/`↓` move, `Esc`/`↑`-above-main return, `Enter` open (Task 5), `x` stop.
+- [ ] **Step 4: Mount + keybinding in `index.ts`:** FleetView renders below the prompt via `ctx.ui.setWidget` with placement `belowEditor` (verified: `WidgetPlacement = "aboveEditor" | "belowEditor"` in pi 1.2.0); `Ctrl+Q` `Tab` is NOT claimed here (that is Task 7's target key) — FleetView navigation keys are active only at an **empty prompt**: `↓`/`←` enter, `↑`/`↓` move, `Esc`/`↑`-above-main return, `Enter` open (Task 5), `x` stop.
 - [ ] **Step 5: GREEN**
 - [ ] **Step 6: Commit** (`feat(pi-swarm): fleetview list + formatting`, Task 4)
 
@@ -562,7 +563,7 @@ You are a security auditor. Review code for vulnerabilities…
 - [ ] **Step 5: Wire into `index.ts`** — `swarm_spawn` with `agent_type`: resolve via `resolveAgentType`; unknown → tool error listing known names; resolved → the agent's `systemPrompt` is prepended to the prompt text with a `## Agent instructions` marker, followed by a blank line and the user's prompt (decided: pi 1.2.0's CLI has no `--append-system-prompt` flag — verified in `dist/cli/args.js`; the only CLI option is `--system-prompt`, which would replace the child's default system prompt and break its tool guidance, so prompt-prefixing is the ADR 0006-safe mechanism).
 - [ ] **Step 6: Commit** (`feat(pi-swarm): agent type discovery (.skill-pi/agents frontmatter)`, Task 6)
 
-### Task 7: Prompt-target selector — `shift+tab` + build/plan/agent cycle
+### Task 7: Prompt-target selector — `Ctrl+Q` `Tab` + build/plan/agent cycle
 
 > **Decision note (owed-decision resolved in planning):** target selection is
 > **session-scoped, in-memory only** — no config file. The default `build`
@@ -586,11 +587,11 @@ You are a security auditor. Review code for vulnerabilities…
 
 - [ ] **Step 1: Write failing `target.spec.ts`** — `createTargetSelector({ agents: [], planAvailable: false })` → `cycleList()` = `["build"]`, `current()` = `"build"`; with `{ agents: [auditor, explorer], planAvailable: true }` → `["build", "plan", "auditor", "explorer"]`; `cycle()` four times returns to `build`; `matchesAgent("auditor")` → the auditor `AgentType`, `matchesAgent("build")` → undefined.
 - [ ] **Step 2: RED**
-- [ ] **Step 3: Implement `target.ts` + the plan-build presence probe in `index.ts` (decided mechanism — no runtime fallback chain):** v1 detection = the `swarm:plan-present` bus event, **evaluated lazily**: the cycle list is recomputed on every `shift+tab` press (not cached at session start), so whichever extension's `session_start` handler runs first, the event is observed by the first user keypress; OR env `SKILL_PI_PLAN_BUILD=1` (primary override for testing). The plan-build extension emits `swarm:plan-present` once on session start via `pi.events.emit` (one additive line in plan-build's `index.ts` — that is the ONLY plan-build edit in this whole change; commit it as its own work unit `feat(plan-build): emit swarm:plan-present on session start` so the two extensions stay independently revertable). Until plan-build is patched (or the env var is set), `plan` is simply absent from the cycle — which exactly matches the briefing ("when plan mode is installed add that too" = the event is observed). Record the actual observed behavior in `report.md`.
-- [ ] **Step 4: Keybinding + display in `index.ts`:** claim `shift+tab` (pi keybinding registration per the todo extension's `SKILL_PI_TODO_KEY` pattern — it reads a keybinding config string and registers it; mirror that: `SKILL_PI_SWARM_TARGET_KEY`, default `shift+tab`, `off` disables). Display: `ctx.ui.setStatus("swarm-target", "⌁ " + current)` — a statusline segment, color: dim for `build`, accent for `plan`, agent color from the frontmatter `color:` field if present (else theme primary). **Keybinding note (verified):** pi 1.2.0's default `shift+tab` binding is `app.thinking.cycle` (`dist/core/keybindings.d.ts`) — claiming `shift+tab` via `registerShortcut` overrides it for this session, so cycling targets no longer cycles the thinking level; document that in the README and keep `SKILL_PI_SWARM_TARGET_KEY` as the user's escape hatch (set it to `off` to restore the thinking cycle).
+- [ ] **Step 3: Implement `target.ts` + the plan-build presence probe in `index.ts` (decided mechanism — no runtime fallback chain):** v1 detection = the `swarm:plan-present` bus event, **evaluated lazily**: the cycle list is recomputed on every `Ctrl+Q` `Tab` press (not cached at session start), so whichever extension's `session_start` handler runs first, the event is observed by the first user keypress; OR env `SKILL_PI_PLAN_BUILD=1` (primary override for testing). The plan-build extension emits `swarm:plan-present` once on session start via `pi.events.emit` (one additive line in plan-build's `index.ts` — that is the ONLY plan-build edit in this whole change; commit it as its own work unit `feat(plan-build): emit swarm:plan-present on session start` so the two extensions stay independently revertable). Until plan-build is patched (or the env var is set), `plan` is simply absent from the cycle — which exactly matches the briefing ("when plan mode is installed add that too" = the event is observed). Record the actual observed behavior in `report.md`.
+- [ ] **Step 4: Keybinding + display in `index.ts`:** claim the `Ctrl+Q` `Tab` leader action (ADR-0010). `Ctrl+Q` is the skill-pi leader prefix, unbound by pi by default, so the target cycle is a **leader chord, not a standalone shortcut**: on `session_start`, register a `ctx.ui.onTerminalInput` listener (same pattern as todo's collapse leader and plan-build's mode leader) that, when `Ctrl+Q` is seen, arms a one-key window and on the next `Tab` calls `target.cycle()`. The action key is configurable via `SKILL_PI_SWARM_TARGET_KEY` (default `tab`, `off` disables the chord) — it is the *second* key of the leader, mirroring how `SKILL_PI_TODO_KEY` (default `t`) rebinds the todo leader's action key. Display: `ctx.ui.setStatus("swarm-target", "⌁ " + current)` — a statusline segment, color: dim for `build`, accent for `plan`, agent color from the frontmatter `color:` field if present (else theme primary). **Keybinding note (verified):** `Ctrl+Q` is unbound in pi 1.2.0 on macOS (only a Windows `app.message.dequeue` fallback), so the leader needs no keybinding config and does not steal `shift+tab`'s `app.thinking.cycle` — that key stays fully working.
 - [ ] **Step 5: Input interception in `index.ts`:** `pi.on("input", (ev) => …)` — if `ev.source === "interactive"` and `current()` is an agent target and `ev.text` is non-empty and the FleetView is NOT in overlay mode (a child's steer/follow_up must not re-enter the interception — verified: steer/follow_up calls also emit `input` events) → `manager.spawn({ prompt: ev.text, agentType: current() })`, show `ctx.ui.notify("spawned sa-N: <title>")` (use the `notify` from the verified `ExtensionUIContext` surface — `select | confirm | input | notify`), return `{ action: "handled" }` (verified `InputEventResult` shape); otherwise return `{ action: "continue" }`. `build`/`plan` targets never intercept: `build` is today's behavior unchanged; `plan` is informational in v1 (plan-build owns its own flow via `/plan` and `alt+m` — the selector showing `plan` tells the user where the next prompt *would* go, it does not switch modes).
 - [ ] **Step 6: GREEN** (`npx vitest run && npx tsc --noEmit -p .`)
-- [ ] **Step 7: Commit** (`feat(pi-swarm): prompt-target selector, shift+tab cycle, agent-target spawning`, Task 7)
+- [ ] **Step 7: Commit** (`feat(pi-swarm): prompt-target selector, Ctrl+Q Tab cycle, agent-target spawning`, Task 7)
 
 ### Task 8: Cross-extension RPC protocol — envelope + handlers
 
@@ -646,7 +647,7 @@ You are a security auditor. Review code for vulnerabilities…
 
 - [ ] **Step 1: Implement `dashboard.ts`** — reuse `formatAgentRow` + the Task 5 overlay component; the takeover view IS the FleetView overlay (shared component, not a copy).
 - [ ] **Step 2: Register `/swarm`** in `index.ts`; non-TUI mode (e.g. `--print`) → the command prints the `swarm_list` output as text (typically an empty list — children are TUI-session subprocesses; document that in the README).
-- [ ] **Step 3: Write `README.md`** — house style (per `extensions/todo/README.md`): what you get, install (bundled + standalone `pi install npm:@devopstales/pi-swarm`), how it works (ASCII diagram: tool → manager → rpc child → result delivery), configuration (env vars table: `SKILL_PI_SWARM` on/off, `SKILL_PI_SWARM_MAX` default 4, `SKILL_PI_SWARM_TARGET_KEY` default `shift+tab`), development (vitest + tsc), the RPC protocol reference (envelope + events — the contract from Task 8), license/sources (the four reference repos + MIT attribution).
+- [ ] **Step 3: Write `README.md`** — house style (per `extensions/todo/README.md`): what you get, install (bundled + standalone `pi install npm:@devopstales/pi-swarm`), how it works (ASCII diagram: tool → manager → rpc child → result delivery), configuration (env vars table: `SKILL_PI_SWARM` on/off, `SKILL_PI_SWARM_MAX` default 4, `SKILL_PI_SWARM_TARGET_KEY` default `tab` — the action key of the `Ctrl+Q` leader; `off` disables the target cycle), development (vitest + tsc), the RPC protocol reference (envelope + events — the contract from Task 8), license/sources (the four reference repos + MIT attribution).
 - [ ] **Step 4: Root README entry** — one bullet in the bundled-extensions list matching the existing entries' shape.
 - [ ] **Step 5: Full GREEN**
 
@@ -696,12 +697,13 @@ Expected: extension suite green (≥ 40 tests), tsc clean, root suite unchanged 
     is prompt-prefixed with a `## Agent instructions` marker
   - C3 `SKILL_PI_SWARM_MAX` / `SKILL_PI_SWARM` now read in Task 2 Step 4
   - I4 `swarm:usage` pinned to per-run deltas
-  - I5 `shift+tab` overrides pi's default `app.thinking.cycle` — documented +
-    `SKILL_PI_SWARM_TARGET_KEY` escape hatch
+  - I5 target cycle is the `Ctrl+Q` `Tab` leader chord (ADR-0010) — does not
+    touch pi's `shift+tab` `app.thinking.cycle`; `SKILL_PI_SWARM_TARGET_KEY`
+    rebinds the action key
   - I6 wait budgets: per-agent reduced proportionally so total ≤ 48KB
   - I7 `disposeAll()` only on `reason === "quit"`; manager keyed by session id
   - I8 card chrome path corrected to `../skill-pi-tui/src/card.ts`
-  - I9 plan-build probe evaluated lazily (recomputed per `shift+tab`) + env override
+  - I9 plan-build probe evaluated lazily (recomputed per `Ctrl+Q` `Tab`) + env override
   - I10 input interception suppressed while FleetView overlay is open
   - I11 `cancel` on a queued agent defined (queue promotes next)
   - I12 empty `finalText` fallback (last assistant line, else status line)

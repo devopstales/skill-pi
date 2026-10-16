@@ -56,9 +56,9 @@ Feature: pi-swarm — parallel isolated child agents with fleet UI
     When the target selector is read
     Then it shows build with no agent config applied to the main session
 
-  Scenario: R-target-cycle — shift+tab cycles targets
+  Scenario: R-target-cycle — Ctrl+Q Tab cycles targets
     Given the cycle build, plan (when plan-build present), then agent types in load order
-    When shift+tab is pressed repeatedly
+    When Ctrl+Q then Tab is pressed repeatedly
     Then the visible target cycles through the cycle and returns to build
     And the cycle never contains a target whose source does not resolve
 

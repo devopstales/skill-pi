@@ -16,7 +16,7 @@ Durable project understanding. Tiers: `## VERIFIED` (checked against code), `## 
 
 ## LOCKED
 
-Highest sequence in use: 0009
+Highest sequence in use: 0010
 
 | ADR | Decision | Status | Path |
 |-----|----------|--------|------|
@@ -28,7 +28,8 @@ Highest sequence in use: 0009
 | 0006 | Never modify pi source — build on top of its public surface (env, CLI flags, settings, `pi.extensions` manifest); no fork, no runtime patch, no post-install edit | accepted | `.skillgrid/artifacts/04-adr-0006-never-modify-pi-source.md` |
 | 0007 | Bundled extensions are self-contained subdirs (`extensions/<name>/` + own `package.json` + toolchain); runtime deps resolve via the root `node_modules`, extension `node_modules` is a private dev toolchain | proposed | `.skillgrid/artifacts/04-adr-0007-self-contained-extensions.md` |
 | 0008 | Plugin/extension config lives in `$AGENT_HOME/conf.d/<name>.conf` (user) + `<project-root>/conf.d/<name>.conf` (project); derived from `getAgentDir()` so the same extension works in stock pi and skill-pi; bounded ADR 0002 exception for the project `.pi/conf.d` fallback read | proposed | `.skillgrid/artifacts/04-adr-0008-plugin-config-confd.md` |
-| 0009 | `Ctrl+A` leader prefix for all extension keybindings (tmux `Ctrl+B` style): `Ctrl+A`+letter action keys, no standalone `Ctrl+A` re-registration, plate is `/cp`-only, plan-build `Ctrl+A`/`Ctrl+B` enter Plan/Build | accepted | `.skillgrid/artifacts/04-adr-0009-crla-a-leader-keybindings.md` |
+| 0009 | `Ctrl+A` leader prefix for all extension keybindings (tmux `Ctrl+B` style): `Ctrl+A`+letter action keys, no standalone `Ctrl+A` re-registration, plate is `/cp`-only, plan-build `Ctrl+A`/`Ctrl+B` enter Plan/Build | superseded by ADR-0010 | `.skillgrid/artifacts/04-adr-0009-crla-a-leader-keybindings.md` |
+| 0010 | `Ctrl+Q` leader prefix for all extension keybindings: `Ctrl+Q`+letter/Tab action keys, leader via `onTerminalInput` (not `registerShortcut`), plate is `/cp`-only, plan-build `Ctrl+Q p`/`Ctrl+Q b`, pi-swarm `Ctrl+Q Tab` target cycle | accepted | `.skillgrid/artifacts/04-adr-0010-ctrlq-leader-keybindings.md` |
 
 ## Open Questions
 

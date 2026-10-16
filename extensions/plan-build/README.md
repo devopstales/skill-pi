@@ -69,8 +69,8 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
 ## Flags & shortcuts
 
 - `--plan` / `--build` — start a new session in the given mode.
-- `Ctrl+A` — enter Plan mode.
-- `Ctrl+B` — enter Build mode.
+- `Ctrl+Q` then `p` — enter Plan mode.
+- `Ctrl+Q` then `b` — enter Build mode.
 
 ## Configuration
 
@@ -83,11 +83,14 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
   "showPlanTitle": true,
   "stableToolCatalog": true,
   "shortcuts": {
-    "planMode": ["ctrl+a"],
-    "buildMode": ["ctrl+b"]
+    "planMode": ["p"],
+    "buildMode": ["b"]
   }
 }
 ```
+
+`planMode` / `buildMode` hold the **action key** (the second key of the
+`Ctrl+Q` leader). `[]` disables the chord.
 
 All keys are optional; missing file → defaults. Malformed JSON → warning +
 defaults (the file is never overwritten by the extension).

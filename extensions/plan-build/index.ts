@@ -14,7 +14,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getMarkdownTheme, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text, type TUI } from "@earendil-works/pi-tui";
+import { Markdown, Text, parseKey, type TUI } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import {
 	PlanState,
@@ -758,7 +758,7 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 			if (!shortcutSelection) return;
 			if (shortcutSelection === customOption) {
 				ctx.ui.notify(
-					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"planMode":["ctrl+a"],"buildMode":["ctrl+b"]}}. Use [] to disable a shortcut.`,
+					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"planMode":["p"],"buildMode":["b"]}}. Keys are the second key of the Ctrl+Q leader. Use [] to disable.`,
 					"info",
 				);
 				return;
@@ -772,14 +772,39 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 		},
 	});
 
-	for (const [action, mode, label] of [["planMode", "plan", "Enter Plan mode"], ["buildMode", "build", "Enter Build mode"]] as const) {
-		for (const shortcut of shortcutConfig[action]) {
-			pi.registerShortcut(shortcut, {
-				description: label,
-				handler: async (ctx) => selectMode(mode, session(ctx), ctx, "manual"),
-			});
-		}
-	}
+	const modeLeader: { stop: (() => void) | undefined } = { stop: undefined };
+	const modeKeys: Record<string, Mode> = {};
+	for (const key of shortcutConfig.planMode) modeKeys[key] = "plan";
+	for (const key of shortcutConfig.buildMode) modeKeys[key] = "build";
+
+	const startModeLeader = (ctx: ExtensionContext) => {
+		modeLeader.stop?.();
+		modeLeader.stop = undefined;
+		if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function" || Object.keys(modeKeys).length === 0) return;
+		let armed = false;
+		modeLeader.stop = ctx.ui.onTerminalInput((data) => {
+			if (parseKey(data) === "ctrl+q") {
+				armed = true;
+				return { consume: true };
+			}
+			if (armed) {
+				const parsed = parseKey(data);
+				const mode = parsed ? modeKeys[parsed] : undefined;
+				armed = false;
+				if (mode) {
+					void selectMode(mode, session(ctx), ctx, "manual");
+					return { consume: true };
+				}
+			}
+			return undefined;
+		});
+	};
+
+	pi.on("session_start", (_event, ctx) => startModeLeader(ctx));
+	pi.on("session_shutdown", () => {
+		modeLeader.stop?.();
+		modeLeader.stop = undefined;
+	});
 
 	pi.registerTool({
 		name: "plan_task",

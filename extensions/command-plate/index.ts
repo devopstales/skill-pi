@@ -192,7 +192,7 @@ class CommandPlateOverlay {
     lines.push(f.top());
 
     if (leaderArmed) {
-      lines.push(f.row(th.fg("accent", th.bold("Command Plate")) + " " + th.fg("dim", "(ctrl+a — select an action)")));
+      lines.push(f.row(th.fg("accent", th.bold("Command Plate")) + " " + th.fg("dim", "(ctrl+q — select an action)")));
       lines.push(f.separator());
       lines.push(f.bottom());
       return lines;
@@ -279,7 +279,7 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
 
     const pending: string[] = [];
     const selected = await ctx.ui.custom<ActionItem | null>(
-      (tui, theme, keybindings, done) => {
+      (tui, theme, _keybindings, done) => {
         const overlay = new CommandPlateOverlay(entries, theme, done);
         let leaderArmed = false;
         let leaderTimer: NodeJS.Timeout | undefined;
@@ -294,6 +294,12 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
             return undefined;
           }
           const parsed = parseKey(data);
+          if (parsed === "ctrl+q") {
+            leaderArmed = true;
+            leaderTimer = setTimeout(disarm, 2000);
+            tui.requestRender();
+            return { consume: true };
+          }
           if (parsed && parsed.length === 1 && parsed >= "a" && parsed <= "z") {
             if (leaderArmed) {
               if (leaderTimer) {
@@ -305,13 +311,7 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
               tui.requestRender();
               return { consume: true };
             }
-            if (keybindings?.matches(data, "app.models.enableAll")) {
-              leaderArmed = true;
-              leaderTimer = setTimeout(disarm, 2000);
-              tui.requestRender();
-              return { consume: true };
-            }
-            return keybindings ? undefined : { consume: true };
+            return undefined;
           }
           if (leaderArmed) disarm();
           return undefined;

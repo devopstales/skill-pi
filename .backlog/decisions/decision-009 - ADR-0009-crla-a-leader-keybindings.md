@@ -2,7 +2,7 @@
 id: decision-009
 title: "ADR-0009 Consolidated Ctrl+A leader for extension keybindings"
 date: '2026-10-16'
-status: accepted
+status: superseded
 ---
 
 Source: `.skillgrid/artifacts/04-adr-0009-crla-a-leader-keybindings.md`
