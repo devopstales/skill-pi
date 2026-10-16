@@ -14,7 +14,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import { Text, matchesKey, parseKey, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
@@ -41,7 +41,7 @@ import { buildTheme, type TodoTheme } from "./src/theme.ts";
 import { invalidateSidebar } from "../skill-pi-tui/src/sidebar-layout.ts";
 import { sidebarPart, sidebarState } from "../skill-pi-tui/src/sidebar.ts";
 
-const COLLAPSE_KEY_DEFAULT = "ctrl+shift+t";
+const COLLAPSE_KEY_DEFAULT = "ctrl+a";
 const REMIND_AFTER_TOOL_TURNS = 4;
 const WIDGET_KEY = "pi-todo";
 const STATUS_ENUM = ["pending", "in_progress", "blocked", "done", "dropped"] as const;
@@ -290,14 +290,44 @@ export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proces
     },
   });
 
-  if (collapseKey) {
-    pi.registerShortcut(collapseKey as Parameters<ExtensionAPI["registerShortcut"]>[0], {
-      description: "Collapse or expand the todo list",
-      handler: async (ctx) => {
-        toggle(session(ctx));
-      },
+  const collapseListener: { stop: (() => void) | undefined } = { stop: undefined };
+  let armed = false;
+  let armedCtx: ExtensionContext | undefined;
+  let pendingKey = "";
+
+  const startLeaderListener = (ctx: ExtensionContext) => {
+    collapseListener.stop?.();
+    collapseListener.stop = undefined;
+    if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
+    collapseListener.stop = ctx.ui.onTerminalInput((data) => {
+      if (parseKey(data) === "ctrl+a") {
+        armed = true;
+        armedCtx = ctx;
+        return { consume: true };
+      }
+      if (armed) {
+        const parsed = parseKey(data);
+        if (parsed && parsed.length === 1 && parsed >= "a" && parsed <= "z" && parsed === pendingKey) {
+          const target = armedCtx;
+          armed = false;
+          if (target) toggle(session(target));
+          return { consume: true };
+        }
+        armed = false;
+        return undefined;
+      }
+      return undefined;
     });
-  }
+  };
+
+  pi.on("session_start", (_event, ctx) => startLeaderListener(ctx));
+
+  pi.on("session_shutdown", () => {
+    collapseListener.stop?.();
+    collapseListener.stop = undefined;
+    armed = false;
+    armedCtx = undefined;
+  });
 
   for (const [key, lines] of [["alt+shift+up", -3], ["alt+shift+down", 3]] as const) {
     pi.registerShortcut(key, {

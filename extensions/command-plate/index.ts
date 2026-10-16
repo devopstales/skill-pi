@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, parseKey } from "@earendil-works/pi-tui";
 import { OverlayFrame } from "./overlay-frame.js";
 import { runScopedModels } from "./model-pick.js";
@@ -184,12 +184,19 @@ class CommandPlateOverlay {
     }
   }
 
-  render(width: number): string[] {
+  render(width: number, leaderArmed = false): string[] {
     const th = this.theme;
     const f = new OverlayFrame(width, th);
     const lines: string[] = [];
 
     lines.push(f.top());
+
+    if (leaderArmed) {
+      lines.push(f.row(th.fg("accent", th.bold("Command Plate")) + " " + th.fg("dim", "(ctrl+a — select an action)")));
+      lines.push(f.separator());
+      lines.push(f.bottom());
+      return lines;
+    }
 
     if (this.view.type === "root") {
       lines.push(f.row(th.fg("accent", th.bold("Command Plate"))));
@@ -252,7 +259,6 @@ class CommandPlateOverlay {
 }
 
 export default function commandPlateExtension(pi: ExtensionAPI) {
-  let stopScopedModelsShortcut: (() => void) | undefined;
   let scopedModelsOpen = false;
 
   async function openScopedModels(ctx: ExtensionContext) {
@@ -271,16 +277,53 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
 
     const entries = buildEntries(pi, openScopedModels);
 
+    const pending: string[] = [];
     const selected = await ctx.ui.custom<ActionItem | null>(
-      (tui, theme, _kb, done) => {
+      (tui, theme, keybindings, done) => {
         const overlay = new CommandPlateOverlay(entries, theme, done);
+        let leaderArmed = false;
+        let leaderTimer: NodeJS.Timeout | undefined;
+        const disarm = () => {
+          leaderArmed = false;
+          leaderTimer = undefined;
+          tui.requestRender();
+        };
+        const stopLeader = tui.addInputListener((data: string) => {
+          if (matchesKey(data, "escape")) {
+            if (leaderArmed) disarm();
+            return undefined;
+          }
+          const parsed = parseKey(data);
+          if (parsed && parsed.length === 1 && parsed >= "a" && parsed <= "z") {
+            if (leaderArmed) {
+              if (leaderTimer) {
+                clearTimeout(leaderTimer);
+                leaderTimer = undefined;
+              }
+              pending.push(parsed.toLowerCase());
+              leaderArmed = false;
+              tui.requestRender();
+              return { consume: true };
+            }
+            if (keybindings?.matches(data, "app.models.enableAll")) {
+              leaderArmed = true;
+              leaderTimer = setTimeout(disarm, 2000);
+              tui.requestRender();
+              return { consume: true };
+            }
+            return keybindings ? undefined : { consume: true };
+          }
+          if (leaderArmed) disarm();
+          return undefined;
+        });
         return {
-          render: (w: number) => overlay.render(w),
+          render: (w: number) => overlay.render(w, leaderArmed),
           invalidate: () => overlay.invalidate(),
           handleInput: (data: string) => {
             overlay.handleInput(data);
             tui.requestRender();
           },
+          dispose: () => stopLeader(),
         };
       },
       {
@@ -294,6 +337,18 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
       },
     );
 
+    if (pending.length > 0) {
+      const action = entries.find((e) => e.type === "action" && e.key === pending[0]);
+      if (action?.type === "action") {
+        try {
+          await action.action(ctx);
+        } catch (err) {
+          const detail = err instanceof Error ? err.stack ?? err.message : String(err);
+          ctx.ui.notify(`Action failed: ${detail}`, "error");
+        }
+      }
+    }
+
     if (selected) {
       try {
         await selected.action(ctx);
@@ -304,22 +359,6 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
     }
   }
 
-  pi.on("session_start", async (_event, ctx) => {
-    if (!ctx.hasUI) return;
-
-    stopScopedModelsShortcut?.();
-    stopScopedModelsShortcut = ctx.ui.onTerminalInput((data) => {
-      if (parseKey(data) !== Key.ctrl("m")) return;
-      void openScopedModels(ctx);
-      return { consume: true };
-    });
-  });
-
-  pi.on("session_shutdown", async () => {
-    stopScopedModelsShortcut?.();
-    stopScopedModelsShortcut = undefined;
-  });
-
   pi.registerCommand("cp", {
     description: "Open Command Plate palette",
     handler: async (_args, ctx) => {
@@ -327,10 +366,10 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(Key.ctrl("k"), {
-    description: "Open Command Plate",
-    handler: async (ctx) => {
-      await openCommandPlate(ctx);
+  pi.registerCommand("models", {
+    description: "Open the Scoped Models picker",
+    handler: async (_args, ctx) => {
+      await openScopedModels(ctx);
     },
   });
 }

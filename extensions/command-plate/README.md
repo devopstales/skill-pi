@@ -1,29 +1,32 @@
 # command-plate
 
-Ctrl+K command plate (which-key style leader palette) for pi, with scoped-model
-and full model/thinking pickers. Based on [tomsej's pi-ext leader-key](https://github.com/tomsej/pi-ext) (MIT),
+`Ctrl+A` leader palette for pi (tmux `Ctrl+B` style), with scoped-model and full
+model/thinking pickers. Based on [tomsej's pi-ext leader-key](https://github.com/tomsej/pi-ext) (MIT),
 homogenized into skill-pi extension conventions.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
-| `Ctrl+K` | Open the command plate palette |
-| `/cp` | Open the command plate palette (command form) |
-| `Ctrl+M` | Open the Scoped Models picker directly |
+| `Ctrl+A` then a key | Run a plate action (see below) |
+| `/cp` | List the plate actions (command form) |
+
+The `Ctrl+A` leader is only armed while pi keeps `Ctrl+A` bound to
+`app.models.enableAll` (the default). If you rebind that keybinding in
+`keybindings.json`, the leader follows the new binding — or stops working if
+you unbind it.
 
 ## Palette
 
-Press a chord key to drill into a group, or a direct key to run the action.
-`up`/`down` + `Enter` work too; `Backspace` goes back, `Esc` closes.
+`Ctrl+A` then a chord key to run the action.
 
 | Key | Action |
 | --- | --- |
-| `m` | Models — scoped model picker (respects `enabledModels`) |
-| `a` → `s` | `/subagents` |
-| `a` → `p` | `/ps` |
-| `t` | `/tree` |
-| `q` | Quit pi |
+| `Ctrl+A` + `m` | Models — scoped model picker (respects `enabledModels`) |
+| `Ctrl+A` + `a` + `s` | `/subagents` |
+| `Ctrl+A` + `a` + `p` | `/ps` |
+| `Ctrl+A` + `t` | `/tree` |
+| `Ctrl+A` + `q` | Quit pi |
 
 ## Scoped Models picker
 

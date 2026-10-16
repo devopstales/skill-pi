@@ -61,12 +61,12 @@ it("renderTodoCard: collapsed mode shows only a summary line", () => {
     0,
   ).state;
   const expanded = renderTodoCard(state, fakeTheme, 52);
-  const collapsed = renderTodoCard(state, fakeTheme, 52, { collapsed: true, collapseKey: "ctrl+shift+t" });
+  const collapsed = renderTodoCard(state, fakeTheme, 52, { collapsed: true, collapseKey: "ctrl+a" });
   assert.ok(collapsed.length < expanded.length, "collapsed is shorter");
   const flat = collapsed.join("\n");
   assert.match(flat, /3 open \(1 blocked\)/);
   assert.ok(!flat.includes("A"), "task titles hidden when collapsed");
-  assert.match(flat, /ctrl\+shift\+t/);
+  assert.match(flat, /ctrl\+a/);
 });
 
 it("renderTodoCard: long titles wrap to multiple lines within width", () => {

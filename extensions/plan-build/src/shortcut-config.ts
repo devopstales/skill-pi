@@ -18,7 +18,8 @@ const BASE_KEYS = new Set([
 const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
 
 export interface ShortcutConfig {
-	toggleMode: KeyId[];
+	planMode: KeyId[];
+	buildMode: KeyId[];
 }
 
 export interface LoadedShortcutConfig {
@@ -31,18 +32,18 @@ export interface LoadedShortcutConfig {
 }
 
 const DEFAULT_CONFIG: ShortcutConfig = {
-	toggleMode: ["alt+m"],
+	planMode: ["ctrl+a"],
+	buildMode: ["ctrl+b"],
 };
 
 export const SHORTCUT_PRESETS: Record<string, ShortcutConfig> = {
-	"Tab + Alt+M": DEFAULT_CONFIG,
-	"Alt+M only": { toggleMode: ["alt+m"] },
-	"Disabled": { toggleMode: [] },
+	"Ctrl+A / Ctrl+B": DEFAULT_CONFIG,
+	"Disabled": { planMode: [], buildMode: [] },
 };
 
 export function shortcutPresetLabel(config: ShortcutConfig): string {
 	return Object.entries(SHORTCUT_PRESETS).find(([, preset]) =>
-		(["toggleMode"] as const).every((action) =>
+		(["planMode", "buildMode"] as const).every((action) =>
 			config[action].length === preset[action].length && config[action].every((key) => preset[action].includes(key)),
 		),
 	)?.[0] ?? "Custom";
@@ -50,7 +51,8 @@ export function shortcutPresetLabel(config: ShortcutConfig): string {
 
 function cloneDefaultConfig(): ShortcutConfig {
 	return {
-		toggleMode: [...DEFAULT_CONFIG.toggleMode],
+		planMode: [...DEFAULT_CONFIG.planMode],
+		buildMode: [...DEFAULT_CONFIG.buildMode],
 	};
 }
 
@@ -82,11 +84,6 @@ function parseShortcutList(value: unknown, name: keyof ShortcutConfig): {
 			warning: `shortcuts.${name} must be a Pi key string or an array of Pi key strings`,
 		};
 	}
-	if (name === "toggleMode" && value.includes("tab")) {
-		return {
-			shortcuts: [...DEFAULT_CONFIG[name]],
-		};
-	}
 	return { shortcuts: [...new Set(value)] };
 }
 
@@ -106,14 +103,18 @@ function parseShortcuts(value: unknown): {
 	}
 
 	const source = shortcuts as Partial<Record<keyof ShortcutConfig, unknown>>;
-	const toggleMode = source.toggleMode === undefined
-		? { shortcuts: [...DEFAULT_CONFIG.toggleMode] }
-		: parseShortcutList(source.toggleMode, "toggleMode");
-	const warnings = [toggleMode.warning].filter((warning): warning is string => warning !== undefined);
+	const planMode = source.planMode === undefined
+		? { shortcuts: [...DEFAULT_CONFIG.planMode] }
+		: parseShortcutList(source.planMode, "planMode");
+	const buildMode = source.buildMode === undefined
+		? { shortcuts: [...DEFAULT_CONFIG.buildMode] }
+		: parseShortcutList(source.buildMode, "buildMode");
+	const warnings = [planMode.warning, buildMode.warning].filter((warning): warning is string => warning !== undefined);
 
 	return {
 		config: {
-			toggleMode: toggleMode.shortcuts,
+			planMode: planMode.shortcuts,
+			buildMode: buildMode.shortcuts,
 		},
 		...(warnings.length > 0 ? { warning: warnings.join("; ") } : {}),
 	};

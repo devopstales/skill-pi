@@ -69,7 +69,8 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
 ## Flags & shortcuts
 
 - `--plan` / `--build` — start a new session in the given mode.
-- `Alt+M` — cycle Plan ↔ Build (global).
+- `Ctrl+A` — enter Plan mode.
+- `Ctrl+B` — enter Build mode.
 
 ## Configuration
 
@@ -82,7 +83,8 @@ mode's theme color, or the plan title when `showPlanTitle` is on.
   "showPlanTitle": true,
   "stableToolCatalog": true,
   "shortcuts": {
-    "toggleMode": ["alt+m"]
+    "planMode": ["ctrl+a"],
+    "buildMode": ["ctrl+b"]
   }
 }
 ```

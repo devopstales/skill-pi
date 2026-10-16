@@ -65,6 +65,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): ExtensionContext {
     getSystemPrompt: () => "",
   };
   const ctx = { ...defaults, ...overrides };
+  (ctx as { keybindings?: unknown }).keybindings = { matches: () => false };
   return ctx as unknown as ExtensionContext;
 }
 
@@ -140,7 +141,6 @@ function emit(mock: MockPi, event: string, payload: unknown = {}, ctx: Extension
 it("registers the todo tool and default shortcuts", () => {
   const mock = makePi();
   assert.ok(mock.tools.get(TODO_TOOL_NAME), "todo tool registered");
-  assert.ok(mock.shortcuts.includes("ctrl+shift+t"), "collapse shortcut registered");
   assert.ok(mock.shortcuts.includes("alt+shift+up"), "scroll-up shortcut registered");
   assert.ok(mock.shortcuts.includes("alt+shift+down"), "scroll-down shortcut registered");
 });
@@ -241,7 +241,7 @@ it("env: SKILL_PI_TODO_KEY customizes or disables the collapse key", () => {
   assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "alt+t" } as NodeJS.ProcessEnv), "alt+t");
   assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "off" } as NodeJS.ProcessEnv), undefined);
   assert.equal(todoCollapseKey({ SKILL_PI_TODO_KEY: "" } as NodeJS.ProcessEnv), undefined);
-  assert.equal(todoCollapseKey({} as NodeJS.ProcessEnv), "ctrl+shift+t");
+  assert.equal(todoCollapseKey({} as NodeJS.ProcessEnv), "ctrl+a");
 });
 
 it("main-view widget renders nothing (todo lives only in the sidebar rail)", async () => {

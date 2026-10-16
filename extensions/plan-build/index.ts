@@ -752,13 +752,13 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 				return;
 			}
 			const shortcutSelection = await ctx.ui.select(
-				`Plan/Build shortcuts — active: ${shortcutPresetLabel(shortcutConfig)} (global: ${shortcutConfig.toggleMode.join(", ") || "none"})`,
+				`Plan/Build shortcuts — active: ${shortcutPresetLabel(shortcutConfig)} (plan: ${shortcutConfig.planMode.join(", ") || "none"}, build: ${shortcutConfig.buildMode.join(", ") || "none"})`,
 				[...Object.keys(SHORTCUT_PRESETS), customOption],
 			);
 			if (!shortcutSelection) return;
 			if (shortcutSelection === customOption) {
 				ctx.ui.notify(
-					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"toggleMode":["ctrl+alt+m"]}}. Use [] to disable the shortcut.`,
+					`Edit ${shortcutConfigPath}, then run /reload. Example: {"showPlanTitle":true,"shortcuts":{"planMode":["ctrl+a"],"buildMode":["ctrl+b"]}}. Use [] to disable a shortcut.`,
 					"info",
 				);
 				return;
@@ -772,11 +772,13 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 		},
 	});
 
-	for (const shortcut of shortcutConfig.toggleMode) {
-		pi.registerShortcut(shortcut, {
-			description: "Cycle Plan and Build modes",
-			handler: async (ctx) => selectMode(nextMode(session(ctx).pendingMode ?? session(ctx).selectedMode), session(ctx), ctx, "manual"),
-		});
+	for (const [action, mode, label] of [["planMode", "plan", "Enter Plan mode"], ["buildMode", "build", "Enter Build mode"]] as const) {
+		for (const shortcut of shortcutConfig[action]) {
+			pi.registerShortcut(shortcut, {
+				description: label,
+				handler: async (ctx) => selectMode(mode, session(ctx), ctx, "manual"),
+			});
+		}
 	}
 
 	pi.registerTool({

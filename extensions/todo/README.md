@@ -17,7 +17,7 @@ Based on [gentle-shell's `gentle-todo`](https://github.com/Gentleman-Programming
   summary, per-task status glyphs, in-progress notes, and a stale warning when
   the list goes untouched for several turns. The main-view widget is empty;
   the card lives exclusively in the sidebar rail.
-- **Collapse & scroll** — `ctrl+shift+t` collapses to a one-line summary;
+- **Collapse & scroll** — `Ctrl+A` then `t` collapses to a one-line summary;
   `alt+shift+up/down` scrolls a long list.
 - **The list survives** — every change mirrors the open snapshot into the
   transcript as a hidden custom message, so the list is replayed from the session
@@ -68,7 +68,7 @@ Environment variables (read once at extension load):
 | Variable | Default | Meaning |
 |---|---|---|
 | `SKILL_PI_TODO` | `1` | `0` / `false` / `off` disables the extension entirely |
-| `SKILL_PI_TODO_KEY` | `ctrl+shift+t` | Collapse/expand shortcut (pi keybinding form); `off` or empty disables it |
+| `SKILL_PI_TODO_KEY` | `ctrl+a` | Collapse/expand action key (second key of the `Ctrl+A` leader; `off` or empty disables it) |
 
 ## Development
 
