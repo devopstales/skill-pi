@@ -168,6 +168,31 @@ Currently bundled:
   [jtepe/pi-lsp](https://github.com/jtepe/pi-lsp) (MIT), homogenized for the
   isolated agent dir. See
   [`extensions/lsp/README.md`](extensions/lsp/README.md).
+- **`webfetch`** — a `webfetch` tool that fetches URL content as markdown, text,
+   or HTML over static HTTP (bounded 30s/120s timeout, 5MB response cap). HTML is
+   converted with [trafilatura](https://trafilatura.readthedocs.io/) (Python runner
+   auto-detected: `uvx` → `uv run` → `pipx` → `pip-run`) instead of a naive
+   HTML-to-markdown pass. Built-in site handlers short-circuit GitHub URLs to the
+   `gh` CLI and Google Docs URLs to workspace tools; others can register via the
+   `webfetch:register` event. No headless Chrome — JS-rendered pages are not
+   available. Forked from
+   [code-yeongyu/pi-webfetch](https://github.com/code-yeongyu/pi-webfetch) (MIT) with
+   the extraction homogenized from
+   [georgebashi/pi-web-fetch](https://github.com/georgebashi/pi-web-fetch) (MIT).
+   `SKILL_PI_WEBFETCH=0` disables it. See
+   [`extensions/webfetch/README.md`](extensions/webfetch/README.md).
+- **`pi-context-view`** — `/context` visualizes model context usage and lets you
+  inspect the parts you normally can't see: the system prompt, tool definitions,
+  and instructions injected by other extensions. `/context usage` opens the usage
+  map (used vs. free space grouped by category); `/context injections` shows the
+  latest request's injections with opt-in raw previews; `/context config` creates
+  the defaults-populated override file. Both views are TUI-only and read-only —
+  the extension adds nothing to the model context. Override config lives in
+  `$AGENT_HOME/conf.d/pi-context-view.conf` per ADR 0008
+  (`~/.skill-pi/conf.d/pi-context-view.conf`). Forked from
+  [dimk90/pi-context-view](https://github.com/dimk90/pi-context-view) (MIT),
+  homogenized for the isolated agent dir and the conf.d contract. See
+  [`extensions/pi-context-view/README.md`](extensions/pi-context-view/README.md).
 
 ## Choosing a model
 

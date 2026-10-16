@@ -1,0 +1,54 @@
+{
+  "name": "@devopstales/pi-webfetch",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Web fetch tool for pi: static undici fetch + trafilatura HTML-to-markdown extraction with bounded timeout and response size. Forked from code-yeongyu/pi-webfetch (MIT) and georgebashi/pi-web-fetch (MIT), homogenized for the skill-pi agent dir.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "coding-agent",
+    "webfetch",
+    "fetch",
+    "trafilatura",
+    "markdown"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.3",
+    "typebox": "*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/picomatch": "^4.0.3",
+    "typescript": "^5.5.0",
+    "vitest": "^5.0.0"
+  }
+}
