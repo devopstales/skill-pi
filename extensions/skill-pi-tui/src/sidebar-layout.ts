@@ -92,7 +92,7 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
   // rendering right now", not "the rail content would fit" — that is `attached`,
   // set by attach() each tick. `active` (prepare() content-fit) can be true while
   // the hstack is not on the live root, which would double-render the card.
-  state.ownsHost = () => state.attached && !stopped && host.mode === "fullscreen" && tui.terminal.columns >= SIDEBAR_BREAKPOINT && (placement() === "auto" || placement() === "right") && !!host.layoutRoot && roots.has(host.layoutRoot);
+  state.ownsHost = () => Boolean(state.attached) && !stopped && host.mode === "fullscreen" && tui.terminal.columns >= SIDEBAR_BREAKPOINT && (placement() === "auto" || placement() === "right") && !!host.layoutRoot && roots.has(host.layoutRoot);
   const rail: Component = {
     render: () => railLines,
     invalidate() {
