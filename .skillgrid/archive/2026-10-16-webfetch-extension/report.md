@@ -346,17 +346,17 @@ wording suggestion on the google-docs handler.
 
 ## Final-State Facts
 
-**Shipped:** <what actually shipped>
-**Base branch:** <base-branch> · **Chain strategy:** <strategy>
-**Integration:** <merged @ <commit> | PR <url> | kept branch <name>> (from ship context)
+**Shipped:** the bundled `webfetch` extension (`extensions/webfetch/`) — static undici fetch + trafilatura HTML→markdown extraction, 5MB response cap, bounded timeout (30s default / 120s cap), `beforeFetch` site short-circuits (GitHub→gh CLI, Google Docs→workspace hint), event-bus `webfetch:register` handler override, `SKILL_PI_WEBFETCH` toggle (default on), output capping via pi's shared `truncateHead`. 44/44 vitest + tsc clean at close.
+**Base branch:** `main` · **Chain strategy:** direct-to-main (option 1 — kept as-is, no push/PR; `main` has no upstream tracking branch)
+**Integration:** kept on local `main` @ `5af067c` (webfetch trail: `6623470` spec zone → `801ceec` code → `cfaf607`+`1c78160` QA → `3d9c601` settle fix → `26fc935` review fixes → `28bddf4`+`2115f8b` review docs → `5af067c` archive). Nothing pushed.
 
 ## Gates
 
 | Gate | Result |
 |------|--------|
-| Ship gate | ✅ success + `diff -r` empty (or: blocked — {reason}) |
-| QA gate | ✅ {PASS \| WAIVED \| CONCERNS — human override recorded} |
-| Verdict gate (advisory) | {accepted \| accepted-with-open-items \| rejected} — recorded, not enforced |
+| Ship gate | ✅ success + `diff -r` empty (verified in ship) |
+| QA gate | ✅ PASS (report.md `## Gate Decision`, re-verified after W031–W033 fixes) |
+| Verdict gate (advisory) | accepted-with-open-items — recorded, not enforced |
 
 ## Decisions
 
@@ -364,21 +364,35 @@ wording suggestion on the google-docs handler.
 
 | Decision | Tradeoff | Why | Source |
 |----------|----------|-----|--------|
+| Swap Readability/Turndown for trafilatura (Python subprocess) to keep code-yeongyu's static-HTTP contract | Adds a Python-runner dependency (uvx/pipx/python3) and a subprocess boundary; first run downloads trafilatura | georgebashi's trafilatura extraction is the ported quality win; headless Chrome (the other option) was dropped as out of scope | `briefing.md` goal; `blueprint.md` Task 2 |
+| Match site handlers on `parsed.hostname` only, not hostname+pathname | Bare-hostname patterns are less expressive than glob-path patterns | Prevents a crafted path (`https://evil.com/github.com/x`) from claiming a built-in pattern and suppressing the fetch (SSRF-hider) | `registry.ts:matchExtension`; `26fc935`; security review Medium |
+| Keep `picomatch` as the extension's own dep rather than swap to root `minimatch` | `picomatch` is not root-carried (ADR-0007 load rule); 5 sibling extensions share the same state | A webfetch-only swap to `minimatch` would be inconsistent with `command-plate`/`ask-user`/`lsp`/`plan-build`/`todo`; the family question is W034 | `package.json`; review Standards Important #1; W034 |
+| `settle()` kills the child only on abort/timeout/spawn-error, not on the close path | Slightly more state in the extraction promise | The old `settle` killed the child on every settle including success, racing the `close` handler and replacing a good result with a spurious exit-code error | `extract.ts`; `3d9c601`; `test/extract.test.ts` |
 
 ## Lessons
 
 | Lesson | Root Cause | Do Differently | Source |
 |--------|-----------|----------------|--------|
+| Verify reviewer examples before fixing — the SSRF percent-encoded-host vector did not reach the socket | The reviewer's example put `%5B` in the pathname (hostname stayed `host`), and `new URL` rejects `%5B`-bracket hosts outright | For each security claim, run the exact input through the validator + runtime before writing the fix; `new URL("http://%5B::1%5D:8080/")` throws, so `validateUrl` rejects before connect | security review finding; verification in receiving-code-review |
+| A "port the upstream" task still needs a RED test for the subprocess error paths | The first `fetcher.test.ts` was a verbatim upstream port with one redirect test; the >5MB and no-content/timeout paths were unverified until review | When porting, enumerate the upstream's untested error branches and add fake-runner/fake-server tests in the same change (W032/W033) | `report.md` Verification-Gap Audit; `test/extract.test.ts`, `test/fetcher.test.ts` |
+| Module-level detection cache needs a test seam or it blocks hermetic tests | `detectPythonRunner` cached its result in module state, so a second detection in a new test saw the stale value | Export a `resetPythonRunnerDetection()` (test-only) and let the detector accept an optional runner table so tests control PATH | `extract.ts`; `resetPythonRunnerDetection`; `test/extract.test.ts` |
 
 ## Patterns
 
 | Pattern | Reuse | Source |
 |---------|-------|--------|
+| Fake-runner subprocess testing: write a `#!/bin/sh` script to a temp dir, put it on a controlled `PATH`, spawn it through the real runner contract (stdin bytes → stdout / exit code / stderr) | Any change that shells out to a CLI and needs unit coverage of exit/stdout/stderr/timeout without the real binary or network | `test/extract.test.ts` (7 fake-runner tests) |
+| Local-HTTP `node:http` server fixtures for fetch tests (redirect, Content-Length, mid-stream growth) | Any outbound-fetch change where a real server is cheap and a mock would hide the wire behavior | `test/fetcher.test.ts` |
+| Three-axis blind code review (Standards/Spec/Security as fresh subagents, Grade B) with a floor verdict and per-axis independence grade | Any non-trivial diff before ship; keep the blindness contract (no session narrative/verdict passed) | `review.md`; observation 14 |
 
 ## Surprises
 
 | Surprise | Signal | Source |
 |----------|--------|--------|
+| On this macOS machine, a child process spawned with a bare temp-dir `PATH` (no system `PATH`) is SIGKILLed at ~900ms by some environment agent; with the system `PATH` it survives to its natural exit | The 30s-timeout fake-runner test failed at ~900ms with `exit code 137 … Killed: 9` when `PATH` was only the control dir, but passed under the system `PATH` | `test/extract.test.ts` (timeout test runs under system `PATH` for this reason) |
+| `new URL` rejects percent-encoded bracket hostnames (`http://%5B::1%5D:8080/` is invalid) and lands `%5B` in the pathname when it follows a normal host — so scheme-only `validateUrl` does not have the percent-encoded-host SSRF the review claimed | `node -e "new URL('http://%5B::1%5D:8080/')"` throws; `new URL('http://host/%5B::1%5D:8080/x').hostname === 'host'` | security review pushback; `fetcher.ts:validateUrl` |
+| `state-drift-check.mjs` `derivePhase` has no `review` state — it returns `qa` whenever `report.md` exists, so a correct `current_phase: review` reads as a false-positive drift | Running the guard after setting `current_phase: review` reported `review → qa` | `review.md` Post-review note; `state-drift-check.mjs:28-41` |
+| `picomatch` is declared+used by 6 extensions but is absent from root `node_modules` — a family-wide ADR-0007 drift, not a webfetch load failure (the wrapper loads all of them in the running E2E) | `require.resolve('picomatch')` fails from the repo root; `ls node_modules/picomatch` missing; 5 sibling `package.json` declare it identically | Standards review; W034 |
 
 ## Environment Retro
 
@@ -386,41 +400,51 @@ wording suggestion on the google-docs handler.
 
 | Category | Finding | Fix lands in | Source |
 |----------|---------|--------------|--------|
+| automated checks | `state-drift-check.mjs` `derivePhase` returns `qa` whenever `report.md` exists and has no `review` state, so `current_phase: review` is a false-positive drift. Add a `review` state (e.g. `review.md` present → `review`) to the artifact ladder. | `~/.agents/skills/verification/qa/scripts/state-drift-check.mjs` `derivePhase` | `review.md` Post-review note; guard run after `current_phase: review` |
+| information access | The QA drift/size guard scripts resolve `yaml` relative to `~/.agents/skills/verification/qa/scripts/`; when the dep is missing they exit 2 "script not found"/"Cannot find package 'yaml'" and the gate reads it as a scope failure (W031). Document the one-time `npm i yaml` in that scripts dir (or ship a `package.json`) so the gate is not silently UNSCOPED on a fresh clone. | `~/.agents/skills/verification/qa/scripts/` (add `package.json` / README note) | W031 (closed this change) |
+| tool economy | The root full-suite runner (`node --test "test/**/*.test.js"`) hangs on the pre-existing `test/rpc.test.js` 15s timeout (W030), forcing a per-suite `--test-timeout=15000` invocation for the deterministic suites. A `test:fast` task naming the deterministic suites would make the green check one command. | root `Taskfile` / `package.json` scripts | W030; observation 22 (test:fast task proposed) |
 
 ## Acceptance Verdict
 
-**Verdict:** accepted | accepted-with-open-items | rejected
+**Verdict:** accepted-with-open-items
 
-**Grounding:** <goal from briefing.md + the Goal-Backward Verification / Traceability Matrix evidence above that supports the verdict>
+**Grounding:** briefing.md goal — a bundled `webfetch` extension keeping code-yeongyu's static-HTTP contract with trafilatura extraction. Goal-Backward Verification: all 8 truths/artifacts/links/data-flows VERIFIED. Traceability: 9/9 scenarios PASS. QA gate PASS; review floor met-with-fixes (4 in-scope findings fixed in `26fc935`, 44/44 + tsc clean at close).
 
-**Reasoning:** <2–3 sentences: what drove the verdict>
+**Reasoning:** The goal is met and the change is shipped green on `main`. It is `accepted-with-open-items` rather than `accepted` because three items are deliberately parked as family-wide or defense-in-depth (not webfetch-specific): W034 (`picomatch` root-carriage / ADR-0007), W035 (`private: true` omission, family-wide), and W036 (SSRF private-range hardening). None blocks the webfetch tool's stated contract.
 
 ## Open Items (→ next change)
 
-- <item + path to resolution> (or "None")
+- **W034 (family):** `picomatch` is extension-declared by 6 extensions but not root-carried. Decide: add `picomatch` to root `package.json`, standardize on root `minimatch`, or amend ADR-0007's "runtime deps also in root" rule. Path: one decision + either a root dep line, a `minimatch` swap across 6 extensions, or an ADR edit.
+- **W035 (family):** 10/11 extensions omit `private: true` and carry `publishConfig`, contradicting ADR-0007. Same family decision as W034. Path: amend ADR-0007 or add `private: true` across the family.
+- **W036 (hardening):** add a private/loopback/link-local SSRF denylist to `validateUrl` (defense-in-depth; the percent-encoded-host vector was pushed back). Path: ~5-line host-range check in `fetcher.ts` + a test.
+- **W030 (pre-existing):** confirm the `test/rpc.test.js` startup hang in a clean environment (not a webfetch issue).
 
 ## Prior-Change Follow-Through
 
 | Prior open item (from previous archived change) | Addressed by this change? | Evidence |
 |--------------------------------------------------|---------------------------|----------|
+| ADR-0007 "runtime deps also in root node_modules" drift guard (open question in ADR-0007, raised at the permission/lsp changes) | no — surfaced as W034, not resolved | `review.md` Standards Important #1; W034 (family decision) |
+| "private:true flag = family error" ruling (lsp/pi-context-view review) | no — re-surfaced as W035, consistent with the prior ruling | `review.md` Standards Important #2; W035 |
+| W029 (pi-hooks executor untested) | no — different extension, still open | `.skillgrid/WINDOWS.md` W029 (open) |
 
 ## Move Evidence (from ship context)
 
 **From:** `.skillgrid/specs/2026-10-16-webfetch-extension/` → **To:** `.skillgrid/archive/2026-10-16-webfetch-extension/`
-**`diff -r` readback:** <empty → PASS | verbatim output → FAIL>
+**`diff -r` readback:** empty → PASS (verified in ship; commit `5af067c`)
 
 ## Overrides / Waivers / Contradictions
 
-- <QA waiver, human CONCERNS override, size-exception, or "None">
-- <Unrankable contradiction: both statements + sources + when written — or "None">
+- None. (QA gate PASS, no waiver, no human CONCERNS override, no size-exception.)
+- Unrankable contradiction: none. The QA half's "open" items (W032/W033, google-docs wording) were all resolved in-range; the retro half reports the final state (fixed in `3d9c601`/`26fc935`), not the stale QA-snapshot "pending" claims.
 
 ## Lineage (observation IDs)
 
 Every artifact read this close, for traceability:
 
-- briefing: <id>
-- blueprint: <id>
-- tasks: <id>
-- ship: <id>
-- report (QA half): <id>
-- research / findings / ADRs: <ids or "none">
+- briefing: read from `.skillgrid/archive/2026-10-16-webfetch-extension/briefing.md` (no separate mnemonic observation)
+- blueprint: read from `.skillgrid/archive/2026-10-16-webfetch-extension/blueprint.md` (no separate mnemonic observation)
+- tasks: n/a — executed in-session (no per-ticket `tasks.md`; TDD Evidence Audit records this)
+- ship: `17` (topic_key `skillgrid/2026-10-16-webfetch-extension/ship`)
+- review: `14` (topic_key `architecture/webfetch-extension`, three-axis review record) — also `.skillgrid/archive/2026-10-16-webfetch-extension/review.md`
+- report (QA half): this file, written by qa (no separate observation; the file is the record)
+- research / findings / ADRs: `06-research-findings.md` (lifted: picomatch family drift W034, review-guard no-`review`-state gotcha); ADR-0001/0005/0007 (in-force, read for the review); observation `22` (test:fast task — env retro)
