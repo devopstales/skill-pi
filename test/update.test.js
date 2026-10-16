@@ -121,3 +121,10 @@ test("printHelp documents the update subcommand", async () => {
   const { stdout } = withStreams(() => printHelp());
   assert.match(stdout, /skill-pi update/);
 });
+
+test("parseArgs: 'update' after '--' stays in passthrough", async () => {
+  const { parseArgs } = await import("../bin/skill-pi.js");
+  const args = parseArgs(["--", "update"]);
+  assert.equal(args.update, false);
+  assert.deepEqual(args.passthrough, ["update"]);
+});

@@ -150,7 +150,7 @@ Usage:
   skill-pi [PROJECT] [pi args...]            Launch the agent for PROJECT (default: cwd)
   skill-pi --import-auth DIR                 Copy auth.json + models.json from DIR (default ~/.pi/agent)
   skill-pi --agent-dir DIR [pi args...]      Override the agent directory
-  skill-pi update                       Update skill-pi + bundled pi (npm install + npm link --force)
+  skill-pi update                            Update skill-pi + bundled pi (npm install + npm link --force)
 
 Isolation:
   Global config:  ~/.skill-pi/agent (override: $SKILL_PI_AGENT_DIR or --agent-dir)
