@@ -1,7 +1,7 @@
 schema: skillgrid/state/v1
 pipeline:
-  current_phase: "shipped"
-  current_change: "2026-10-15-plan-build-extension"
+  current_phase: "qa"
+  current_change: "2026-10-16-command-plate-extension"
   status: done
 progress:
   completed_changes: 7
