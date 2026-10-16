@@ -128,3 +128,13 @@ implementer's model family.
 ## Fix commits
 
 - `26fc935` — `fix(webfetch): address code-review findings` (glob-bypass, google-docs message, typebox peer-pin, dead `truncated` field; 44/44 tests, tsc clean).
+- `28bddf4` — `docs(review): webfetch three-axis review record — met-with-fixes` (this file + WINDOWS W034–W036 + state.yaml).
+
+## Post-review note — drift-guard false positive
+
+`state-drift-check.mjs` `derivePhase` returns `"qa"` whenever `report.md` exists and has no
+`review` state in its artifact ladder (briefing→blueprint→tasks→report). With
+`current_phase: review` (correct per the requesting-code-review skill) the guard reports a
+phase drift `review → qa`. This is a guard limitation, not real drift: the review phase
+post-dates the QA guard's model. Recorded here; the guard could be extended to treat
+`review.md` presence as `review`.
