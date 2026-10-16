@@ -44,6 +44,21 @@ function getEnabledModelSet(cwd: string): Set<string> | undefined {
   return new Set(patterns.map((p) => p.toLowerCase()));
 }
 
+export function resolveScrollOffset(
+  highlightedIndex: number,
+  scrollOffset: number,
+  maxVisible: number,
+  itemCount: number,
+): number {
+  let offset = scrollOffset;
+  if (highlightedIndex < offset) {
+    offset = highlightedIndex;
+  } else if (highlightedIndex >= offset + maxVisible) {
+    offset = highlightedIndex - maxVisible + 1;
+  }
+  return offset;
+}
+
 function isModelEnabled(
   provider: string,
   modelId: string,
@@ -100,6 +115,49 @@ interface SearchableItem {
 
 const MAX_VISIBLE = 15;
 
+export function highlightItemLabel(theme: Theme, label: string, highlighted: boolean): string {
+  return highlighted ? theme.fg("accent", theme.bold(label)) : theme.fg("text", label);
+}
+
+export function itemNumber(theme: Theme, modelIndex: number): string {
+  return modelIndex < 9 ? theme.fg("dim", `${modelIndex + 1}`) : theme.fg("dim", "·");
+}
+
+export function renderSearchWindow<T>(options: {
+  frame: OverlayFrame;
+  theme: Theme;
+  items: T[];
+  highlightedIndex: number;
+  scrollOffset: number;
+  maxVisible?: number;
+  renderRow: (item: T, isHighlighted: boolean, modelIndex: number) => string;
+}): string[] {
+  const { frame, theme: th, items, highlightedIndex, scrollOffset, maxVisible = MAX_VISIBLE, renderRow } = options;
+  const lines: string[] = [];
+  const visibleEnd = Math.min(scrollOffset + maxVisible, items.length);
+
+  if (items.length === 0) {
+    lines.push(frame.row(th.fg("warning", "  no matches")));
+    return lines;
+  }
+
+  if (scrollOffset > 0) {
+    lines.push(frame.row(th.fg("dim", `  ↑ ${scrollOffset} more`)));
+  }
+
+  for (let i = scrollOffset; i < visibleEnd; i++) {
+    const isHighlighted = i === highlightedIndex;
+    lines.push(frame.rowTruncated(renderRow(items[i], isHighlighted, i)));
+  }
+
+  const remaining = items.length - visibleEnd;
+  if (remaining > 0) {
+    lines.push(frame.row(th.fg("dim", `  ↓ ${remaining} more`)));
+  }
+
+  return lines;
+}
+
 export async function searchableSelect<T extends string>(
   ctx: ExtensionContext,
   title: string,
@@ -127,11 +185,7 @@ export async function searchableSelect<T extends string>(
     };
 
     const ensureVisible = () => {
-      if (highlightedIndex < scrollOffset) {
-        scrollOffset = highlightedIndex;
-      } else if (highlightedIndex >= scrollOffset + MAX_VISIBLE) {
-        scrollOffset = highlightedIndex - MAX_VISIBLE + 1;
-      }
+      scrollOffset = resolveScrollOffset(highlightedIndex, scrollOffset, MAX_VISIBLE, filteredItems.length);
     };
 
     return {
@@ -150,35 +204,22 @@ export async function searchableSelect<T extends string>(
 
         lines.push(f.separator());
 
-        if (filteredItems.length === 0) {
-          lines.push(f.row(th.fg("warning", "  no matches")));
-        } else {
-          const visibleEnd = Math.min(scrollOffset + MAX_VISIBLE, filteredItems.length);
-
-          if (scrollOffset > 0) {
-            lines.push(f.row(th.fg("dim", `  ↑ ${scrollOffset} more`)));
-          }
-
-          for (let i = scrollOffset; i < visibleEnd; i++) {
-            const item = filteredItems[i];
-            const isHighlighted = i === highlightedIndex;
-
-            const label = isHighlighted
-              ? th.fg("accent", th.bold(item.label))
-              : th.fg("text", item.label);
-
-            let line = `${isHighlighted ? "> " : "  "}${label}`;
-            if (item.description) {
-              line += "  " + th.fg("dim", item.description);
-            }
-            lines.push(f.rowTruncated(line));
-          }
-
-          const remaining = filteredItems.length - visibleEnd;
-          if (remaining > 0) {
-            lines.push(f.row(th.fg("dim", `  ↓ ${remaining} more`)));
-          }
-        }
+        lines.push(
+          ...renderSearchWindow<SearchableItem>({
+            frame: f,
+            theme: th,
+            items: filteredItems,
+            highlightedIndex,
+            scrollOffset,
+            renderRow: (item, isHighlighted) => {
+              let line = `${isHighlighted ? "> " : "  "}${highlightItemLabel(th, item.label, isHighlighted)}`;
+              if (item.description) {
+                line += "  " + th.fg("dim", item.description);
+              }
+              return line;
+            },
+          }),
+        );
 
         lines.push(f.separator());
         const hint = helpText ?? "type to search • ↑↓ navigate • enter select • esc cancel";
@@ -246,6 +287,17 @@ export async function searchableSelect<T extends string>(
 // Thinking level
 // ─────────────────────────────────────────────────────────────────────────────
 
+function buildThinkingItems(currentThinking: ModelThinkingLevel): SearchableItem[] {
+  return ALL_THINKING_LEVELS.map((level) => {
+    const isCurrent = level === currentThinking;
+    return {
+      value: level,
+      label: isCurrent ? `${level} (current)` : level,
+      description: getThinkingDescription(level),
+    };
+  });
+}
+
 export function getThinkingDescription(level: ModelThinkingLevel): string {
   switch (level) {
     case "off":
@@ -273,14 +325,7 @@ export async function runThinkingPicker(
 
   const currentThinking = pi.getThinkingLevel();
 
-  const thinkingItems: SearchableItem[] = ALL_THINKING_LEVELS.map((level) => {
-    const isCurrent = level === currentThinking;
-    return {
-      value: level,
-      label: isCurrent ? `${level} (current)` : level,
-      description: getThinkingDescription(level),
-    };
-  });
+  const thinkingItems = buildThinkingItems(currentThinking);
 
   const choice = await searchableSelect<ModelThinkingLevel>(
     ctx,
@@ -369,16 +414,7 @@ export async function runModelSwitcher(
   let selectedThinking: ModelThinkingLevel = pi.getThinkingLevel();
 
   if (supportsReasoning) {
-    const currentThinking = pi.getThinkingLevel();
-
-    const thinkingItems: SearchableItem[] = ALL_THINKING_LEVELS.map((level) => {
-      const isCurrent = level === currentThinking;
-      return {
-        value: level,
-        label: isCurrent ? `${level} (current)` : level,
-        description: getThinkingDescription(level),
-      };
-    });
+    const thinkingItems = buildThinkingItems(pi.getThinkingLevel());
 
     const thinkingChoice = await searchableSelect<ModelThinkingLevel>(
       ctx,
@@ -673,7 +709,6 @@ export async function runScopedModels(
           let modelCounter = 0;
           for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-
             if (row.type === "header") {
               const headerText = ` ${row.provider} ${row.count > 0 ? `(${row.count})` : ""} `;
               const padded = headerText.padEnd(width - 4, "─");
@@ -688,10 +723,6 @@ export async function runScopedModels(
             const isCurrent =
               currentModel?.provider === entry.provider && currentModel?.id === entry.model;
 
-            const label = isHighlighted
-              ? th.fg("accent", th.bold(entry.label))
-              : th.fg("text", entry.label);
-
             const currentBadge = isCurrent ? " " + th.fg("success", "●") : "";
 
             const thinking = ALL_THINKING_LEVELS[thinkingIndices[mi]];
@@ -700,8 +731,7 @@ export async function runScopedModels(
               ? th.fg("dim", "‹") + th.fg(thinkingRole, ` ${thinking} `) + th.fg("dim", "›")
               : th.fg(thinkingRole, thinking);
 
-            const num = modelCounter < 9 ? th.fg("dim", `${modelCounter + 1}`) : th.fg("dim", "·");
-            const line = `${isHighlighted ? "> " : "  "}${num} ${label}${currentBadge}  ${thinkingTag}`;
+            const line = `${isHighlighted ? "> " : "  "}${itemNumber(th, modelCounter)} ${highlightItemLabel(th, entry.label, isHighlighted)}${currentBadge}  ${thinkingTag}`;
             lines.push(f.rowTruncated(line));
             modelCounter++;
           }
