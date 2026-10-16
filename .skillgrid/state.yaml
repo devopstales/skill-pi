@@ -1,6 +1,6 @@
 schema: skillgrid/state/v1
 pipeline:
-  current_phase: "qa"
+  current_phase: "review"
   current_change: "2026-10-16-lsp-extension"
   status: done
 progress:
