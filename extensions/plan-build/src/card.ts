@@ -1,5 +1,5 @@
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { CARD_TONE, cardBottom, cardTop } from "../../skill-pi-tui/src/card.ts";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { CARD_TONE, cardBottom, cardTop, cardInnerWidth, padCardRows } from "../../skill-pi-tui/src/card.ts";
 import type { PlanTheme } from "./theme.ts";
 import type { PlanExecutionState, PlanStep } from "./plan-execution.ts";
 import type { Mode, PlanLifecycle } from "./utils.ts";
@@ -61,7 +61,7 @@ export function renderPlanCard(model: PlanCardModel, theme: PlanTheme, width: nu
 	const summary = planCardSummary(model);
 	if (!summary) return [];
 	const tone = planCardTone(model);
-	const inner = Math.max(1, width - 4);
+	const inner = cardInnerWidth(width);
 	const body: string[] = [];
 
 	if (options.collapsed) {
@@ -98,16 +98,10 @@ export function renderPlanCard(model: PlanCardModel, theme: PlanTheme, width: nu
 		footerBits.push(model.mode);
 	}
 
-	const wrapped = body.flatMap((line) => wrapTextWithAnsi(line, inner).map((wrapped) => padLine(wrapped, inner)));
+	const wrapped = padCardRows(body, inner);
 	return [
 		cardTop({ title: summary.title, subtitle: summary.subtitle, body: [], tone }, theme, width),
 		...wrapped,
 		cardBottom(tone, theme, width, truncateToWidth(footerBits.join(" · "), width, "…")),
 	];
-}
-
-function padLine(line: string, inner: number): string {
-	const clipped = truncateToWidth(line, inner, "…");
-	const pad = " ".repeat(Math.max(0, inner - visibleWidth(clipped)));
-	return `│ ${clipped}${pad} │`;
 }

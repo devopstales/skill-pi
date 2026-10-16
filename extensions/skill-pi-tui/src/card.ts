@@ -170,6 +170,18 @@ export function cardInnerWidth(width: number): number {
   return Math.max(1, width - FRAME_COLUMNS);
 }
 
+// Extension cards (plan-build, todo) keep plain-text rows and need the
+// frame drawn by hand; this is the shared wrap + pad for those rows.
+export function padCardRows(rows: readonly string[], inner: number): string[] {
+  return rows.flatMap((line) => wrapTextWithAnsi(line, inner).map((wrapped) => padLine(wrapped, inner)));
+}
+
+function padLine(line: string, inner: number): string {
+  const clipped = truncateToWidth(line, inner, "…");
+  const pad = " ".repeat(Math.max(0, inner - visibleWidth(clipped)));
+  return `│ ${clipped}${pad} │`;
+}
+
 export function cardBodyRows(
   rows: readonly string[], tone: CardTone, theme: CardTheme, width: number,
   options: CardRenderOptions,
