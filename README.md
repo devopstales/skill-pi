@@ -159,6 +159,15 @@ Currently bundled:
   [hsingjui/pi-hooks](https://github.com/hsingjui/pi-hooks) (MIT), homogenized for
   the isolated agent dir. See
   [`extensions/pi-hooks/README.md`](extensions/pi-hooks/README.md).
+- **`lsp`** — a `code_symbols` tool for semantic symbol search backed by
+  project-configured LSP servers (one subprocess per server/root pair).
+  Actions: `search`, `definitions`, `references`, with optional source
+  snippets. Config lives in conf.d per ADR 0008
+  (`<git-root>/.skill-pi/conf.d/lsp.conf` merged over
+  `~/.skill-pi/conf.d/lsp.conf`). Forked from
+  [jtepe/pi-lsp](https://github.com/jtepe/pi-lsp) (MIT), homogenized for the
+  isolated agent dir. See
+  [`extensions/lsp/README.md`](extensions/lsp/README.md).
 
 ## Choosing a model
 

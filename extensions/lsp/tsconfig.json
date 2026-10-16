@@ -1,0 +1,4 @@
+{
+  "extends": "../skill-pi-tui/tsconfig.json",
+  "include": ["index.ts", "src/**/*.ts", "*.spec.ts", "fake-lsp-server.ts"]
+}

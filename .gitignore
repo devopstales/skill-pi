@@ -4,3 +4,4 @@
 .skillgrid/cache/
 # Local Pi runtime state
 .atl/
+.skill-pi/
