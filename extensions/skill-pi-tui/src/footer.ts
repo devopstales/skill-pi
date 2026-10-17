@@ -2,7 +2,7 @@ import type { ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-cod
 import { hostname as osHostname } from "node:os";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { IconGlyphs, IconMode } from "./icons.ts";
-import { resolveGlyphs, resolveIconMode } from "./icons.ts";
+import { resolveGlyphs } from "./icons.ts";
 import type { GitStatus } from "./git.ts";
 import {
   alignRight,
@@ -17,11 +17,11 @@ import {
   hasAnsiStyles,
   providerColor,
   sanitizeStatusPreservingStyles,
-  stressColor,
   truncateBranch,
   truncatePath,
   type PrioritizedSegment,
 } from "./utils.ts";
+import { contextZone, renderZoneBar, zoneCeilingRemaining } from "./context-zone.ts";
 // ponytail: the port keeps the runtime glyph table in icons.ts, but skill-pi's
 // footer renders the bare runtime name instead — drop the nerd symbols.
 import { getUsageTotals, type ModelMeta, type UsageTotals } from "./state.ts";
@@ -56,26 +56,13 @@ export function shortHostname(hostname: string): string {
   return hostname.split(".")[0] ?? "";
 }
 
-function renderBar(theme: Theme, pct: number, barWidth: number, ascii: boolean): string {
-  const filled = Math.max(0, Math.min(barWidth, Math.round((pct / 100) * barWidth)));
-  const empty = barWidth - filled;
-  const color = stressColor(pct);
-  const filledCell = ascii ? "#" : "█";
-  const emptyCell = ascii ? "-" : "░";
-  return (
-    theme.fg("dim", "[") +
-    theme.fg(color, filledCell.repeat(filled)) +
-    theme.fg("dim", emptyCell.repeat(empty)) +
-    theme.fg("dim", "]")
-  );
-}
-
 function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs): string {
   const contextUsage = ctx.getContextUsage();
   const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
   if (contextWindow <= 0) return "";
   const contextPct = contextUsage?.percent ?? 0;
-  return `${theme.fg(stressColor(contextPct), glyphs.context)} ${theme.fg(stressColor(contextPct), `${contextPct.toFixed(1)}%`)}`;
+  const zone = contextZone(contextPct);
+  return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${zoneCeilingRemaining(contextPct)}% left`)}`;
 }
 
 function renderGitSegment(
@@ -148,16 +135,16 @@ function renderContextBar(
 ): string {
   const contextUsage = ctx.getContextUsage();
   const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-  const contextTokens = contextUsage?.tokens ?? 0;
   const contextPct = contextUsage?.percent ?? 0;
   if (contextWindow <= 0) return "";
 
-  const pctText = theme.fg(stressColor(contextPct), `${contextPct.toFixed(1)}%`);
-  const ctxText = `${theme.fg("text", fmtTokens(contextTokens))}${theme.fg("dim", "/")}${theme.fg("text", fmtTokens(contextWindow))}`;
-  const contextIcon = theme.fg(stressColor(contextPct), glyphs.context);
-  const reserved = visibleWidth(contextIcon) + visibleWidth(pctText) + visibleWidth(ctxText) + 5 + 2;
-  const barWidth = Math.max(4, Math.min(12, width - reserved));
-  return `${contextIcon} ${renderBar(theme, contextPct, barWidth, resolveIconMode(iconMode) === "ascii")} ${pctText} ${theme.fg("dim", "·")} ${ctxText}`;
+  const zone = contextZone(contextPct);
+  const zoneIcon = theme.fg(zone.color, zone.icon);
+  const leftText = theme.fg(zone.color, `${zoneCeilingRemaining(contextPct)}%`);
+  const label = theme.fg("dim", zone.label);
+  const reserved = visibleWidth(zoneIcon) + visibleWidth(leftText) + visibleWidth(label) + 4;
+  const barWidth = Math.max(8, Math.min(20, width - reserved));
+  return `${zoneIcon} ${renderZoneBar(contextPct, barWidth, theme)} ${label} ${leftText} ${theme.fg("dim", "left")}`;
 }
 
 function renderStatsBlock(

@@ -54,7 +54,7 @@ const FOOTER_CONFIG: FooterConfig = {
     gitBranch: true,
     gitStatus: true,
     runtime: true,
-    context: false,
+    context: true,
     tokens: true,
     cost: true,
     extensionStatuses: true,

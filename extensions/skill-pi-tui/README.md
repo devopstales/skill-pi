@@ -14,6 +14,12 @@ right-side sidebar with a live Status card, and the enriched footer. Bundled wit
   counts) and is the rendering rail for other extensions (e.g. the `todo` card).
 - **Footer** — cwd, git branch + change counts, runtime info, model/thinking
   level, token + cost usage, and per-extension status lines.
+- **Context zone bar** — a visual context-health indicator using the
+  [smart/warm/dumb zone model](https://github.com/arpagon/pi-context-zone)
+  from Dex Horthy's "No Vibes Allowed" talk. The bar shows zone dividers at
+  40% and 70% of the context window, color-coded green → yellow → red, with
+  the current zone label and remaining % until the next zone ceiling.
+  Updated automatically after each turn, compaction, and session start.
 - **Peek label** — a live "thinking" label rendered into pi's hidden-thinking
   block while the assistant is working, settling into a one-line summary when the
   turn ends.
@@ -53,6 +59,7 @@ src/runtime.ts           runtime info reader
 src/session-lifecycle.ts generation guard for async work
 src/peek.ts              thinking-peek state machine
 src/state.ts             model meta + usage cache
+src/context-zone.ts      smart/warm/dumb zone model (40/70 thresholds) + bar renderer
 src/provider-error.ts    provider error cleanup
 src/icons.ts             glyph resolution
 src/utils.ts             formatting helpers
