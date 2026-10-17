@@ -28,7 +28,7 @@ invisible.
 | Component         | Module                    | Hook                                                                        | Responsibility                                                                                 |
 | ----------------- | ------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | RequestTracker    | `src/capture/tracker.ts`  | `context_with_system`, `cache_warming_decision`, `before_provider_request`  | Pair payloads with captures; mark warm refreshes                                               |
-| PayloadParser     | `src/capture/payload.ts`  | `before_provider_request` copy, then deferred                               | Copy payloads; select the parser by API; extract the message and tool-declaration channels     |
+| PayloadParser     | `src/capture/parsers.ts`  | `before_provider_request` copy, then deferred                               | Copy payloads; select the parser by API; extract the message and tool-declaration channels     |
 | PayloadGuard      | `src/capture/guard.ts`    | Deferred                                                                    | Normalize Pi's adjustments; report unexplained differences or an incomplete comparison         |
 | DispatchConfirmer | `src/capture/dispatch.ts` | Assistant `message_start`, `provider_stream_event`, assistant `message_end` | Record identity once per paired request; confirm the request model or supply the virtual route |
 
@@ -174,7 +174,7 @@ description lines.
 
 ### Message Channel
 
-`src/capture/payload.ts` extracts ordered text units: system, user, assistant,
+`src/capture/parsers/` extracts ordered text units: system, user, assistant,
 tool call, and tool result. Text blocks merge within one message part, not
 across message boundaries. Tool calls keep their name and canonical JSON
 arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning

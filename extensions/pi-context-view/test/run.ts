@@ -17,7 +17,7 @@ import { spec } from "node:test/reporters";
 const ROOT = resolve(import.meta.dirname, "..");
 
 const selected = process.argv.slice(2);
-const files = (selected.length > 0 ? selected : globSync("test/*.test.ts", { cwd: ROOT }))
+const files = (selected.length > 0 ? selected : globSync("test/**/*.test.ts", { cwd: ROOT }))
 	.map((file) => resolve(ROOT, file));
 
 const stream = run({ files, isolation: "none", concurrency: true });
