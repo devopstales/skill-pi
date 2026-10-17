@@ -32,7 +32,7 @@ invisible.
 | PayloadGuard      | `src/capture/guard.ts`    | Deferred                                                                    | Normalize Pi's adjustments; report unexplained differences or an incomplete comparison         |
 | DispatchConfirmer | `src/capture/dispatch.ts` | Assistant `message_start`, `provider_stream_event`, assistant `message_end` | Record identity once per paired request; confirm the request model or supply the virtual route |
 
-`src/capture/adjustments.ts`, `src/capture/messages.ts`, and
+`src/capture/adjustments.ts` (with `src/capture/serializers/`), `src/capture/messages.ts`, and
 `src/capture/tools.ts` hold PayloadGuard's normalization and channel
 comparisons. SilentProbe and DispatchConfirmer both handle assistant
 `message_start` and `message_end`; neither depends on the other's result.
@@ -194,9 +194,10 @@ The guard normalizes the others without reporting them.
 
 `src/capture/adjustments.ts` rebuilds the captured request from its baseline
 ends, copied middle, and system text positions. It applies the forced prompt
-projection and Pi's exported `convertToLlm()`, then reproduces only the text
-behavior of the supported adapters. Per-model message transforms are not
-exported, so uncertain differences are never treated as proven Pi adjustments.
+projection and Pi's exported `convertToLlm()`, then renders the text units the
+selected API sends through `src/capture/serializers/`, one module per API with
+shared helpers. Per-model message transforms are not exported, so uncertain
+differences are never treated as proven Pi adjustments.
 
 - **Conversion.** `convertToLlm()` turns custom messages into user messages,
   wraps bash executions and summaries, and drops bash executions excluded from

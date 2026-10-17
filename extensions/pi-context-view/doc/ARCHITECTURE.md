@@ -102,7 +102,7 @@ flowchart TD
 | `src/capture/request.ts`     | ProjectionReader and TranscriptCapture: baseline, positioned request copy, forced prompt, model capabilities. |
 | `src/capture/dispatch.ts`    | DispatchConfirmer: accept one identity per paired request, consuming warm stream events.                      |
 | `src/capture/parsers.ts`     | PayloadParser facade; the parsers live in `src/capture/parsers/`, one module per API. `payload.ts` re-exports it. |
-| `src/capture/adjustments.ts` | Rebuild/convert the captured request and render Pi's model-dependent text adjustments.                        |
+| `src/capture/adjustments.ts` | Rebuild/convert the captured request; render per-API text units from `src/capture/serializers/`.              |
 | `src/capture/messages.ts`    | Collect message units, align whitespace-insensitive keys, and retain changed lines.                           |
 | `src/capture/tools.ts`       | Compare non-hidden declarations; report added, modified, and deleted tool payload changes.                    |
 | `src/capture/guard.ts`       | PayloadGuard: defer parsing; physical confirmation or virtual dispatch lookup; release comparison inputs.     |
