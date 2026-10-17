@@ -13,6 +13,12 @@ import {
 } from "./store.js";
 import type { AntigravityAccountPool } from "./pool.js";
 import type { AntigravityOAuthCredentials } from "../types/types.js";
+import {
+  formatAccountPoolSummary,
+  reauthAccountOptions,
+  switchAccountOptions,
+  unlinkAccountOptions,
+} from "./account-list.js";
 
 function openBrowserUrl(url: string): void {
   import("node:child_process")
@@ -54,26 +60,10 @@ function makeLoginCallbacks(ctx: ExtensionCommandContext): OAuthLoginCallbacks {
 }
 
 export function formatAccountSummaryText(pool: AntigravityAccountPool): string {
-  const linked = getLinkedAccounts();
-  const preferred = pool.getPreferred();
-
-  if (linked.length === 0) {
-    return [
-      "Antigravity account pool: No accounts linked yet.",
-      "Run /login antigravity or /antigravity to link your first Google account.",
-    ].join("\n");
-  }
-
-  const lines = ["Antigravity account pool:"];
-  for (const account of linked) {
-    const isPreferred = account.id === preferred.id;
-    const marker = isPreferred ? "● [ACTIVE] " : "○ [STANDBY]";
-    const emailStr = account.email ? ` (${account.email})` : "";
-    lines.push(`  ${marker} ${account.label}${emailStr}  [slot: ${account.id}]`);
-  }
-  lines.push("");
-  lines.push(`Active failover preference: ${preferred.label}`);
-  return lines.join("\n");
+  return formatAccountPoolSummary({
+    linked: getLinkedAccounts(),
+    preferred: pool.getPreferred(),
+  });
 }
 
 async function handleAddAccount(ctx: ExtensionCommandContext): Promise<void> {
@@ -103,11 +93,7 @@ async function handleSwitchActive(
   linked: StoredAntigravityAccount[],
 ): Promise<void> {
   const preferred = pool.getPreferred();
-  const options = linked.map((a) => {
-    const isCurrent = a.id === preferred.id;
-    const email = a.email ? ` - ${a.email}` : "";
-    return `${isCurrent ? "● (Active) " : "○ "} ${a.label}${email}`;
-  });
+  const options = switchAccountOptions(linked, preferred);
 
   const selected = await ctx.ui.select("Select account to use as primary preference:", options);
   if (!selected) return;
@@ -171,10 +157,7 @@ async function handleUnlinkAccount(
   linked: StoredAntigravityAccount[],
   pool: AntigravityAccountPool,
 ): Promise<void> {
-  const options = linked.map((a) => {
-    const email = a.email ? ` (${a.email})` : "";
-    return `${a.label}${email}`;
-  });
+  const options = unlinkAccountOptions(linked);
 
   const selected = await ctx.ui.select("Select account to remove / unlink:", options);
   if (!selected) return;
@@ -273,7 +256,7 @@ export async function showInteractiveAccountDashboard(
       if (linked.length === 1 && linked[0]) {
         await handleReauthAccount(ctx, linked[0]);
       } else if (linked.length > 1) {
-        const subOptions = linked.map((a) => `${a.label}${a.email ? ` (${a.email})` : ""}`);
+        const subOptions = reauthAccountOptions(linked);
         const subChoice = await ctx.ui.select("Select account to re-authenticate:", subOptions);
         if (subChoice) {
           const idx = subOptions.indexOf(subChoice);
@@ -372,6 +355,10 @@ export async function handleLoginWithManagement(
       id: acc.id,
       label: `${acc.id === preferred.id ? "● (Active) " : "○ "}${acc.label}${acc.email ? ` (${acc.email})` : ""}`,
     }));
+    // The dashboard's switchAccountOptions uses " - " as the email separator
+    // while the login menu uses " ( )"; keep the two label shapes distinct so
+    // the selects stay readable in their different contexts.
+
     const targetId = await callbacks.onSelect({
       message: "Select account to use as primary preference:",
       options: switchOptions,
