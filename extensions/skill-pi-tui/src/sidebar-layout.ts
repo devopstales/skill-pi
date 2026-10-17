@@ -1,23 +1,19 @@
-import { ScrollView, VStack, visibleWidth, type Component, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { ScrollView, VStack, type Component, type TUI, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { sidebarState, type SidebarRail } from "./sidebar.ts";
 import { cardStyle, type CardStyle } from "./card.ts";
+import {
+  GAP,
+  RAIL_WIDTH,
+  RAIL_PADDING,
+  SIDEBAR_RAIL_COLUMNS,
+  SIDEBAR_BREAKPOINT,
+  railLines as paintRailLines,
+  isLineFitting,
+  type RailHit,
+  type SidebarRailLines,
+} from "./sidebar-metrics.ts";
 
-const RAIL_WIDTH = 50;
-const RAIL_PADDING = 1;
-// ponytail: the floating card frame (FLOAT_MARGIN in card.ts) adds 2 cols to a
-// part's render width; the host must reserve that or the rail's overflow check
-// in prepare() never passes and ownsHost() stays false.
-const GAP = 5;
-/** Right-edge columns the painting rail takes from the editor column. */
-export const SIDEBAR_RAIL_COLUMNS = RAIL_WIDTH + GAP;
-// Minimum columns the main (left) column must keep so the rail doesn't swallow
-// the whole screen. The sidebar activates when it fits (RAIL_COLUMNS + this),
-// never at a fixed 140 — placement is decided by "does the sidebar fit + is it
-// enabled", not by terminal size. Below this, the todo/footer fall back to the
-// main screen (the main-screen widget is the narrow-terminal fallback by design).
-const MIN_MAIN_COLUMNS = 40;
-/** Minimum terminal width for the fullscreen rail to activate. */
-export const SIDEBAR_BREAKPOINT = SIDEBAR_RAIL_COLUMNS + MIN_MAIN_COLUMNS;
+export { SIDEBAR_RAIL_COLUMNS, SIDEBAR_BREAKPOINT } from "./sidebar-metrics.ts";
 const NODE = Symbol.for("@earendil-works/pi-tui/layout-node");
 type LayoutNode = { type: string; entries?: unknown[]; gap?: number; align?: "stretch" | "start" | "center" | "end" };
 type TuiMouseDispatchResult = TuiMouseEventResult & { handled: true; target: { component: Component; originX: number; originY: number; width: number; height: number } };
@@ -25,7 +21,6 @@ type StackLayoutEntry = ConstructorParameters<typeof VStack>[0] extends Array<in
 type LayoutRoot = Component & { [NODE]?: () => LayoutNode };
 type Host = TUI & { mode?: string; layoutRoot?: LayoutRoot };
 type SidebarCache = { revision: number };
-type RailHit = { key: string; component: Component; startY: number; height: number; width: number };
 type SectionCacheEntry = { component: Component; digest: string | undefined; revision: number; contentWidth: number; lines: string[] };
 type SidebarPresentation = { scrollTop: number; output: LayoutNode };
 type PreparedRail = {
@@ -184,15 +179,15 @@ export function installSidebar(tui: TUI, theme: { fg(color: string, text: string
         sectionCache.set(key, { component, digest, revision: cache.revision, contentWidth, lines });
         return { key, component, lines };
       }).filter((section) => section.component !== undefined && section.lines.length > 0) as Array<{ key: string; component: Component; lines: string[] }>;
-      const hits: RailHit[] = [];
-      railLines = [];
-      for (const section of sections) {
-        if (hits.length > 0 && density() === "comfortable") railLines.push("");
-        const startY = railLines.length;
-        railLines.push(...section.lines.map((line) => " ".repeat(RAIL_PADDING) + line + " ".repeat(RAIL_PADDING)));
-        hits.push({ key: section.key, component: section.component, startY, height: section.lines.length, width: contentWidth - RAIL_PADDING * 2 });
-      }
-      const active = railLines.length > 0 && railLines.every((line) => visibleWidth(line) <= contentWidth);
+      const railLayout: SidebarRailLines[] = sections.map((section) => ({
+        key: section.key,
+        component: section.component,
+        lines: section.lines,
+        width: contentWidth - RAIL_PADDING * 2,
+      }));
+      const { lines: paintedLines, hits } = paintRailLines(railLayout, density() === "comfortable");
+      railLines = paintedLines;
+      const active = railLines.length > 0 && railLines.every((line) => isLineFitting(line, contentWidth));
       prepared = { revision: cache.revision, width, mode: host.mode, cardStyle: style, root, parts, digests, contentWidth, active, lines: railLines, hits };
       state.active = active;
       return active;
