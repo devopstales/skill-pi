@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { AgentSnapshot } from "./src/domain.ts";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { EventBus, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 function snap(over: Partial<AgentSnapshot>): AgentSnapshot {
   return {
@@ -70,10 +70,31 @@ function makeFakeManager(agents: AgentSnapshot[]): FakeManager {
   };
 }
 
+let terminalInputHandlers: Array<(data: string) => unknown> = [];
+
 function makeCtx(): { ctx: ExtensionContext; setStatus: ReturnType<typeof vi.fn> } {
   const setStatus = vi.fn();
-  const ctx: { ui: { setStatus: ReturnType<typeof vi.fn> }; mode: string; hasUI: boolean; cwd: string; sessionManager: { getSessionId: () => string } } = {
-    ui: { setStatus },
+  const ctx: {
+    ui: {
+      setStatus: ReturnType<typeof vi.fn>;
+      onTerminalInput: (h: (data: string) => unknown) => () => void;
+      setWidget: (key: string, content: unknown, options?: unknown) => void;
+      getEditorText: () => string;
+    };
+    mode: string;
+    hasUI: boolean;
+    cwd: string;
+    sessionManager: { getSessionId: () => string };
+  } = {
+    ui: {
+      setStatus,
+      onTerminalInput: (h: (data: string) => unknown) => {
+        terminalInputHandlers.push(h);
+        return () => {};
+      },
+      setWidget: vi.fn(),
+      getEditorText: () => "",
+    },
     mode: "tui",
     hasUI: true,
     cwd: "/tmp/project",
@@ -116,9 +137,10 @@ vi.mock("./src/child.ts", () => ({
   buildChildInvocation: () => ({ argv: ["node", "skill-pi.js"], env: {} }),
 }));
 
+let agentDirOverride = "/tmp/agent";
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
-  return { ...mod, getAgentDir: () => "/tmp/agent" };
+  return { ...mod, getAgentDir: () => agentDirOverride };
 });
 
 import piSwarm from "./index.ts";
@@ -127,22 +149,57 @@ describe("pi-swarm index", () => {
   let tools: Map<string, RegisteredTool>;
   let ctx: ExtensionContext;
   let setStatus: ReturnType<typeof vi.fn>;
+  let handlers: Map<string, unknown[]>;
+  let busHandlers: Map<string, Array<(data: unknown) => void>>;
+
+  const TAB = "\t";
+
+  async function pressLeaderAction() {
+    const handler = terminalInputHandlers[terminalInputHandlers.length - 1];
+    if (!handler) throw new Error("no terminal input handler registered");
+    handler("");
+    await handler(TAB);
+  }
 
   async function setup(agents: AgentSnapshot[]) {
+    terminalInputHandlers = [];
     fakeManager = makeFakeManager(agents);
     tools = new Map<string, RegisteredTool>();
+    handlers = new Map();
+    busHandlers = new Map();
+    const onBus = (channel: string, handler: (data: unknown) => void) => {
+      const list = busHandlers.get(channel) ?? [];
+      list.push(handler);
+      busHandlers.set(channel, list);
+      return () => {};
+    };
     const pi = {
       registerTool: (def: RegisteredTool) => {
         tools.set(def.name, def);
       },
       registerMessageRenderer: vi.fn(),
       sendMessage: vi.fn(),
-      on: vi.fn(),
+      on: (event: string, handler: unknown) => {
+        const list = handlers.get(event) ?? [];
+        list.push(handler);
+        handlers.set(event, list);
+        return () => {};
+      },
+      events: { emit: vi.fn(), on: onBus } as unknown as EventBus,
     } as unknown as ExtensionAPI;
     const result = makeCtx();
     ctx = result.ctx;
     setStatus = result.setStatus;
     piSwarm(pi, {});
+  }
+
+  function inputHandlers() {
+    return handlers.get("input") ?? [];
+  }
+
+  function startSession() {
+    const start = (handlers.get("session_start") ?? []) as Array<(ev: unknown, c: ExtensionContext) => unknown>;
+    for (const handler of start) handler({ reason: "startup" }, ctx);
   }
 
   it("registers the six swarm tools", async () => {
@@ -291,5 +348,114 @@ describe("pi-swarm index", () => {
     } finally {
       fs.rmSync(project, { recursive: true, force: true });
     }
+  });
+
+  describe("target selection and input interception", () => {
+    async function makeAgentProject() {
+      const fs = await import("node:fs");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const project = fs.mkdtempSync(path.join(os.tmpdir(), "pi-swarm-target-"));
+      fs.mkdirSync(path.join(project, ".skill-pi", "agents"), { recursive: true });
+      fs.writeFileSync(path.join(project, ".skill-pi", "agents", "auditor.md"), "---\ndescription: a\n---\nA\n");
+      const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-swarm-target-agent-"));
+      const original = agentDirOverride;
+      agentDirOverride = agentDir;
+      return { fs, project, agentDir, cleanup: () => { agentDirOverride = original; } };
+    }
+
+    function inputHandler() {
+      return (inputHandlers() as Array<(ev: unknown, c: ExtensionContext) => unknown>)[0]!;
+    }
+
+    it("build target (default) never intercepts interactive input", async () => {
+      await setup([]);
+      startSession();
+      expect(setStatus).toHaveBeenCalledWith("swarm-target", "⌁ build (dim)");
+      const result = await inputHandler()({ type: "input", text: "hi", source: "interactive" }, ctx);
+      expect(result).toEqual({ action: "continue" });
+    });
+
+    it("non-interactive and empty input never intercept", async () => {
+      await setup([]);
+      startSession();
+      expect(await inputHandler()({ type: "input", text: "hi", source: "rpc" }, ctx)).toEqual({ action: "continue" });
+      expect(await inputHandler()({ type: "input", text: "  ", source: "interactive" }, ctx)).toEqual({ action: "continue" });
+    });
+
+    it("agent target spawns a child with the prompt, notifies, and returns handled", async () => {
+      const { fs, project, agentDir, cleanup } = await makeAgentProject();
+      try {
+        await setup([]);
+        ctx.cwd = project;
+        const notify = vi.fn();
+        ctx.ui = { ...ctx.ui, notify } as unknown as ExtensionContext["ui"];
+        startSession();
+        const handler = inputHandler();
+        const spawnSpy = vi.spyOn(fakeManager, "spawn");
+        expect(await handler({ type: "input", text: "x", source: "interactive" }, ctx)).toEqual({ action: "continue" });
+        expect(spawnSpy).not.toHaveBeenCalled();
+        await pressLeaderAction();
+        expect(setStatus).toHaveBeenLastCalledWith("swarm-target", "⌁ auditor (text)");
+        const result = await handler({ type: "input", text: "look at auth", source: "interactive" }, ctx);
+        expect(result).toEqual({ action: "handled" });
+        expect(spawnSpy).toHaveBeenCalledTimes(1);
+        const req = spawnSpy.mock.calls[0][0] as { prompt: string; agentType?: string; title?: string };
+        expect(req.prompt).toBe("look at auth");
+        expect(req.agentType).toBe("auditor");
+        expect(req.title).toBe("look at auth");
+        expect(notify).toHaveBeenCalledWith(expect.stringContaining("look at auth"));
+      } finally {
+        cleanup();
+        fs.rmSync(project, { recursive: true, force: true });
+        fs.rmSync(agentDir, { recursive: true, force: true });
+      }
+    });
+
+    it("leader Tab cycles build -> agent -> build and disarms on other keys", async () => {
+      const { fs, project, agentDir, cleanup } = await makeAgentProject();
+      try {
+        await setup([]);
+        ctx.cwd = project;
+        startSession();
+        const handler = terminalInputHandlers[terminalInputHandlers.length - 1];
+        expect(setStatus).toHaveBeenLastCalledWith("swarm-target", "⌁ build (dim)");
+        await pressLeaderAction();
+        expect(setStatus).toHaveBeenLastCalledWith("swarm-target", "⌁ auditor (text)");
+        handler("q");
+        expect(handler(TAB)).toBeUndefined();
+        expect(setStatus).toHaveBeenLastCalledWith("swarm-target", "⌁ auditor (text)");
+        await pressLeaderAction();
+        expect(setStatus).toHaveBeenLastCalledWith("swarm-target", "⌁ build (dim)");
+      } finally {
+        cleanup();
+        fs.rmSync(project, { recursive: true, force: true });
+        fs.rmSync(agentDir, { recursive: true, force: true });
+      }
+    });
+
+    it("overlay-open suppresses interception", async () => {
+      const { fs, project, agentDir, cleanup } = await makeAgentProject();
+      try {
+        await setup([snap({ id: "sa-1", status: "running" })]);
+        ctx.cwd = project;
+        const notify = vi.fn();
+        ctx.ui = { ...ctx.ui, notify } as unknown as ExtensionContext["ui"];
+        startSession();
+        const handler = inputHandler();
+        await pressLeaderAction();
+        const resultClosed = await handler({ type: "input", text: "look", source: "interactive" }, ctx);
+        expect(resultClosed).toEqual({ action: "handled" });
+        const terminal = terminalInputHandlers[terminalInputHandlers.length - 1];
+        terminal("[B");
+        terminal("\r");
+        const resultOpen = await handler({ type: "input", text: "look", source: "interactive" }, ctx);
+        expect(resultOpen).toEqual({ action: "continue" });
+      } finally {
+        cleanup();
+        fs.rmSync(project, { recursive: true, force: true });
+        fs.rmSync(agentDir, { recursive: true, force: true });
+      }
+    });
   });
 });

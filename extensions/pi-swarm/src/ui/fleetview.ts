@@ -86,7 +86,7 @@ export interface FleetViewOptions {
 export function createFleetView(
   readModel: FleetReadModel,
   options: FleetViewOptions = {},
-): Component & { dispose(): void; tui: TUI | undefined } {
+): Component & { dispose(): void; tui: TUI | undefined; overlayOpen(): boolean } {
   const clock = options.clock ?? defaultClock();
   let theme: FleetTheme = { fg: (_c, t) => t, bold: (t) => t };
   let rows: { id: string | null }[] = [{ id: null }];
@@ -236,8 +236,9 @@ export function createFleetView(
     return [top, ...body, bottom, hint];
   };
 
-  const component: Component & { dispose(): void; tui: TUI | undefined } = {
+  const component: Component & { dispose(): void; tui: TUI | undefined; overlayOpen(): boolean } = {
     tui: undefined,
+    overlayOpen: () => overlayId !== null,
     render(width) {
       if (!isFleetViewVisible(readModel.list()) && !overlayId) return [];
       const result = overlayId ? renderOverlay(width) : renderList(width);

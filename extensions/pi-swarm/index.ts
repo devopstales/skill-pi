@@ -7,10 +7,13 @@ import { SwarmManager, checkPreview, formatStatusline, resultBody, truncate, wai
 import { resolveSkillPiExe } from "./src/child.ts";
 import { formatElapsed, formatTokens } from "./src/format.ts";
 import { discoverAgentTypes, resolveAgentType, type AgentType } from "./src/agents.ts";
+import { createTargetSelector, type TargetId, type TargetSelector } from "./src/target.ts";
 import { createFleetView, isFleetViewVisible, type FleetReadModel } from "./src/ui/fleetview.ts";
 
 const MAX_WAIT_IDS = 64;
 const FLEETVIEW_WIDGET_KEY = "pi-swarm";
+const PLAN_PRESENT_EVENT = "swarm:plan-present";
+const SWARM_TARGET_STATUS_KEY = "swarm-target";
 
 function swarmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env.SKILL_PI_SWARM?.trim().toLowerCase();
@@ -39,6 +42,34 @@ interface FleetViewSession {
   leaderArmed: boolean;
   armedTimer: NodeJS.Timeout | undefined;
   stopInput: () => void;
+  target: TargetSelector;
+  planAvailable: boolean;
+  planAvailableAtCycle: boolean;
+  fleetView: ReturnType<typeof createFleetView> | undefined;
+}
+
+function swarmTargetKey(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.SKILL_PI_SWARM_TARGET_KEY?.trim().toLowerCase();
+  if (!raw) return "tab";
+  return raw === "off" ? "" : raw;
+}
+
+function swarmPlanFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.SKILL_PI_PLAN_BUILD?.trim();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function targetThemeColor(target: TargetSelector, id: TargetId): string {
+  if (id === "build") return "dim";
+  if (id === "plan") return "accent";
+  return target.matchesAgent(id)?.color ?? "text";
+}
+
+function updateTargetStatus(session: FleetViewSession): void {
+  const ui = session.ui;
+  if (!ui) return;
+  const id = session.target.current();
+  ui.setStatus(SWARM_TARGET_STATUS_KEY, `⌁ ${id} (${targetThemeColor(session.target, id)})`);
 }
 
 function emptyPrompt(ui: ExtensionContext["ui"]): boolean {
@@ -72,6 +103,7 @@ function updateFleetWidget(session: FleetViewSession): void {
   }
   const component = createFleetView(fleetReadModel(session.mgr, () => updateFleetWidget(session)));
   component.tui = undefined;
+  session.fleetView = component;
   ui.setWidget(
     FLEETVIEW_WIDGET_KEY,
     (tui, theme) => {
@@ -90,41 +122,72 @@ function updateFleetWidget(session: FleetViewSession): void {
   );
 }
 
+function makeTarget(ctx: ExtensionContext, planAvailable: boolean): TargetSelector {
+  return createTargetSelector({ agents: discoverAgentTypes(ctx.cwd, getAgentDir()), planAvailable });
+}
+
+function cycleTarget(session: FleetViewSession): void {
+  if (session.planAvailable !== session.planAvailableAtCycle) {
+    session.planAvailableAtCycle = session.planAvailable;
+    if (session.ctx && session.ctx.hasUI) session.target = makeTarget(session.ctx, session.planAvailable);
+  }
+  session.target.cycle();
+  updateTargetStatus(session);
+}
+
 function fleetInputHandler(session: FleetViewSession, onLeaderArm: () => void) {
   return (data: string): { consume?: boolean; data?: string } | undefined => {
-    if (session.leaderArmed) return undefined;
+    if (session.leaderArmed) {
+      const key = parseKey(data);
+      const targetKey = swarmTargetKey();
+      if (targetKey && key === targetKey) {
+        session.leaderArmed = false;
+        if (session.armedTimer) {
+          clearTimeout(session.armedTimer);
+          session.armedTimer = undefined;
+        }
+        cycleTarget(session);
+        return { consume: true };
+      }
+      if (key === "escape" || (key === undefined && data.length > 0)) {
+        session.leaderArmed = false;
+        if (session.armedTimer) {
+          clearTimeout(session.armedTimer);
+          session.armedTimer = undefined;
+        }
+        return { consume: true };
+      }
+      return undefined;
+    }
     if (!session.ctx || !session.ui) return undefined;
-    if (!isFleetViewVisible(session.mgr.list())) return undefined;
     if (parseKey(data) === "ctrl+q") {
       session.leaderArmed = true;
       onLeaderArm();
       return { consume: true };
     }
+    if (!isFleetViewVisible(session.mgr.list())) return undefined;
     const key = parseKey(data);
     if (!key) return undefined;
-    if (key === "escape") {
-      if (session.focused) {
-        session.focused = false;
-        return { consume: true };
-      }
-      return undefined;
-    }
     if (!emptyPrompt(session.ui)) {
       if (key === "down" && !session.focused) {
         session.focused = true;
+        session.fleetView?.handleInput?.(data);
+        return { consume: true };
+      }
+      if (session.focused) {
+        session.fleetView?.handleInput?.(data);
         return { consume: true };
       }
       return undefined;
     }
     if (key === "down" || key === "left") {
       session.focused = true;
+      session.fleetView?.handleInput?.(data);
       return { consume: true };
     }
-    if (key === "up" || key === "enter" || key === "x") {
-      if (session.focused) return { consume: true };
-      return undefined;
-    }
-    return undefined;
+    if (!session.focused) return undefined;
+    session.fleetView?.handleInput?.(data);
+    return { consume: true };
   };
 }
 
@@ -133,8 +196,13 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
   const maxRunning = swarmMaxRunning(env);
   const sessions = new Map<string, SwarmManager>();
   const fleetSessions = new Map<string, FleetViewSession>();
+  let currentCtx: ExtensionContext | undefined;
 
   const sessionKey = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId() ?? "";
+
+  const trackCtx = (ctx: ExtensionContext): void => {
+    if (ctx.hasUI) currentCtx = ctx;
+  };
 
   const updateStatusline = (mgr: SwarmManager, ctx: ExtensionContext): void => {
     const agents = mgr.list();
@@ -154,11 +222,19 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
         leaderArmed: false,
         armedTimer: undefined,
         stopInput: () => {},
+        target: makeTarget(ctx, swarmPlanFromEnv(env)),
+        planAvailable: swarmPlanFromEnv(env),
+        planAvailableAtCycle: swarmPlanFromEnv(env),
+        fleetView: undefined,
       };
+      if (ctx.hasUI) updateTargetStatus(current);
       fleetSessions.set(key, current);
     }
     current.ctx = ctx;
-    if (ctx.hasUI) current.ui = ctx.ui;
+    if (ctx.hasUI) {
+      current.ui = ctx.ui;
+      updateTargetStatus(current);
+    }
     return current;
   };
 
@@ -220,11 +296,35 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     return manager;
   };
 
+  pi.events.on(PLAN_PRESENT_EVENT, () => {
+    for (const session of fleetSessions.values()) {
+      session.planAvailable = true;
+      if (session.ctx && session.ctx.hasUI) updateTargetStatus(session);
+    }
+  });
+
   pi.on("session_start", (_event, ctx) => {
     if (!ctx.hasUI) return;
+    trackCtx(ctx);
     const key = sessionKey(ctx);
     getFleetSession(getManager(ctx), ctx);
     startFleetInput(key, ctx);
+  });
+
+  pi.on("input", (ev) => {
+    if (ev.source !== "interactive" || !(ev.text ?? "").trim()) return { action: "continue" as const };
+    const ctx = currentCtx;
+    if (!ctx) return { action: "continue" as const };
+    const session = fleetSessions.get(sessionKey(ctx));
+    if (!session) return { action: "continue" as const };
+    const target = session.target.current();
+    if (session.target.matchesAgent(target) === undefined) return { action: "continue" as const };
+    if (session.fleetView?.overlayOpen()) return { action: "continue" as const };
+    const mgr = sessions.get(sessionKey(ctx));
+    if (!mgr) return { action: "continue" as const };
+    const snapshot = mgr.spawn({ prompt: ev.text, title: ev.text, agentType: target });
+    session.ui?.notify(`spawned ${snapshot.id}: ${snapshot.title}`);
+    return { action: "handled" as const };
   });
 
   void leaderArmed;
@@ -498,7 +598,10 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     if (session) {
       session.stopInput();
       if (session.armedTimer) clearTimeout(session.armedTimer);
-      if (session.ui) session.ui.setWidget(FLEETVIEW_WIDGET_KEY, undefined, { placement: "belowEditor" });
+      if (session.ui) {
+        session.ui.setWidget(FLEETVIEW_WIDGET_KEY, undefined, { placement: "belowEditor" });
+        session.ui.setStatus(SWARM_TARGET_STATUS_KEY, undefined);
+      }
       fleetSessions.delete(key);
     }
     const mgr = sessions.get(key);
