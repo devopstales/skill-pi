@@ -7,6 +7,7 @@ const empty: SectionData = {
   outstandingContext: [],
   filesAndChanges: [],
   commits: [],
+  standingRules: [],
   userPreferences: [],
   briefTranscript: "",
 };
@@ -57,6 +58,33 @@ describe("formatSummary", () => {
     expect(r).toContain("[Session Goal]");
     expect(r).toContain("[Outstanding Context]");
     expect(r).toContain("\n\n");
+  });
+
+  it("emits [Standing Rules] between Outstanding Context and User Preferences", () => {
+    const data = {
+      ...empty,
+      outstandingContext: ["blocker"],
+      standingRules: ["Always run tests."],
+      userPreferences: ["pref"],
+    };
+    const r = formatSummary(data);
+    const oc = r.indexOf("[Outstanding Context]");
+    const sr = r.indexOf("[Standing Rules]");
+    const up = r.indexOf("[User Preferences]");
+    expect(oc).toBeGreaterThan(-1);
+    expect(sr).toBeGreaterThan(oc);
+    expect(up).toBeGreaterThan(sr);
+    expect(r).toContain("- Always run tests.");
+  });
+
+  it("omits the Standing Rules section when standingRules is empty", () => {
+    const data = {
+      ...empty,
+      sessionGoal: ["goal"],
+      standingRules: [],
+    };
+    const r = formatSummary(data);
+    expect(r).not.toContain("[Standing Rules]");
   });
 
   it("wraps long lines so compaction TUI rendering stays bounded", () => {

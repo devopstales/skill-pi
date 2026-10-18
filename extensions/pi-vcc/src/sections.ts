@@ -3,6 +3,7 @@ export interface SectionData {
   outstandingContext: string[];
   filesAndChanges: string[];
   commits: string[];
+  standingRules: string[];
   userPreferences: string[];
   briefTranscript: string;
 }

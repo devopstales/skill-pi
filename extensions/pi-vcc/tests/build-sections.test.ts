@@ -1,6 +1,13 @@
-import { describe, it, expect } from "bun:test";
+import { afterAll, describe, it, expect } from "bun:test";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { buildSections } from "../src/core/build-sections";
 import type { NormalizedBlock } from "../src/types";
+
+afterAll(() => {
+  delete process.env.PI_VCC_INCLUDES_PATH;
+});
 
 describe("buildSections", () => {
   it("returns all-empty for no blocks", () => {
@@ -53,5 +60,28 @@ describe("buildSections", () => {
     const r = buildSections({ blocks });
     const matches = r.briefTranscript.match(/\[assistant\]/g);
     expect(matches?.length).toBe(1);
+  });
+});
+
+describe("buildSections standing rules", () => {
+  it("populates standingRules from the handshake file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-vcc-standsec-"));
+    const rulesPath = join(dir, "rules.md");
+    writeFileSync(rulesPath, "Always run tests.\nNever commit secrets.");
+    const handshakePath = join(dir, "pi-vcc-includes.json");
+    writeFileSync(handshakePath, JSON.stringify({ includes: [{ path: rulesPath }] }));
+    process.env.PI_VCC_INCLUDES_PATH = handshakePath;
+
+    const r = buildSections({ blocks: [{ kind: "user", text: "hi" }] });
+    expect(r.standingRules).toEqual([
+      "Always run tests.",
+      "Never commit secrets.",
+    ]);
+  });
+
+  it("omits standingRules (empty) when handshake file missing", () => {
+    process.env.PI_VCC_INCLUDES_PATH = "/nope/none.json";
+    const r = buildSections({ blocks: [{ kind: "user", text: "hi" }] });
+    expect(r.standingRules).toEqual([]);
   });
 });

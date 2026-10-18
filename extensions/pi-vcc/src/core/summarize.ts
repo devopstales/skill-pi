@@ -16,7 +16,7 @@ export interface RankedCompileInput extends CompileInput {
   ranking?: BriefRankingOptions;
 }
 
-const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context", "User Preferences"];
+const HEADER_NAMES = ["Session Goal", "Files And Changes", "Commits", "Outstanding Context", "Standing Rules", "User Preferences"];
 
 const SEPARATOR = "\n\n---\n\n";
 
