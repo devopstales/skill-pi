@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadAllMessages } from "../core/load-messages";
 import { searchEntries } from "../core/search-entries";
 import { formatRecallOutput } from "../core/format-recall";
+import { readIncludes } from "../core/includes";
 import { getActiveLineageEntryIds } from "../core/lineage";
 import { parseRecallScope } from "../core/recall-scope";
 
@@ -27,7 +28,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
         // No query: show recent
         const { rendered } = loadAllMessages(sessionFile, false, lineageEntryIds);
         const recent = rendered.slice(-DEFAULT_RECENT);
-        const output = (parsed.scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(recent);
+        const output = (parsed.scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(recent, undefined, undefined, { expandRefs: parsed.expandRefs, knownIncludes: readIncludes() });
         pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true });
         return;
       }
@@ -40,7 +41,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
       if (!query) {
         const { rendered } = loadAllMessages(sessionFile, false, lineageEntryIds);
         const recent = rendered.slice(-DEFAULT_RECENT);
-        const output = (parsed.scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(recent);
+        const output = (parsed.scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(recent, undefined, undefined, { expandRefs: parsed.expandRefs, knownIncludes: readIncludes() });
         pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true });
         return;
       }
@@ -58,7 +59,7 @@ export const registerVccRecallCommand = (pi: ExtensionAPI) => {
       const footer = page < totalPages
         ? `\n--- /pi-vcc-recall ${query}${parsed.scope === "all" ? " scope:all" : ""} page:${page + 1} ---`
         : "";
-      const output = formatRecallOutput(pageResults, query, header) + footer;
+      const output = formatRecallOutput(pageResults, query, header, { expandRefs: parsed.expandRefs, knownIncludes: readIncludes() }) + footer;
       pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true });
     },
   });

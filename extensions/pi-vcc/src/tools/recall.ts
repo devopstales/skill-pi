@@ -3,6 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadAllMessages } from "../core/load-messages";
 import { searchEntries } from "../core/search-entries";
 import { formatRecallOutput } from "../core/format-recall";
+import { readIncludes } from "../core/includes";
 import { getActiveLineageEntryIds } from "../core/lineage";
 import { normalizeRecallScope } from "../core/recall-scope";
 
@@ -36,6 +37,9 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
           Type.Literal("lineage"),
           Type.Literal("all"),
         ], { description: "Search scope. Default: lineage; all includes off-lineage branches." }),
+      ),
+      expandRefs: Type.Optional(
+        Type.Boolean({ description: "When true, expand @path references in hits to the resolved include file content. A reference matches a known include when the path after the leading @ is an exact absolute path listed in the includes handshake file (relative @tokens are not resolved)." }),
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -93,14 +97,14 @@ export const registerRecallTool = (pi: ExtensionAPI) => {
         const footer = page < totalPages
           ? `\n--- Use page:${page + 1}${scope === "all" ? " with scope:'all'" : ""} for more results ---`
           : "";
-        const output = formatRecallOutput(pageResults, params.query, header) + footer;
+        const output = formatRecallOutput(pageResults, params.query, header, { expandRefs: params.expandRefs, knownIncludes: readIncludes() }) + footer;
         return {
           content: [{ type: "text", text: output }],
           details: undefined,
         };
       }
 
-      const output = (scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(allResults, params.query);
+      const output = (scope === "all" ? "Scope: all\n\n" : "") + formatRecallOutput(allResults, params.query, undefined, { expandRefs: params.expandRefs, knownIncludes: readIncludes() });
       return {
         content: [{ type: "text", text: output }],
         details: undefined,

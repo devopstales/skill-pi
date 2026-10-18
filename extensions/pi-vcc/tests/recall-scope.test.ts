@@ -20,6 +20,7 @@ describe("parseRecallScope", () => {
     expect(parseRecallScope("license scope:all page:2")).toEqual({
       scope: "all",
       text: "license page:2",
+      expandRefs: false,
     });
   });
 
@@ -27,6 +28,23 @@ describe("parseRecallScope", () => {
     expect(parseRecallScope("license page:2")).toEqual({
       scope: "lineage",
       text: "license page:2",
+      expandRefs: false,
+    });
+  });
+
+  it("detects and strips the expandRefs token", () => {
+    expect(parseRecallScope("foo expandRefs")).toEqual({
+      scope: "lineage",
+      text: "foo",
+      expandRefs: true,
+    });
+  });
+
+  it("defaults expandRefs to false", () => {
+    expect(parseRecallScope("foo")).toEqual({
+      scope: "lineage",
+      text: "foo",
+      expandRefs: false,
     });
   });
 });
