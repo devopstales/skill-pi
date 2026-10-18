@@ -9,14 +9,13 @@ import {
 import { Type } from "typebox";
 
 import {
-  buildAcceptHeader,
   clampTimeout,
   fetchUrl,
   type WebfetchFormat,
 } from "./fetcher.ts";
 import { detectPythonRunner, extractMarkdown } from "./extract.ts";
-import { HandlerRegistry, matchExtension } from "./registry.ts";
-import { createHookContext, type HookResult, type WebFetchExtension } from "./types.ts";
+import { HandlerRegistry } from "./registry.ts";
+import { createHookContext, type HookResult } from "./types.ts";
 
 const WEBFETCH_FORMATS = ["markdown", "text", "html"] as const;
 const TRAFILATURA_FORMATS: readonly WebfetchFormat[] = ["markdown", "text"];

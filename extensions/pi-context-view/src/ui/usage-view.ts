@@ -19,12 +19,11 @@ import type { ContextUsageSnapshot, UsageCategory, UsagePreviewEntry } from "../
 import { normalizeInlineText, normalizePreviewText } from "../text.ts";
 import { collectPreviewEntries } from "../usage.ts";
 import { colorize } from "./color.ts";
-import { ListNavigator, PreviewScroller } from "./injections-model.ts";
+import { ListNavigator } from "./injections-model.ts";
 import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
-	DEFAULT_TERMINAL_ROWS,
 	descriptionBlockRows,
 	fitLine,
 	fitToTerminalHeight,
@@ -41,9 +40,10 @@ import {
 import { forcedMarker } from "./markers.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { splitSkillPreview } from "./skill-preview.ts";
+import { OverlayView } from "./overlay-view.ts";
 import { buildUsageMap, calculateFitMapScale, type UsageMap, type UsageMapCell } from "./usage-map.ts";
 import { BlockNavigator, layoutPreviewBlocks, type PreviewLayout } from "./usage-preview.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
+import { parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
 
 const USAGE_DESCRIPTION = "Estimated context for the next model request. " +
 	"Token counts are approximate and may differ from the provider's estimate.";
@@ -186,17 +186,12 @@ export async function showUsageView(context: ExtensionCommandContext, input: Usa
 }
 
 /** Exported for direct render/input tests; use showUsageView from pi code. */
-export class UsageView {
-	private readonly theme: Theme;
+export class UsageView extends OverlayView {
 	private readonly input: UsageViewInput;
-	private readonly done: (result: undefined) => void;
-	private readonly getTerminalRows: () => number;
-	private readonly wheelScrollLines: number;
 	private readonly usage: ContextUsageSnapshot;
 	private readonly categoryColors: CategoryColors;
 	private readonly legendRows: readonly LegendRow[];
 	private readonly navigator: ListNavigator;
-	private readonly previewScroller = new PreviewScroller();
 	private readonly blockNavigator = new BlockNavigator();
 	private readonly fitMapScale: number | undefined;
 	private mapScale: UsageMapScale = "window";
@@ -207,23 +202,17 @@ export class UsageView {
 	private cachedStream: PreviewStream | undefined;
 	private openBlockIndex: number | undefined;
 	private cachedBlockBody: BlockBody | undefined;
-	private cachedWidth: number | undefined;
-	private cachedTerminalRows: number | undefined;
-	private cachedLines: string[] | undefined;
 
 	/** Create a view over one precomputed usage snapshot. */
 	public constructor(
 		theme: Theme,
 		input: UsageViewInput,
 		done: (result: undefined) => void,
-		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
+		getTerminalRows?: () => number,
+		wheelScrollLines?: number,
 	) {
-		this.theme = theme;
+		super(theme, done, getTerminalRows, wheelScrollLines);
 		this.input = input;
-		this.done = done;
-		this.getTerminalRows = getTerminalRows;
-		this.wheelScrollLines = wheelScrollLines;
 		this.usage = input.usage;
 		this.categoryColors = input.categoryColors;
 		this.fitMapScale = calculateFitMapScale(this.usage);
@@ -241,58 +230,18 @@ export class UsageView {
 			else this.handleContentInput(data);
 			return;
 		}
-		if (matchesKey(data, Key.escape) || data === "q") {
-			this.done(undefined);
-			return;
-		}
-		// One notch moves the selection one row, like a single step key.
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.navigator.moveBy(wheel)) this.clearCache();
-			return;
-		}
-		if (matchesKey(data, "z")) {
-			this.toggleMapScale();
-		} else if (matchesKey(data, Key.enter)) {
-			this.openPreview();
-		} else if (isStepBackKey(data)) {
-			if (this.navigator.moveBy(-1)) this.clearCache();
-		} else if (isStepForwardKey(data)) {
-			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (isPageBackKey(data)) {
-			if (this.navigator.page(-1)) this.clearCache();
-		} else if (isPageForwardKey(data)) {
-			if (this.navigator.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
-			if (this.navigator.moveTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
-			if (this.navigator.moveTo(this.legendRows.length - 1)) this.clearCache();
-		}
+		this.handleListNavigation(
+			data,
+			() => this.openPreview(),
+			this.legendRows.length - 1,
+		);
 	}
 
 	/** Render a cached fullscreen frame for the current width and terminal height. */
 	public render(width: number): string[] {
 		this.currentWidth = width;
 		const terminalRows = normalizeTerminalRows(this.getTerminalRows());
-		if (
-			this.cachedLines !== undefined &&
-			this.cachedWidth === width &&
-			this.cachedTerminalRows === terminalRows
-		) {
-			return this.cachedLines;
-		}
-
-		const lines = this.renderActiveMode(width, terminalRows);
-		this.cachedWidth = width;
-		this.cachedTerminalRows = terminalRows;
-		this.cachedLines = lines;
-		return lines;
-	}
-
-	/** Invalidate theme-dependent rendered output. */
-	public invalidate(): void {
-		this.clearPreviewContent();
-		this.clearCache();
+		return this.renderCached(width, () => this.renderActiveMode(width, terminalRows));
 	}
 
 	/** Render the dashboard, a multi-entry block stream, or one entry's full content. */
@@ -772,29 +721,10 @@ export class UsageView {
 
 	/** Scroll full content and return to its category or originating block stream. */
 	private handleContentInput(data: string): void {
-		if (matchesKey(data, Key.escape) || data === "q") {
+		this.handlePreviewScroll(data, () => {
 			if (this.openBlockIndex === undefined) this.closePreview();
 			else this.closeBlock();
-			return;
-		}
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
-			return;
-		}
-		if (isStepBackKey(data)) {
-			if (this.previewScroller.scrollBy(-1)) this.clearCache();
-		} else if (isStepForwardKey(data)) {
-			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (isPageBackKey(data)) {
-			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (isPageForwardKey(data)) {
-			if (this.previewScroller.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
-			if (this.previewScroller.scrollTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
-			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
-		}
+		});
 	}
 
 	/** Open the selected category, bypassing blocks when it has exactly one entry. */
@@ -838,7 +768,7 @@ export class UsageView {
 	}
 
 	/** Drop width- and theme-dependent preview rendering. */
-	private clearPreviewContent(): void {
+	protected clearPreviewContent(): void {
 		this.cachedContent = undefined;
 		this.cachedStream = undefined;
 		this.cachedBlockBody = undefined;
@@ -1154,11 +1084,25 @@ export class UsageView {
 		return fitLine(line, width);
 	}
 
-	/** Clear render-cache keys after data, theme, or input changes. */
-	private clearCache(): void {
-		this.cachedWidth = undefined;
-		this.cachedTerminalRows = undefined;
-		this.cachedLines = undefined;
+	/** Map-scale toggle key, handled before the shared list-navigation ladder. */
+	protected onListKey(data: string): boolean {
+		if (matchesKey(data, "z")) {
+			this.toggleMapScale();
+			return true;
+		}
+		return false;
+	}
+
+	protected moveBy(delta: number): boolean {
+		return this.navigator.moveBy(delta);
+	}
+
+	protected moveTo(index: number): boolean {
+		return this.navigator.moveTo(index);
+	}
+
+	protected pageStep(): number {
+		return Math.max(1, this.navigator.windowSize - 1);
 	}
 }
 

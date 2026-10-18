@@ -1,7 +1,5 @@
 export type SymbolAction = "search" | "definitions" | "references";
 
-export type ServerTransport = "stdio";
-
 export interface ServerCommandConfig {
   command: string;
   args?: string[];

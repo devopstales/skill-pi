@@ -28,11 +28,11 @@ invisible.
 | Component         | Module                    | Hook                                                                        | Responsibility                                                                                 |
 | ----------------- | ------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | RequestTracker    | `src/capture/tracker.ts`  | `context_with_system`, `cache_warming_decision`, `before_provider_request`  | Pair payloads with captures; mark warm refreshes                                               |
-| PayloadParser     | `src/capture/payload.ts`  | `before_provider_request` copy, then deferred                               | Copy payloads; select the parser by API; extract the message and tool-declaration channels     |
+| PayloadParser     | `src/capture/parsers.ts`  | `before_provider_request` copy, then deferred                               | Copy payloads; select the parser by API; extract the message and tool-declaration channels     |
 | PayloadGuard      | `src/capture/guard.ts`    | Deferred                                                                    | Normalize Pi's adjustments; report unexplained differences or an incomplete comparison         |
 | DispatchConfirmer | `src/capture/dispatch.ts` | Assistant `message_start`, `provider_stream_event`, assistant `message_end` | Record identity once per paired request; confirm the request model or supply the virtual route |
 
-`src/capture/adjustments.ts`, `src/capture/messages.ts`, and
+`src/capture/adjustments.ts` (with `src/capture/serializers/`), `src/capture/messages.ts`, and
 `src/capture/tools.ts` hold PayloadGuard's normalization and channel
 comparisons. SilentProbe and DispatchConfirmer both handle assistant
 `message_start` and `message_end`; neither depends on the other's result.
@@ -174,7 +174,7 @@ description lines.
 
 ### Message Channel
 
-`src/capture/payload.ts` extracts ordered text units: system, user, assistant,
+`src/capture/parsers/` extracts ordered text units: system, user, assistant,
 tool call, and tool result. Text blocks merge within one message part, not
 across message boundaries. Tool calls keep their name and canonical JSON
 arguments, or raw grammar input. Tool IDs, unsent metadata, images, reasoning
@@ -194,9 +194,10 @@ The guard normalizes the others without reporting them.
 
 `src/capture/adjustments.ts` rebuilds the captured request from its baseline
 ends, copied middle, and system text positions. It applies the forced prompt
-projection and Pi's exported `convertToLlm()`, then reproduces only the text
-behavior of the supported adapters. Per-model message transforms are not
-exported, so uncertain differences are never treated as proven Pi adjustments.
+projection and Pi's exported `convertToLlm()`, then renders the text units the
+selected API sends through `src/capture/serializers/`, one module per API with
+shared helpers. Per-model message transforms are not exported, so uncertain
+differences are never treated as proven Pi adjustments.
 
 - **Conversion.** `convertToLlm()` turns custom messages into user messages,
   wraps bash executions and summaries, and drops bash executions excluded from

@@ -3,7 +3,7 @@
  * snapshot. The Runtime label stays hidden until the runtime-inspection roadmap step.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import type { InjectionItem, InjectionSnapshot, TokenDiff } from "../model.ts";
 import type { GuardResult } from "../snapshot.ts";
@@ -13,26 +13,21 @@ import {
 	collectItemsById,
 	type InjectionRow,
 	ListNavigator,
-	PreviewScroller,
 } from "./injections-model.ts";
 import { expandJsonSpan } from "./json-preview.ts";
 import {
 	BODY_INDENT,
 	calculateViewport,
-	DEFAULT_TERMINAL_ROWS,
 	descriptionBlockRows,
 	fitLine,
 	fitToTerminalHeight,
 	hintRow,
-	isPageBackKey,
-	isPageForwardKey,
-	isStepBackKey,
-	isStepForwardKey,
 	normalizeTerminalRows,
 	spreadLine,
 	STEP_KEY_HINT,
 	wrapDescriptionLines,
 } from "./layout.ts";
+import { OverlayView } from "./overlay-view.ts";
 import {
 	type DiffBase,
 	diffMarker,
@@ -43,7 +38,7 @@ import {
 } from "./markers.ts";
 import { previewBodyLines, previewLegendLines } from "./section-preview.ts";
 import { statusBarLines } from "./status-bar.ts";
-import { DEFAULT_WHEEL_SCROLL_LINES, parseWheelDirection, readWheelScrollLines } from "./wheel.ts";
+import { readWheelScrollLines } from "./wheel.ts";
 
 /**
  * List frame rows excluding the status bar and the collapsible description:
@@ -110,35 +105,24 @@ export async function showInjectionsView(
 }
 
 /** Exported for direct render/input tests; use showInjectionsView from pi code. */
-export class InjectionsView {
-	private readonly theme: Theme;
+export class InjectionsView extends OverlayView {
 	private readonly input: InjectionsViewInput;
-	private readonly done: (result: undefined) => void;
-	private readonly getTerminalRows: () => number;
-	private readonly wheelScrollLines: number;
 	private readonly rows: InjectionRow[];
 	private readonly navigator: ListNavigator;
 	private readonly itemsById: Map<string, InjectionItem>;
-	private readonly previewScroller = new PreviewScroller();
 	private previewItem: InjectionItem | undefined;
 	private previewLines: string[] | undefined;
 	private previewWrapWidth: number | undefined;
-	private cachedWidth: number | undefined;
-	private cachedTerminalRows: number | undefined;
-	private cachedLines: string[] | undefined;
 
 	public constructor(
 		theme: Theme,
 		input: InjectionsViewInput,
 		done: (result: undefined) => void,
-		getTerminalRows: () => number = () => process.stdout.rows ?? DEFAULT_TERMINAL_ROWS,
-		wheelScrollLines: number = DEFAULT_WHEEL_SCROLL_LINES,
+		getTerminalRows?: () => number,
+		wheelScrollLines?: number,
 	) {
-		this.theme = theme;
+		super(theme, done, getTerminalRows, wheelScrollLines);
 		this.input = input;
-		this.done = done;
-		this.getTerminalRows = getTerminalRows;
-		this.wheelScrollLines = wheelScrollLines;
 		this.rows = buildInjectionRows(input.snapshot);
 		// The trailing separator and total belong to the fixed footer, not the viewport
 		this.navigator = new ListNavigator(this.rows.length - 2, 1);
@@ -150,31 +134,11 @@ export class InjectionsView {
 			this.handlePreviewInput(data);
 			return;
 		}
-		if (matchesKey(data, Key.escape) || data === "q") {
-			this.done(undefined);
-			return;
-		}
-		// One notch moves the selection one row, like a single step key.
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.navigator.moveBy(wheel)) this.clearCache();
-			return;
-		}
-		if (matchesKey(data, Key.enter)) {
-			this.openPreview();
-		} else if (isStepBackKey(data)) {
-			if (this.navigator.moveBy(-1)) this.clearCache();
-		} else if (isStepForwardKey(data)) {
-			if (this.navigator.moveBy(1)) this.clearCache();
-		} else if (isPageBackKey(data)) {
-			if (this.navigator.page(-1)) this.clearCache();
-		} else if (isPageForwardKey(data)) {
-			if (this.navigator.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
-			if (this.navigator.moveTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
-			if (this.navigator.moveTo(this.navigator.selectableCount - 1)) this.clearCache();
-		}
+		this.handleListNavigation(
+			data,
+			() => this.openPreview(),
+			this.navigator.selectableCount - 1,
+		);
 	}
 
 	public render(width: number): string[] {
@@ -237,36 +201,10 @@ export class InjectionsView {
 		return fittedLines;
 	}
 
-	public invalidate(): void {
-		this.clearPreviewContent();
-		this.clearCache();
-	}
-
 	// === Preview mode ===
 
 	private handlePreviewInput(data: string): void {
-		if (matchesKey(data, Key.escape) || data === "q") {
-			this.closePreview();
-			return;
-		}
-		const wheel = parseWheelDirection(data);
-		if (wheel !== undefined) {
-			if (this.previewScroller.scrollBy(wheel * this.wheelScrollLines)) this.clearCache();
-			return;
-		}
-		if (isStepBackKey(data)) {
-			if (this.previewScroller.scrollBy(-1)) this.clearCache();
-		} else if (isStepForwardKey(data)) {
-			if (this.previewScroller.scrollBy(1)) this.clearCache();
-		} else if (isPageBackKey(data)) {
-			if (this.previewScroller.page(-1)) this.clearCache();
-		} else if (isPageForwardKey(data)) {
-			if (this.previewScroller.page(1)) this.clearCache();
-		} else if (matchesKey(data, Key.home)) {
-			if (this.previewScroller.scrollTo(0)) this.clearCache();
-		} else if (matchesKey(data, Key.end)) {
-			if (this.previewScroller.scrollTo(this.previewScroller.maxOffset)) this.clearCache();
-		}
+		this.handlePreviewScroll(data, () => this.closePreview());
 	}
 
 	private openPreview(): void {
@@ -287,7 +225,7 @@ export class InjectionsView {
 	}
 
 	/** Drop width- and theme-dependent preview rendering. */
-	private clearPreviewContent(): void {
+	protected clearPreviewContent(): void {
 		this.previewLines = undefined;
 		this.previewWrapWidth = undefined;
 	}
@@ -644,10 +582,16 @@ export class InjectionsView {
 		return fitLine(line, width);
 	}
 
-	private clearCache(): void {
-		this.cachedWidth = undefined;
-		this.cachedTerminalRows = undefined;
-		this.cachedLines = undefined;
+	protected moveBy(delta: number): boolean {
+		return this.navigator.moveBy(delta);
+	}
+
+	protected moveTo(index: number): boolean {
+		return this.navigator.moveTo(index);
+	}
+
+	protected pageStep(): number {
+		return Math.max(1, this.navigator.windowSize - 1);
 	}
 }
 

@@ -120,6 +120,7 @@ const fakeCtx = {
     ],
   },
   model: { provider: "anthropic", id: "claude-sonnet", name: "claude-sonnet", reasoning: true },
+  getContextUsage: () => ({ tokens: 36000, contextWindow: 200000, percent: 18 }),
 } as unknown as import("@earendil-works/pi-coding-agent").ExtensionContext;
 
 it("getUsageTotals sums assistant + compaction usage", () => {
@@ -173,4 +174,35 @@ it("buildFooterContent assembles left/right lines at fixed width", () => {
   assert.ok(flat.includes("nodejs"), "runtime symbol on line 1");
   assert.equal(extensionLines.length, 1);
   assert.ok(extensionLines[0].includes("3 open"));
+});
+
+it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
+  const state: FooterState = { ...emptyGitStatus(), runtime: null, workingSince: undefined, lastDoneIn: undefined };
+  const config = {
+    segments: {
+      cwd: false, hostname: false, sessionName: false, gitBranch: false, gitStatus: false,
+      runtime: false, context: true, tokens: false, cost: false,
+      extensionStatuses: false, capitalizeProviderName: true,
+    },
+    iconMode: "ascii" as const,
+  };
+  const meta: ModelMeta = { provider: "Anthropic", model: "claude-sonnet", effort: undefined };
+  const footerData = { getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} };
+
+  for (const [pct, icon, label, remaining] of [
+    [36, "🧠", "smart", "4"],
+    [50, "⚠️", "warm", "20"],
+    [80, "🧟", "dumb", "20"],
+  ] as const) {
+    const ctx = {
+      ...fakeCtx,
+      getContextUsage: () => ({ tokens: Math.round((pct / 100) * 200000), contextWindow: 200000, percent: pct }),
+    } as unknown as typeof fakeCtx;
+    const { mainLines } = buildFooterContent(ctx, state, config, meta, theme, footerData, 160);
+    const flat = mainLines.join("\n");
+    assert.ok(flat.includes(icon), `${pct}%: zone icon ${icon}`);
+    assert.ok(flat.includes(label), `${pct}%: zone label ${label}`);
+    assert.ok(flat.includes(`${remaining}%`), `${pct}%: ${remaining}% remaining to ceiling`);
+    assert.ok(flat.includes("left"), `${pct}%: 'left' suffix`);
+  }
 });
