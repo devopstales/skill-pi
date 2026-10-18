@@ -5,6 +5,7 @@ import { compileRanked } from "../core/summarize";
 import { loadSettings, type PiVccSettings } from "../core/settings";
 import { calibrateCharsPerToken, estimateMessageContentChars, estimateTokensFromChars } from "../core/token-estimate";
 import type { PiVccCompactionDetails } from "../details";
+import { writeLastCompaction, type LastCompaction } from "../core/last-compaction";
 import {
   buildOwnCut,
   getLastCompactionStats,
@@ -298,6 +299,19 @@ export const registerBeforeCompactHandler = (pi: ExtensionAPI, opts: RegisterBef
     };
 
     setLastCompactWasPiVcc(isPiVcc);
+
+    const lastCompaction: LastCompaction = {
+      at: new Date().toISOString(),
+      reason: reason ?? "manual",
+      keptUserTurns: stats.keptUserTurns,
+      totalUserTurns: stats.totalUserTurns,
+      keptTokensEst: stats.keptTokensEst,
+      smartKeepAdjusted: Boolean(smartKeep.smartAdjusted),
+      sections: details.sections,
+      firstKeptEntryId,
+      summaryLength: summary.length,
+    };
+    writeLastCompaction(lastCompaction);
 
     return {
       compaction: {
