@@ -45,7 +45,7 @@ const renderIncludes = (): string[] => {
   let totalLines = 0;
   let totalBytes = 0;
   if (entries.length === 0) {
-    lines.push("  none (0/150 lines, 0/6144 bytes)");
+    lines.push(`  none (0/${MAX_RULES_LINES} lines, 0/${MAX_RULES_BYTES} bytes)`);
   }
   for (const entry of entries) {
     const rules = readIncludedRules([entry]);
