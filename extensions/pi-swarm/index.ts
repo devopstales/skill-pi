@@ -3,7 +3,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { MAX_RUNNING, RESULT_CUSTOM_TYPE, type AgentSnapshot } from "./src/domain.ts";
-import { SwarmManager, resultBody, truncate, waitPerAgentBudget } from "./src/manager.ts";
+import { SwarmManager, checkPreview, formatStatusline, resultBody, truncate, waitPerAgentBudget } from "./src/manager.ts";
 import { resolveSkillPiExe } from "./src/child.ts";
 
 const MAX_WAIT_IDS = 64;
@@ -62,34 +62,39 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
 
   const sessionKey = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId() ?? "";
 
+  const updateStatusline = (mgr: SwarmManager, ctx: ExtensionContext): void => {
+    const agents = mgr.list();
+    const text = formatStatusline(agents);
+    ctx.ui.setStatus("swarm", text);
+  };
+
   const getManager = (ctx: ExtensionContext): SwarmManager => {
     const key = sessionKey(ctx);
-    let mgr = sessions.get(key);
-    if (!mgr) {
-      const agentDir = getAgentDir();
-      const cwd = ctx.cwd;
-      mgr = new SwarmManager({
-        cwd,
-        agentDir,
-        deliver: (agentId) => {
-          const snapshot = mgr?.get(agentId);
-          if (!snapshot) return;
-          const body = resultBody(snapshot);
-          pi.sendMessage(
-            {
-              customType: RESULT_CUSTOM_TYPE,
-              content: body,
-              display: true,
-              details: { id: snapshot.id, title: snapshot.title, status: snapshot.status },
-            },
-            { deliverAs: "followUp", triggerTurn: true },
-          );
-        },
-        maxRunning,
-      });
-      sessions.set(key, mgr);
-    }
-    return mgr;
+    const existing = sessions.get(key);
+    if (existing) return existing;
+    const manager: SwarmManager = new SwarmManager({
+      cwd: ctx.cwd,
+      agentDir: getAgentDir(),
+      deliver: (agentId) => {
+        const snapshot = manager.get(agentId);
+        if (!snapshot) return;
+        const body = resultBody(snapshot);
+        pi.sendMessage(
+          {
+            customType: RESULT_CUSTOM_TYPE,
+            content: body,
+            display: true,
+            details: { id: snapshot.id, title: snapshot.title, status: snapshot.status },
+          },
+          { deliverAs: "followUp", triggerTurn: true },
+        );
+      },
+      maxRunning,
+    });
+    manager.subscribe(() => updateStatusline(manager, ctx));
+    updateStatusline(manager, ctx);
+    sessions.set(key, manager);
+    return manager;
   };
 
   pi.registerTool({
@@ -210,6 +215,120 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
         content: [{ type: "text" as const, text: lines.join("\n") }],
         details: { count: agents.length },
       };
+    },
+  });
+
+  pi.registerTool({
+    name: "swarm_check",
+    label: "Swarm Check",
+    description: "Check the status of a swarm agent without consuming its result. Returns status, turns, and a bounded preview of the latest output.",
+    promptSnippet: "Check on a running or settled swarm agent without consuming its result",
+    promptGuidelines: [
+      "Use swarm_check to inspect a child's progress without blocking or consuming its result.",
+      "The preview is bounded to 2KB and 20 lines (whichever hits first).",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Agent id to check." }),
+    }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const mgr = getManager(ctx);
+      try {
+        const snapshot = mgr.check(params.id);
+        const preview = checkPreview(snapshot.latestText);
+        return {
+          content: [{ type: "text" as const, text: `${snapshot.id} [${snapshot.status}] turns: ${snapshot.turns}\n${preview}` }],
+          details: { id: snapshot.id, status: snapshot.status, turns: snapshot.turns, consumed: snapshot.consumed },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: (err as Error).message }],
+          details: { error: true },
+          isError: true,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "swarm_send",
+    label: "Swarm Send",
+    description: "Send a message to a swarm agent. While running, it steers the child. After it settles, it starts a new follow-up run.",
+    promptSnippet: "Steer a running swarm agent or send a follow-up to a settled one",
+    promptGuidelines: [
+      "Use swarm_send to steer a running child mid-task or to send a follow-up after it settles.",
+      "The child routes the message as steer (running) or follow_up (settled) automatically.",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Agent id to send to." }),
+      text: Type.String({ description: "Message text." }),
+    }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const mgr = getManager(ctx);
+      try {
+        mgr.send(params.id, params.text);
+        return {
+          content: [{ type: "text" as const, text: `sent to ${params.id}` }],
+          details: { id: params.id },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: (err as Error).message }],
+          details: { error: true },
+          isError: true,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "swarm_cancel",
+    label: "Swarm Cancel",
+    description: "Cancel a swarm agent. Sends an RPC abort, waits up to 5s for a clean exit, then force-kills. Settled agents report their current status.",
+    promptSnippet: "Cancel a running swarm agent",
+    promptGuidelines: [
+      "Use swarm_cancel to stop a running child. The abort is bounded: 5s then SIGKILL.",
+      "A settled child reports its current status (e.g. was already done).",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Agent id to cancel." }),
+    }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const mgr = getManager(ctx);
+      try {
+        const before = mgr.get(params.id);
+        if (!before) {
+          const ids = mgr.list().map((s) => s.id);
+          return {
+            content: [{ type: "text" as const, text: `unknown agent id: ${params.id}; known: ${ids.length === 0 ? "(none)" : ids.join(", ")}` }],
+            details: { error: true },
+            isError: true,
+          };
+        }
+        const wasSettled = before.status === "done" || before.status === "error" || before.status === "interrupted";
+        await mgr.cancel(params.id);
+        const after = mgr.get(params.id);
+        if (after) {
+          const status = after.status;
+          const text = wasSettled ? `${params.id} was already ${before.status}` : `${params.id} cancelled (${status})`;
+          return {
+            content: [{ type: "text" as const, text }],
+            details: { id: params.id, status },
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: `${params.id} cancelled (removed from queue)` }],
+          details: { id: params.id, status: "interrupted" },
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: (err as Error).message }],
+          details: { error: true },
+          isError: true,
+        };
+      }
     },
   });
 

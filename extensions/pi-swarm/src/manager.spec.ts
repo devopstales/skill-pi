@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { ABORT_TIMEOUT_MS, CHECK_BUDGET, CHECK_MAX_LINES, WAIT_BUDGET_TOTAL, type AgentSnapshot } from "./domain.ts";
-import { SwarmManager, checkPreview, truncate, waitPerAgentBudget } from "./manager.ts";
+import { SwarmManager, checkPreview, formatStatusline, truncate, waitPerAgentBudget } from "./manager.ts";
 
 interface FakeChildOpts {
   settle?: () => void;
@@ -13,6 +13,7 @@ interface FakeChildOpts {
 
 class FakeChild {
   readonly id: string;
+  readonly sentTexts: string[] = [];
   private listeners = new Set<(s: AgentSnapshot) => void>();
   private state: AgentSnapshot;
   private readonly opts: Required<Omit<FakeChildOpts, "onAbort">> & { onAbort?: () => void };
@@ -47,6 +48,7 @@ class FakeChild {
   }
 
   send(text: string): void {
+    this.sentTexts.push(text);
     this.state = { ...this.state, latestText: text };
   }
 
@@ -135,6 +137,49 @@ describe("waitPerAgentBudget", () => {
     expect(waitPerAgentBudget(64)).toBe(768);
     expect(4 * waitPerAgentBudget(4)).toBeLessThanOrEqual(WAIT_BUDGET_TOTAL);
     expect(64 * waitPerAgentBudget(64)).toBeLessThanOrEqual(WAIT_BUDGET_TOTAL);
+  });
+});
+
+describe("formatStatusline", () => {
+  const snap = (status: AgentSnapshot["status"]): AgentSnapshot => ({
+    id: "sa-1",
+    title: "",
+    agentType: "",
+    status,
+    createdAt: 0,
+    turns: 0,
+    tokens: 0,
+    finalText: "",
+    latestText: "",
+    consumed: false,
+    transcript: [],
+  });
+
+  it("returns undefined when there are no agents", () => {
+    expect(formatStatusline([])).toBeUndefined();
+  });
+
+  it("lists only the present buckets", () => {
+    expect(formatStatusline([snap("running"), snap("running"), snap("done")])).toBe(
+      "swarm: 2 running · 1 done · /swarm",
+    );
+    expect(formatStatusline([snap("queued")])).toBe("swarm: 1 queued · /swarm");
+    expect(formatStatusline([snap("interrupted")])).toBe("swarm: 1 interrupted");
+    expect(formatStatusline([snap("error")])).toBe("swarm: 1 error");
+  });
+
+  it("orders buckets running, done, error, interrupted, queued", () => {
+    expect(formatStatusline([snap("queued"), snap("error"), snap("running"), snap("done"), snap("interrupted")])).toBe(
+      "swarm: 1 running · 1 done · 1 error · 1 interrupted · 1 queued · /swarm",
+    );
+  });
+
+  it("omits the command hint when nothing is actionable", () => {
+    expect(formatStatusline([snap("done"), snap("error")])).toBe("swarm: 1 done · 1 error");
+  });
+
+  it("keeps the command hint while a child is running", () => {
+    expect(formatStatusline([snap("done"), snap("running")])).toBe("swarm: 1 running · 1 done · /swarm");
   });
 });
 
@@ -250,15 +295,91 @@ describe("SwarmManager", () => {
     expect(deliver).not.toHaveBeenCalled();
   });
 
-  it("send forwards to a running child and to a settled child", () => {
+  it("send forwards to a running child (steer path) and to a settled child (follow_up path)", () => {
     const { manager }  = makeManager({});
     const id = manager.spawn({ prompt: "p" }).id;
     const children = (manager as unknown as { children: Map<string, FakeChild> }).children;
     manager.send(id, "hello");
     expect(children.get(id)?.snapshot.latestText).toBe("hello");
+    expect(children.get(id)?.sentTexts).toEqual(["hello"]);
     children.get(id)?.settle("done");
     manager.send(id, "again");
     expect(children.get(id)?.snapshot.latestText).toBe("again");
+    expect(children.get(id)?.sentTexts).toEqual(["hello", "again"]);
+  });
+
+  it("send throws an unknown-id error that lists the known ids", () => {
+    const { manager }  = makeManager({});
+    manager.spawn({ prompt: "p" });
+    expect(() => manager.send("sa-99", "x")).toThrowError(/unknown agent id: sa-99.*sa-1/s);
+  });
+
+  it("check throws an unknown-id error that lists the known ids", () => {
+    const { manager }  = makeManager({});
+    manager.spawn({ prompt: "p" });
+    expect(() => manager.check("sa-99")).toThrowError(/unknown agent id: sa-99.*sa-1/s);
+  });
+
+  it("check after settle returns the snapshot with consumed=false and does not add a deliver call", () => {
+    const deliver = vi.fn();
+    const { manager } = makeManager({ deliver });
+    const id = manager.spawn({ prompt: "p" }).id;
+    (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)?.settle("done");
+    const callsBeforeCheck = deliver.mock.calls.length;
+    const snapshot = manager.check(id);
+    expect(snapshot.status).toBe("done");
+    expect(snapshot.consumed).toBe(false);
+    expect(deliver.mock.calls.length).toBe(callsBeforeCheck);
+  });
+
+  it("cancel of a queued agent removes it and promotes the next queued agent to running", async () => {
+    const { manager } = makeManager({ maxRunning: 1, abortTimeoutMs: 50, factory: (id) => makeFactory({ ignoreAbort: true }).spawn(id) });
+    const a = manager.spawn({ prompt: "a" }).id;
+    const b = manager.spawn({ prompt: "b" }).id;
+    const c = manager.spawn({ prompt: "c" }).id;
+    expect(manager.get(a)?.status).toBe("running");
+    expect(manager.get(b)?.status).toBe("queued");
+    expect(manager.get(c)?.status).toBe("queued");
+
+    const events: string[] = [];
+    const unsub = manager.subscribe(() => events.push(manager.get(c)?.status ?? ""));
+    try {
+      await manager.cancel(b);
+      expect(manager.get(b)).toBeUndefined();
+      expect(manager.get(a)?.status).toBe("running");
+      expect(manager.get(c)?.status).toBe("queued");
+      expect(events).toContain("queued");
+    } finally {
+      unsub();
+    }
+  });
+
+  it("cancel of a running abort-ignoring child force-settles interrupted and promotes the queued next", async () => {
+    const { manager } = makeManager({ maxRunning: 1, abortTimeoutMs: 50, factory: (id) => makeFactory({ ignoreAbort: true }).spawn(id) });
+    const a = manager.spawn({ prompt: "a" }).id;
+    const b = manager.spawn({ prompt: "b" }).id;
+    expect(manager.get(a)?.status).toBe("running");
+    expect(manager.get(b)?.status).toBe("queued");
+    await manager.cancel(a);
+    expect(manager.get(a)?.status).toBe("interrupted");
+    expect(manager.get(a)?.settledAt).toBeDefined();
+    expect(manager.get(b)?.status).toBe("running");
+  });
+
+  it("cancel of a settled agent reports the was-already outcome and keeps its original status", async () => {
+    const { manager } = makeManager({});
+    const id = manager.spawn({ prompt: "p" }).id;
+    (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)?.settle("done");
+    expect(manager.get(id)?.status).toBe("done");
+    await manager.cancel(id);
+    expect(manager.get(id)?.status).toBe("done");
+    expect(manager.get(id)?.settledAt).toBeDefined();
+  });
+
+  it("cancel throws an unknown-id error that lists the known ids", async () => {
+    const { manager } = makeManager({});
+    manager.spawn({ prompt: "p" });
+    await expect(manager.cancel("sa-99")).rejects.toThrowError(/unknown agent id: sa-99.*sa-1/s);
   });
 
   it("list returns snapshots in spawn order and get returns undefined for unknown ids", () => {

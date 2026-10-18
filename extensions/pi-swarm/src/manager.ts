@@ -8,6 +8,7 @@ import {
   WAIT_BUDGET_PER_AGENT,
   WAIT_BUDGET_TOTAL,
   type SpawnRequest,
+  type SwarmStatus,
 } from "./domain.ts";
 import { buildChildInvocation, SwarmChild } from "./child.ts";
 import type { AgentSnapshot, SwarmChildHandle } from "./domain.ts";
@@ -21,6 +22,19 @@ export function waitPerAgentBudget(ids: number): number {
   const count = Math.max(1, ids);
   if (count * WAIT_BUDGET_PER_AGENT > WAIT_BUDGET_TOTAL) return Math.floor(WAIT_BUDGET_TOTAL / count);
   return WAIT_BUDGET_PER_AGENT;
+}
+
+const STATUSLINE_ORDER: SwarmStatus[] = ["running", "done", "error", "interrupted", "queued"];
+
+export function formatStatusline(agents: readonly AgentSnapshot[]): string | undefined {
+  const counts = new Map<SwarmStatus, number>();
+  for (const agent of agents) counts.set(agent.status, (counts.get(agent.status) ?? 0) + 1);
+  const parts = STATUSLINE_ORDER.filter((status) => counts.get(status)).map(
+    (status) => `${counts.get(status)} ${status}`,
+  );
+  if (parts.length === 0) return undefined;
+  const hasActionable = (counts.get("running") ?? 0) > 0 || (counts.get("queued") ?? 0) > 0;
+  return hasActionable ? `swarm: ${parts.join(" · ")} · /swarm` : `swarm: ${parts.join(" · ")}`;
 }
 
 export function checkPreview(text: string): string {
@@ -176,9 +190,18 @@ export class SwarmManager {
     });
   }
 
-  async cancel(id: string): Promise<void> {
+  async cancel(id: string): Promise<AgentSnapshot | undefined> {
     const record = this.records.get(id);
     if (!record) throw new Error(`unknown agent id: ${id}; known: ${this.knownIds()}`);
+    if (record.snapshot.status === "queued") {
+      this.runningCount = Math.max(0, this.runningCount - 1);
+      this.remove(record);
+      this.rebalance();
+      return;
+    }
+    if (isSettled(record.snapshot.status)) {
+      return { ...record.snapshot };
+    }
     const child = record.child;
     const abortPromise = child.abort();
     const timeout = new Promise<void>((resolve) => {
@@ -189,7 +212,11 @@ export class SwarmManager {
       (timer as { unref?: () => void }).unref?.();
     });
     await Promise.race([abortPromise, timeout]);
-    if (!isSettled(record.snapshot.status)) this.forceSettle(record);
+    if (!isSettled(record.snapshot.status)) {
+      this.forceSettle(record);
+    } else {
+      this.rebalance();
+    }
   }
 
   disposeAll(): Promise<void> {
@@ -261,13 +288,21 @@ export class SwarmManager {
   private onSettled(record: AgentRecord, wasRunning: boolean): void {
     if (!record.snapshot.settledAt) record.snapshot = { ...record.snapshot, settledAt: Date.now() };
     if (wasRunning) this.runningCount = Math.max(0, this.runningCount - 1);
+    this.rebalance(record);
+  }
+
+  private rebalance(settledRecord?: AgentRecord): void {
     this.prune();
-    if (record.waiters === 0 && !record.snapshot.consumed) this.opts.deliver(record.id);
-    const next = [...this.records.values()].find((r) => r.snapshot.status === "queued");
-    if (next && this.runningCount <= this.opts.maxRunning) {
-      this.runningCount += 1;
-      next.snapshot = { ...next.snapshot, status: "running" };
-      this.notify();
+    let runningNow = [...this.records.values()].filter((r) => r.snapshot.status === "running").length;
+    for (const record of [...this.records.values()]) {
+      if (runningNow >= this.opts.maxRunning) break;
+      if (record.snapshot.status !== "queued") continue;
+      runningNow += 1;
+      record.snapshot = { ...record.snapshot, status: "running" };
+    }
+    this.notify();
+    if (settledRecord && isSettled(settledRecord.snapshot.status) && settledRecord.waiters === 0 && !settledRecord.snapshot.consumed) {
+      this.opts.deliver(settledRecord.id);
     }
   }
 
