@@ -1,12 +1,15 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { Text, type Component } from "@earendil-works/pi-tui";
+import { parseKey, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { MAX_RUNNING, RESULT_CUSTOM_TYPE, type AgentSnapshot } from "./src/domain.ts";
 import { SwarmManager, checkPreview, formatStatusline, resultBody, truncate, waitPerAgentBudget } from "./src/manager.ts";
 import { resolveSkillPiExe } from "./src/child.ts";
+import { formatElapsed, formatTokens } from "./src/format.ts";
+import { createFleetView, isFleetViewVisible, type FleetReadModel } from "./src/ui/fleetview.ts";
 
 const MAX_WAIT_IDS = 64;
+const FLEETVIEW_WIDGET_KEY = "pi-swarm";
 
 function swarmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env.SKILL_PI_SWARM?.trim().toLowerCase();
@@ -20,19 +23,6 @@ function swarmMaxRunning(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(n) && n > 0 ? n : MAX_RUNNING;
 }
 
-function formatElapsed(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${min}m${String(sec).padStart(2, "0")}s`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
-
 function describeLine(s: AgentSnapshot): string {
   const now = Date.now();
   const elapsed = (s.settledAt ?? now) - s.createdAt;
@@ -40,25 +30,108 @@ function describeLine(s: AgentSnapshot): string {
   return `${s.id} [${s.status}] "${s.title}" (${s.agentType || "generic"}, ${modelLabel}, ${formatTokens(s.tokens)}, ${formatElapsed(elapsed)})`;
 }
 
-function statusGlyph(s: AgentSnapshot): string {
-  switch (s.status) {
-    case "running":
-      return "⠹";
-    case "done":
-      return "✓";
-    case "error":
-      return "✗";
-    case "interrupted":
-      return "■";
-    case "queued":
-      return "…";
+interface FleetViewSession {
+  mgr: SwarmManager;
+  focused: boolean;
+  ui: ExtensionContext["ui"] | undefined;
+  ctx: ExtensionContext | undefined;
+  leaderArmed: boolean;
+  armedTimer: NodeJS.Timeout | undefined;
+  stopInput: () => void;
+}
+
+function emptyPrompt(ui: ExtensionContext["ui"]): boolean {
+  try {
+    return ui.getEditorText().trim() === "";
+  } catch {
+    return false;
   }
+}
+
+function fleetReadModel(mgr: SwarmManager, onExit: () => void): FleetReadModel {
+  return {
+    list: () => mgr.list(),
+    get: (id: string) => mgr.get(id),
+    cancel: (id: string) => {
+      void Promise.resolve(mgr.cancel(id)).catch(() => {});
+      onExit();
+    },
+    subscribe: (listener: () => void) => mgr.subscribe(listener),
+  };
+}
+
+function updateFleetWidget(session: FleetViewSession): void {
+  const ui = session.ui;
+  if (!ui) return;
+  const show = isFleetViewVisible(session.mgr.list());
+  if (!show) {
+    session.focused = false;
+    ui.setWidget(FLEETVIEW_WIDGET_KEY, undefined, { placement: "belowEditor" });
+    return;
+  }
+  const component = createFleetView(fleetReadModel(session.mgr, () => updateFleetWidget(session)));
+  component.tui = undefined;
+  ui.setWidget(
+    FLEETVIEW_WIDGET_KEY,
+    (tui, theme) => {
+      component.tui = tui;
+      const wrapped: Component & { dispose(): void } = {
+        render: (width: number) => component.render(width),
+        handleInput: (data: string) => {
+          component.handleInput?.(data);
+        },
+        invalidate: () => component.invalidate(),
+        dispose: () => component.dispose(),
+      };
+      return wrapped;
+    },
+    { placement: "belowEditor" },
+  );
+}
+
+function fleetInputHandler(session: FleetViewSession, onLeaderArm: () => void) {
+  return (data: string): { consume?: boolean; data?: string } | undefined => {
+    if (session.leaderArmed) return undefined;
+    if (!session.ctx || !session.ui) return undefined;
+    if (!isFleetViewVisible(session.mgr.list())) return undefined;
+    if (parseKey(data) === "ctrl+q") {
+      session.leaderArmed = true;
+      onLeaderArm();
+      return { consume: true };
+    }
+    const key = parseKey(data);
+    if (!key) return undefined;
+    if (key === "escape") {
+      if (session.focused) {
+        session.focused = false;
+        return { consume: true };
+      }
+      return undefined;
+    }
+    if (!emptyPrompt(session.ui)) {
+      if (key === "down" && !session.focused) {
+        session.focused = true;
+        return { consume: true };
+      }
+      return undefined;
+    }
+    if (key === "down" || key === "left") {
+      session.focused = true;
+      return { consume: true };
+    }
+    if (key === "up" || key === "enter" || key === "x") {
+      if (session.focused) return { consume: true };
+      return undefined;
+    }
+    return undefined;
+  };
 }
 
 export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env): void {
   if (!swarmEnabled(env)) return;
   const maxRunning = swarmMaxRunning(env);
   const sessions = new Map<string, SwarmManager>();
+  const fleetSessions = new Map<string, FleetViewSession>();
 
   const sessionKey = (ctx: ExtensionContext): string => ctx.sessionManager.getSessionId() ?? "";
 
@@ -67,6 +140,51 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     const text = formatStatusline(agents);
     ctx.ui.setStatus("swarm", text);
   };
+
+  const getFleetSession = (mgr: SwarmManager, ctx: ExtensionContext): FleetViewSession => {
+    const key = sessionKey(ctx);
+    let current = fleetSessions.get(key);
+    if (!current) {
+      current = {
+        mgr,
+        focused: false,
+        ui: ctx.hasUI ? ctx.ui : undefined,
+        ctx,
+        leaderArmed: false,
+        armedTimer: undefined,
+        stopInput: () => {},
+      };
+      fleetSessions.set(key, current);
+    }
+    current.ctx = ctx;
+    if (ctx.hasUI) current.ui = ctx.ui;
+    return current;
+  };
+
+  const updateFleet = (key: string, ctx: ExtensionContext): void => {
+    const mgr = sessions.get(key);
+    const session = fleetSessions.get(key);
+    if (!mgr || !session || !ctx.hasUI) return;
+    updateFleetWidget(session);
+  };
+
+  const startFleetInput = (key: string, ctx: ExtensionContext): void => {
+    const session = fleetSessions.get(key);
+    if (!session || !ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
+    session.stopInput();
+    session.stopInput = ctx.ui.onTerminalInput(
+      fleetInputHandler(session, () => {
+        if (session.armedTimer) clearTimeout(session.armedTimer);
+        session.armedTimer = setTimeout(() => {
+          session.leaderArmed = false;
+          session.armedTimer = undefined;
+        }, 2000);
+      }),
+    );
+    updateFleetWidget(session);
+  };
+
+  const leaderArmed = (ctx: ExtensionContext): boolean => fleetSessions.get(sessionKey(ctx))?.leaderArmed ?? false;
 
   const getManager = (ctx: ExtensionContext): SwarmManager => {
     const key = sessionKey(ctx);
@@ -91,11 +209,24 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
       },
       maxRunning,
     });
-    manager.subscribe(() => updateStatusline(manager, ctx));
+    manager.subscribe(() => {
+      updateStatusline(manager, ctx);
+      updateFleet(key, ctx);
+    });
     updateStatusline(manager, ctx);
     sessions.set(key, manager);
+    getFleetSession(manager, ctx);
     return manager;
   };
+
+  pi.on("session_start", (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    const key = sessionKey(ctx);
+    getFleetSession(getManager(ctx), ctx);
+    startFleetInput(key, ctx);
+  });
+
+  void leaderArmed;
 
   pi.registerTool({
     name: "swarm_spawn",
@@ -346,6 +477,13 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
 
   pi.on("session_shutdown", (ev, ctx) => {
     const key = sessionKey(ctx);
+    const session = fleetSessions.get(key);
+    if (session) {
+      session.stopInput();
+      if (session.armedTimer) clearTimeout(session.armedTimer);
+      if (session.ui) session.ui.setWidget(FLEETVIEW_WIDGET_KEY, undefined, { placement: "belowEditor" });
+      fleetSessions.delete(key);
+    }
     const mgr = sessions.get(key);
     if (!mgr) return;
     sessions.delete(key);
