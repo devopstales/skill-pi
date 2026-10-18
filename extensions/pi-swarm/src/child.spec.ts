@@ -63,7 +63,7 @@ function makeFakeChild(
   let capturedCwd: string | undefined;
   let capturedEnv: NodeJS.ProcessEnv | undefined;
   const spawn = ((_command: string, _args: string[], options: SpawnOptions) => {
-    capturedCwd = options.cwd;
+    capturedCwd = typeof options.cwd === "string" ? options.cwd : options.cwd?.toString();
     capturedEnv = options.env as NodeJS.ProcessEnv;
     return child;
   }) as FakeChild["spawn"];
