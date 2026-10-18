@@ -1,6 +1,6 @@
 {
   "name": "@devopstales/pi-vcc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "description": "Algorithmic conversation compactor for pi (no LLM calls). Vendored from sting8k/pi-vcc (MIT), Czech patterns removed, homogenized for the skill-pi agent dir.",
