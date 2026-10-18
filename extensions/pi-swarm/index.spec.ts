@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import type { AgentSnapshot } from "./src/domain.ts";
 import type { EventBus, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+const installSwarmProtocolSpy = vi.fn((bus: { emit: (c: string, d: unknown) => void }, _manager: unknown) => {
+  bus.emit("swarm:ready", { v: 1 });
+  return { dispose: vi.fn() };
+});
+
 function snap(over: Partial<AgentSnapshot>): AgentSnapshot {
   return {
     id: "sa-1",
@@ -115,6 +120,7 @@ interface RegisteredTool {
 }
 
 let fakeManager: FakeManager;
+let piEventsOfLastSetup: { emit: (c: string, d: unknown) => void; on: (c: string, h: (d: unknown) => void) => () => void };
 
 vi.mock("./src/manager.ts", () => ({
   SwarmManager: (class { constructor() { return fakeManager; } }) as unknown as new (opts: unknown) => FakeManager,
@@ -135,6 +141,11 @@ vi.mock("./src/manager.ts", () => ({
 vi.mock("./src/child.ts", () => ({
   resolveSkillPiExe: () => "/tmp/skill-pi.js",
   buildChildInvocation: () => ({ argv: ["node", "skill-pi.js"], env: {} }),
+}));
+
+vi.mock("./src/protocol.ts", () => ({
+  installSwarmProtocol: (bus: { emit: (c: string, d: unknown) => void }, manager: unknown) =>
+    installSwarmProtocolSpy(bus, manager),
 }));
 
 let agentDirOverride = "/tmp/agent";
@@ -187,6 +198,7 @@ describe("pi-swarm index", () => {
       },
       events: { emit: vi.fn(), on: onBus } as unknown as EventBus,
     } as unknown as ExtensionAPI;
+    piEventsOfLastSetup = (pi as { events: { emit: (c: string, d: unknown) => void; on: (c: string, h: (d: unknown) => void) => () => void } }).events;
     const result = makeCtx();
     ctx = result.ctx;
     setStatus = result.setStatus;
@@ -202,9 +214,35 @@ describe("pi-swarm index", () => {
     for (const handler of start) handler({ reason: "startup" }, ctx);
   }
 
+  function shutdownSession(reason: string) {
+    const shutdown = (handlers.get("session_shutdown") ?? []) as Array<(ev: unknown, c: ExtensionContext) => unknown>;
+    for (const handler of shutdown) handler({ reason }, ctx);
+  }
+
   it("registers the six swarm tools", async () => {
     await setup([]);
     expect([...tools.keys()].sort()).toEqual(["swarm_cancel", "swarm_check", "swarm_list", "swarm_send", "swarm_spawn", "swarm_wait"]);
+  });
+
+  it("installs the swarm rpc protocol once per session, wired to the session manager and pi.events", async () => {
+    await setup([]);
+    startSession();
+    expect(installSwarmProtocolSpy).toHaveBeenCalledTimes(1);
+    const [bus, manager] = installSwarmProtocolSpy.mock.calls[0] as [unknown, unknown];
+    expect(manager).toBe(fakeManager);
+    expect(bus).toBe(piEventsOfLastSetup);
+    startSession();
+    expect(installSwarmProtocolSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes the swarm rpc protocol on session_shutdown", async () => {
+    await setup([]);
+    startSession();
+    const handle = installSwarmProtocolSpy.mock.results[0].value as { dispose: ReturnType<typeof vi.fn> };
+    shutdownSession("quit");
+    expect(handle.dispose).toHaveBeenCalledTimes(1);
+    shutdownSession("quit");
+    expect(handle.dispose).toHaveBeenCalledTimes(1);
   });
 
   it("clears the swarm statusline when there are no agents", async () => {

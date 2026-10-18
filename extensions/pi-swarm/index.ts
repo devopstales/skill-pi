@@ -9,11 +9,13 @@ import { formatElapsed, formatTokens } from "./src/format.ts";
 import { discoverAgentTypes, resolveAgentType, type AgentType } from "./src/agents.ts";
 import { createTargetSelector, type TargetId, type TargetSelector } from "./src/target.ts";
 import { createFleetView, isFleetViewVisible, type FleetReadModel } from "./src/ui/fleetview.ts";
+import { installSwarmProtocol } from "./src/protocol.ts";
 
 const MAX_WAIT_IDS = 64;
 const FLEETVIEW_WIDGET_KEY = "pi-swarm";
 const PLAN_PRESENT_EVENT = "swarm:plan-present";
 const SWARM_TARGET_STATUS_KEY = "swarm-target";
+const SWARM_READY_EVENT = "swarm:ready";
 
 function swarmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env.SKILL_PI_SWARM?.trim().toLowerCase();
@@ -195,6 +197,7 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
   if (!swarmEnabled(env)) return;
   const maxRunning = swarmMaxRunning(env);
   const sessions = new Map<string, SwarmManager>();
+  const protocolDisposers = new Map<string, () => void>();
   const fleetSessions = new Map<string, FleetViewSession>();
   let currentCtx: ExtensionContext | undefined;
 
@@ -292,6 +295,8 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     });
     updateStatusline(manager, ctx);
     sessions.set(key, manager);
+    protocolDisposers.set(key, installSwarmProtocol(pi.events, manager).dispose);
+    pi.events.emit(SWARM_READY_EVENT, { v: 1 });
     getFleetSession(manager, ctx);
     return manager;
   };
@@ -603,6 +608,11 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
         session.ui.setStatus(SWARM_TARGET_STATUS_KEY, undefined);
       }
       fleetSessions.delete(key);
+    }
+    const disposeProtocol = protocolDisposers.get(key);
+    if (disposeProtocol) {
+      disposeProtocol();
+      protocolDisposers.delete(key);
     }
     const mgr = sessions.get(key);
     if (!mgr) return;

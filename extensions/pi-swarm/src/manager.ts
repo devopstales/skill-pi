@@ -151,6 +151,14 @@ export class SwarmManager {
     return record.snapshot;
   }
 
+  consume(id: string): AgentSnapshot {
+    const record = this.records.get(id);
+    if (!record) throw new Error(`unknown agent id: ${id}; known: ${this.knownIds()}`);
+    record.snapshot = { ...record.snapshot, consumed: true };
+    this.notify();
+    return record.snapshot;
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => {
