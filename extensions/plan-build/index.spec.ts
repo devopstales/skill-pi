@@ -12,7 +12,10 @@ interface MockPi {
 	entryRenderers: Map<string, unknown>;
 	messageRenderers: Map<string, unknown>;
 	events: Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>;
+	eventsApi: { emit: (channel: string, data: unknown) => void; on: (channel: string, handler: (data: unknown) => void) => () => void };
 	entries: Array<{ customType: string; data: unknown }>;
+	emittedEvents: Array<{ channel: string; data: unknown }>;
+	busListeners: Map<string, Array<(data: unknown) => void>>;
 	activeTools: string[];
 }
 
@@ -55,10 +58,24 @@ function mockPi(): MockPi {
 		entryRenderers: new Map<string, unknown>(),
 		messageRenderers: new Map<string, unknown>(),
 		events: new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>(),
+		emittedEvents: [],
+		busListeners: new Map<string, Array<(data: unknown) => void>>(),
+		eventsApi: {
+			emit: (channel: string, data: unknown) => {
+				mock.emittedEvents.push({ channel, data });
+			},
+			on: (channel: string, handler: (data: unknown) => void) => {
+				const list = mock.busListeners.get(channel) ?? [];
+				list.push(handler);
+				mock.busListeners.set(channel, list);
+				return () => undefined;
+			},
+		},
 		entries: [],
 		activeTools: [],
 	};
 	const api: ExtensionAPI = {
+		events: mock.eventsApi,
 		on: (name: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
 			const list = mock.events.get(name) ?? [];
 			list.push(handler);
@@ -133,6 +150,21 @@ it("wires session and tool events", () => {
 	for (const name of ["session_start", "session_tree", "session_shutdown", "session_compact", "before_agent_start", "agent_settled", "agent_end", "input", "tool_call", "tool_result", "context"]) {
 		assert.ok(pi.events.has(name), `event ${name} handled`);
 	}
+});
+
+it("session_start emits swarm:plan-present on the event bus", async () => {
+	const pi = mockPi();
+	piPlanBuild(pi.api);
+	const ctx = makeCtx();
+	const startHandlers = pi.events.get("session_start") ?? [];
+	assert.ok(startHandlers.length > 0, "session_start handler present");
+	for (const handler of startHandlers) {
+		await handler({ reason: "startup" }, ctx);
+	}
+	assert.ok(
+		pi.emittedEvents.some((e) => e.channel === "swarm:plan-present" && (e.data as { v?: number }).v === 1),
+		"swarm:plan-present emitted on session start",
+	);
 });
 
 it("session_start restores state and applies mode routing", async () => {

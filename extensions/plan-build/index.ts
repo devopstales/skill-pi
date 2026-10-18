@@ -505,7 +505,10 @@ export default function piPlanBuild(pi: ExtensionAPI): void {
 		});
 	};
 
-	pi.on("session_start", (_event, ctx) => startModeLeader(ctx));
+	pi.on("session_start", (_event, ctx) => {
+		startModeLeader(ctx);
+		pi.events.emit("swarm:plan-present", { v: 1 });
+	});
 	pi.on("session_shutdown", () => {
 		modeLeader.stop?.();
 		modeLeader.stop = undefined;
