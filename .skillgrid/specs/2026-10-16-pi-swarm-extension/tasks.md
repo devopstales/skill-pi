@@ -6,6 +6,8 @@
 > Vertical tracer-bullet tickets, dependency-ordered, sized for one fresh
 > agent context window.
 
+> **Tracker:** epic TASK-20 (Backlog.md)
+
 ## Epic Summary
 
 A bundled pi extension that spawns, tracks, steers, and inspects parallel
@@ -50,6 +52,7 @@ Chain strategy: stacked-to-main
 ## Tickets
 
 ### TICKET-01 — RPC child lifecycle + JSONL codec (door check)
+- **Tracker ID:** TASK-20.1
 
 - **Scope:** `domain.ts` (types + constants exactly per blueprint "Types & Constants"), `jsonl.ts` + spec, `child.ts` (`SwarmChild` RPC subprocess: spawn/steer/abort/settle, tolerant event fold) + spec with a fake-child adapter; live door check against a real `skill-pi --mode rpc` child.
 - **Acceptance:** `npx vitest run` green (jsonl + child specs); live door check passes: a real child receives a `prompt` JSONL command, replies with `SWARM_DOOR_OK`, settles `done` with finalText; `~/.pi/agent` mtime unchanged; exact RPC event `type` names recorded in `report.md`.
@@ -62,6 +65,7 @@ Chain strategy: stacked-to-main
 - **Fails-when:** vitest exit ≠ 0; door check prints `DOOR_TIMEOUT` or the child exit ≠ 0; `SWARM_DOOR_OK` absent from stdout
 
 ### TICKET-02 — SwarmManager + core tools + deferred result delivery
+- **Tracker ID:** TASK-20.2
 
 - **Scope:** `manager.ts` (registry, MAX_RUNNING queue-not-reject, MAX_TRACKED LRU by settledAt, wait-interest/consumed semantics, truncation budgets incl. proportional wait-budget rule) + spec (fake-child factory); `index.ts` extension factory: package scaffold (package.json/tsconfig/vitest.config, house shape per `extensions/todo/`), `swarm_spawn`/`swarm_wait`/`swarm_list` tools, `swarm-result` message renderer, deferred `deliver` via `pi.sendMessage({deliverAs:"followUp", triggerTurn:true})` with empty-finalText fallback, `SKILL_PI_SWARM`/`SKILL_PI_SWARM_MAX` env reads, `session_shutdown` dispose on `reason === "quit"` only, manager keyed by session id, skill-pi executable path resolution per blueprint Task 2 Step 4.
 - **Acceptance:** `npx vitest run src/manager.spec.ts` green (cap/queue, waitFor-consume, unconsumed deliver-once, cancel bound, LRU, check non-consuming); `npx tsc --noEmit -p .` clean; in a live session `swarm_spawn` returns an id immediately and the settled result triggers exactly one follow-up turn (verified in TICKET-10 E2E).
@@ -72,6 +76,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-01
 
 ### TICKET-03 — Control tools: check/send/cancel + swarm statusline
+- **Tracker ID:** TASK-20.3
 
 - **Scope:** register `swarm_check` (≤2KB AND ≤20-line preview, non-consuming, unknown-id error lists known ids), `swarm_send` (steer while running / follow_up after settle), `swarm_cancel` (bounded abort + SIGKILL fallback, per-id outcome, `was already <status>`); `ctx.ui.setStatus("swarm", …)` driven by `manager.subscribe`, cleared when empty; manager.spec extensions incl. cancel-of-queued (queue promotes next).
 - **Acceptance:** `npx vitest run` green incl. new cases: send-while-running writes `steer`, send-after-settle writes `follow_up`, check bounds + non-consuming, cancel-queued promotes next; tsc clean.
@@ -82,6 +87,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-02
 
 ### TICKET-04 — FleetView: below-prompt list + formatting
+- **Tracker ID:** TASK-20.4
 
 - **Scope:** `format.ts` (elapsed/tokens/row) + spec; `ui/fleetview.ts` as a pi-tui Component over the manager read model (main row + one row per agent, earliest-launched first, glyphs, selection marker, hint row); mounted via `ctx.ui.setWidget` placement `belowEditor`; empty-prompt key capture: `↓`/`←` enter, `↑`/`↓` move, `Esc`/`↑`-above-main return, `x` stop — suppressed while the Ctrl+Q leader is armed.
 - **Acceptance:** `npx vitest run src/format.spec.ts src/ui/fleetview.spec.ts` green (format values + row rendering + key transitions on a stub read model); tsc clean; in a live session with a running child the list renders below the prompt (recorded in TICKET-10 E2E).
@@ -92,6 +98,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-02
 
 ### TICKET-05 — FleetView: live transcript overlay + stop
+- **Tracker ID:** TASK-20.5
 
 - **Scope:** overlay mode in the FleetView Component: selected agent's transcript (sanitized: strip ANSI, one-line tool entries), auto-follow with scroll-up-to-pause, 50ms render throttle; `x` two-press confirm → `manager.cancel(id)`; reuse `cardTop`/`cardBottom` from `../skill-pi-tui/src/card.ts` when importable.
 - **Acceptance:** `npx vitest run src/ui/fleetview.spec.ts` green (new lines render on snapshot update, auto-follow, x-twice cancels, x-once doesn't); tsc clean.
@@ -102,6 +109,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-04
 
 ### TICKET-06 — Agent types: discovery + frontmatter
+- **Tracker ID:** TASK-20.6
 
 - **Scope:** `agents.ts` (`discoverAgentTypes(projectDir, agentDir)` reading `.skill-pi/agents/*.md` then `<agentDir>/agents/*.md`, project wins on name clash, parse with pi's `parseFrontmatter`, skip-unparseable with console.warn, `resolveAgentType`) + spec (tmp dirs); wire into `swarm_spawn` `agent_type` (unknown → tool error listing known names; resolved → systemPrompt prepended with `## Agent instructions` marker + blank line + prompt).
 - **Acceptance:** `npx vitest run src/agents.spec.ts` green (project-only, global-only, clash→project, max_turns, name-override, broken frontmatter skipped + warn, body = systemPrompt); tsc clean.
@@ -112,6 +120,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-02
 
 ### TICKET-07 — Prompt-target selector: Ctrl+Q Tab + build/plan/agent cycle
+- **Tracker ID:** TASK-20.7
 
 - **Scope:** `target.ts` (`createTargetSelector`, cycle build → plan-if-available → agents load order → build; session-scoped in-memory, default `build`) + spec; armed-leader listener in `index.ts` per ADR-0010 mechanics (raw `ctx.ui.onTerminalInput`, 2s one-key window mirroring `extensions/command-plate/index.ts:263-278`, `Tab` → cycle, ignore others while armed, armed hint); `SKILL_PI_SWARM_TARGET_KEY` (action key only, default `tab`, `off` disables); `swarm:plan-present` lazy probe + `SKILL_PI_PLAN_BUILD=1` override; `ctx.ui.setStatus("swarm-target", "⌁ " + current)` with per-target color; input interception: `source === "interactive"` + agent target + non-empty text + FleetView overlay NOT open → `manager.spawn` + notify + `{action: "handled"}`; **plus the one additive plan-build line**: `pi.events.emit("swarm:plan-present", …)` on session start (own work-unit commit so plan-build stays independently revertable).
 - **Acceptance:** `npx vitest run src/target.spec.ts` green (empty agents → `["build"]`; with agents+plan → `["build","plan","auditor","explorer"]`; cycle wraps; matchesAgent); tsc clean; plan-build suite still green after its one-line change.
@@ -123,6 +132,7 @@ Chain strategy: stacked-to-main
 - **Fails-when:** target.spec or plan-build `index.spec.ts` exit ≠ 0
 
 ### TICKET-08 — Cross-extension RPC protocol (v1)
+- **Tracker ID:** TASK-20.8
 
 > ⚠ one-way: the RPC contract. Channel names `swarm:rpc:ping|spawn|steer|consume|stop`, envelope `{v, reqId, type, payload}`, reply on `swarm:rpc:reply`, `v: 1`, and the `swarm:*` lifecycle events + `swarm:usage` (per-run deltas) are public from the moment another extension consumes them — STOP and confirm before renaming any of them.
 
@@ -136,6 +146,7 @@ Chain strategy: stacked-to-main
 - **Reversibility:** one-way
 
 ### TICKET-09 — `/swarm` dashboard + README + root README entry
+- **Tracker ID:** TASK-20.9
 
 - **Scope:** `ui/dashboard.ts` (fullscreen list of all tracked agents; `j/k`/arrows, `Enter` → takeover reusing the TICKET-05 overlay component, `x` → cancel, `Esc` close); `/swarm` command registration (non-TUI → prints `swarm_list` text, typically empty — documented); `extensions/pi-swarm/README.md` (house style: what you get, install, how-it-works diagram, env table `SKILL_PI_SWARM`/`SKILL_PI_SWARM_MAX`/`SKILL_PI_SWARM_TARGET_KEY`, RPC protocol reference, license/sources); root `README.md` bundled-extensions bullet.
 - **Acceptance:** `npx vitest run && npx tsc --noEmit -p .` green in the extension dir; root README entry present; README documents the Ctrl+Q Tab binding and the `app.thinking.cycle` note is gone (shift+tab untouched).
@@ -146,6 +157,7 @@ Chain strategy: stacked-to-main
 - **Blocked by:** TICKET-05
 
 ### TICKET-10 — L2 verification + door-check E2E + QA artifacts
+- **Tracker ID:** TASK-20.10
 
 - **Scope:** live E2E (the backstop truth): real session, `swarm_spawn` → settle → `swarm-result` follow-up turn visible in the transcript; `~/.pi/agent` mtime unchanged; L2 run (extension vitest ≥ 40 tests, tsc clean, root `node --test` unchanged pass count); `report.md` QA-gate render + door-check/E2E evidence + recorded unknowns (RPC event names, system-prompt mechanism, plan-present probe behavior, FleetView placement).
 - **Acceptance:** all L2 commands green; `report.md` exists with a shippable verdict and E2E evidence block; root suite pass count unchanged (0 new fails).
