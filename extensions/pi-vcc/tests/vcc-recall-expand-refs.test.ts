@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { formatRecallOutput } from "../src/core/format-recall";
+import { formatRecallOutput, refTokensIn } from "../src/core/format-recall";
+import { extractRefTokens } from "../src/core/includes";
 import type { SearchHit } from "../src/core/search-entries";
 
 const dir = mkdtempSync(join(tmpdir(), "pi-vcc-expand-refs-"));
@@ -68,6 +69,27 @@ describe("formatRecallOutput ref expansion", () => {
     expect(out).toContain("BODY_9");
     expect(out).not.toContain("BODY_10");
     expect(out).not.toContain("BODY_11");
+  });
+
+  it("refTokensIn and extractRefTokens agree on the shared @path grammar (drift-pin)", () => {
+    const sharedGrammar = [
+      "@/tmp/a.md",
+      "  @/tmp/a.md",
+      "- @/tmp/b.md",
+      "* @/tmp/b.md",
+      "+ @/tmp/b.md",
+      "1. @/tmp/c.md",
+      "12. @/tmp/c.md",
+      "@user@host.md",
+      "```",
+      "@/tmp/fenced.md",
+      "```",
+      "@/tmp/d.md",
+    ].join("\n");
+    for (const line of sharedGrammar.split("\n")) {
+      expect(refTokensIn(line)).toEqual(extractRefTokens(line));
+    }
+    expect(refTokensIn(sharedGrammar)).toEqual(extractRefTokens(sharedGrammar));
   });
 
   it("keeps the 3-arg form byte-identical (backward compat)", () => {

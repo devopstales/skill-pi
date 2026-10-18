@@ -17,7 +17,7 @@ export interface RecallOutputOpts {
 // carry a "#N [role]" prefix, so we also try the body with that prefix off.
 const REF_RE = /^\s*(?:[-*+]|\d+\.)?\s*@(\S+)/;
 
-const refTokensIn = (body: string): string[] => {
+export const refTokensIn = (body: string): string[] => {
   const out: string[] = [];
   let inFence = false;
   for (const line of body.split("\n")) {
