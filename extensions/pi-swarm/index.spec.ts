@@ -72,14 +72,14 @@ function makeFakeManager(agents: AgentSnapshot[]): FakeManager {
 
 function makeCtx(): { ctx: ExtensionContext; setStatus: ReturnType<typeof vi.fn> } {
   const setStatus = vi.fn();
-  const ctx = {
+  const ctx: { ui: { setStatus: ReturnType<typeof vi.fn> }; mode: string; hasUI: boolean; cwd: string; sessionManager: { getSessionId: () => string } } = {
     ui: { setStatus },
     mode: "tui",
     hasUI: true,
     cwd: "/tmp/project",
     sessionManager: { getSessionId: () => "sess-1" },
-  } as unknown as ExtensionContext;
-  return { ctx, setStatus };
+  };
+  return { ctx: ctx as unknown as ExtensionContext, setStatus };
 }
 
 interface RegisteredTool {
@@ -214,5 +214,82 @@ describe("pi-swarm index", () => {
     const result = await tools.get("swarm_cancel")!.execute("tc", { id: "sa-1" }, undefined, undefined, ctx);
     expect(result.isError).toBeUndefined();
     expect(result.content[0].text).toContain("was already done");
+  });
+
+  it("swarm_spawn with an unknown agent_type returns a tool error listing known names", async () => {
+    await setup([]);
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "pi-swarm-index-agents-"));
+    fs.mkdirSync(path.join(project, ".skill-pi", "agents"), { recursive: true });
+    fs.mkdirSync(path.join("/tmp/agent", "agents"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".skill-pi", "agents", "auditor.md"), "---\ndescription: a\n---\nA\n");
+    fs.writeFileSync(path.join("/tmp/agent", "agents", "explorer.md"), "---\ndescription: e\n---\nE\n");
+    ctx.cwd = project;
+    try {
+      const result = await tools.get("swarm_spawn")!.execute("tc", { prompt: "hi", agent_type: "ghost" }, undefined, undefined, ctx);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("auditor");
+      expect(result.content[0].text).toContain("explorer");
+      expect(result.content[0].text).toContain("ghost");
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("swarm_spawn with a known agent_type resolves it, prefixes the prompt, explicit model wins", async () => {
+    await setup([]);
+    const spawnSpy = vi.spyOn(fakeManager, "spawn");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "pi-swarm-index-agents-"));
+    fs.mkdirSync(path.join(project, ".skill-pi", "agents"), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, ".skill-pi", "agents", "auditor.md"),
+      "---\ndescription: a\nmodel: anthropic/claude-opus-4-6\n---\nAudit the code.\n",
+    );
+    ctx.cwd = project;
+    try {
+      const result = await tools.get("swarm_spawn")!.execute(
+        "tc",
+        { prompt: "Look at auth", agent_type: "auditor", model: "explicit-model" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.isError).toBeUndefined();
+      expect(spawnSpy).toHaveBeenCalledTimes(1);
+      const req = spawnSpy.mock.calls[0][0] as { prompt: string; model?: string; agentType?: string };
+      expect(req.prompt).toBe("## Agent instructions\nAudit the code.\n\nLook at auth");
+      expect(req.model).toBe("explicit-model");
+      expect(req.agentType).toBe("auditor");
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it("swarm_spawn agent_type with no explicit model falls back to the agent type model", async () => {
+    await setup([]);
+    const spawnSpy = vi.spyOn(fakeManager, "spawn");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), "pi-swarm-index-agents-"));
+    fs.mkdirSync(path.join(project, ".skill-pi", "agents"), { recursive: true });
+    fs.writeFileSync(
+      path.join(project, ".skill-pi", "agents", "auditor.md"),
+      "---\ndescription: a\nmodel: anthropic/claude-opus-4-6\n---\nAudit the code.\n",
+    );
+    ctx.cwd = project;
+    try {
+      const result = await tools.get("swarm_spawn")!.execute("tc", { prompt: "Look", agent_type: "auditor" }, undefined, undefined, ctx);
+      expect(result.isError).toBeUndefined();
+      const req = spawnSpy.mock.calls[0][0] as { prompt: string; model?: string };
+      expect(req.model).toBe("anthropic/claude-opus-4-6");
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
+    }
   });
 });

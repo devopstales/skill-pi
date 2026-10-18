@@ -6,6 +6,7 @@ import { MAX_RUNNING, RESULT_CUSTOM_TYPE, type AgentSnapshot } from "./src/domai
 import { SwarmManager, checkPreview, formatStatusline, resultBody, truncate, waitPerAgentBudget } from "./src/manager.ts";
 import { resolveSkillPiExe } from "./src/child.ts";
 import { formatElapsed, formatTokens } from "./src/format.ts";
+import { discoverAgentTypes, resolveAgentType, type AgentType } from "./src/agents.ts";
 import { createFleetView, isFleetViewVisible, type FleetReadModel } from "./src/ui/fleetview.ts";
 
 const MAX_WAIT_IDS = 64;
@@ -258,11 +259,27 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
         };
       }
       try {
+        let prompt = params.prompt;
+        let model = params.model;
+        if (params.agent_type) {
+          const types = discoverAgentTypes(ctx.cwd, getAgentDir());
+          const agentType = resolveAgentType(types, params.agent_type);
+          if (!agentType) {
+            const known = types.map((t) => t.name);
+            return {
+              content: [{ type: "text" as const, text: `unknown agent_type: ${params.agent_type}; known: ${known.length === 0 ? "(none)" : known.join(", ")}` }],
+              details: { error: true },
+              isError: true,
+            };
+          }
+          prompt = `## Agent instructions\n${agentType.systemPrompt}\n\n${prompt}`;
+          model = params.model ?? agentType.model;
+        }
         const snapshot = mgr.spawn({
-          prompt: params.prompt,
+          prompt,
           title: params.title,
           agentType: params.agent_type,
-          model: params.model,
+          model,
         });
         return {
           content: [{ type: "text" as const, text: `spawned ${snapshot.id} "${snapshot.title}" (${snapshot.status})` }],
