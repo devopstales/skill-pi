@@ -1,17 +1,123 @@
-import type { ExtensionAPI, ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, parseKey } from "@earendil-works/pi-tui";
 import { OverlayFrame } from "./overlay-frame.js";
 import { runScopedModels } from "./model-pick.js";
 import type { ActionItem, ActionGroup, TopLevelEntry } from "./types.js";
+
+const TARGET_SET_CHANNEL = "swarm:target-set";
+
+export interface TargetAgent {
+  name: string;
+  description?: string;
+}
+
+export interface TargetOptions {
+  agents: readonly TargetAgent[];
+}
+
+function resolveProjectDir(cwd: string): string {
+  const link = join(cwd, "project");
+  try {
+    const st = lstatSync(link);
+    if (st.isSymbolicLink()) {
+      const target = readlinkSync(link);
+      return isAbsolute(target) ? target : resolve(dirname(link), target);
+    }
+  } catch {
+    // not a shim dir
+  }
+  return cwd;
+}
+
+function parseAgentFile(file: string): TargetAgent | undefined {
+  let content: string;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch (err) {
+    console.warn(`command-plate: skipping agent file ${basename(file)}: ${(err as Error).message}`);
+    return undefined;
+  }
+  const lines = content.split(/\r?\n/);
+  let endIndex = -1;
+  if (lines[0]?.trim() === "---") {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i]?.trim() === "---") {
+        endIndex = i;
+        break;
+      }
+    }
+    if (endIndex === -1) {
+      console.warn(`command-plate: skipping agent file ${basename(file)}: unterminated frontmatter`);
+      return undefined;
+    }
+  }
+  const nameLine = endIndex > 0 ? lines.slice(1, endIndex).find((l) => /^name:/.test(l)) : undefined;
+  const descLine = endIndex > 0 ? lines.slice(1, endIndex).find((l) => /^description:/.test(l)) : undefined;
+  const name = (nameLine ?? "").replace(/^name:\s*/, "").trim() || basename(file, ".md");
+  const description = (descLine ?? "").replace(/^description:\s*/, "").trim();
+  return { name, description: description || undefined };
+}
+
+function listAgentFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+      .filter((n) => n.endsWith(".md"))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => join(dir, n));
+  } catch {
+    return [];
+  }
+}
+
+function discoverTargetAgents(cwd: string, agentDir: string): TargetAgent[] {
+  const project = resolveProjectDir(cwd);
+  const projectTypes = listAgentFiles(join(project, ".skill-pi", "agents")).map((f) => parseAgentFile(f));
+  const projectNames = new Set(projectTypes.filter(Boolean).map((t) => t!.name));
+  const globalTypes = listAgentFiles(join(agentDir, "agents"))
+    .map((f) => parseAgentFile(f))
+    .filter((t): t is TargetAgent => t !== undefined && !projectNames.has(t.name));
+  return [...projectTypes, ...globalTypes].filter((t): t is TargetAgent => t !== undefined);
+}
 
 function runCommand(ctx: ExtensionContext, command: string) {
   ctx.ui.setEditorText(command);
   setTimeout(() => process.stdin.emit("data", "\r"), 0);
 }
 
+function buildTargetGroup(
+  pi: ExtensionAPI,
+  getCurrent: () => Promise<string | null>,
+  options: TargetOptions,
+): ActionGroup {
+  const items: ActionItem[] = [
+    { key: "build", label: "build", description: "prompt target: main agent" },
+    { key: "plan", label: "plan", description: "prompt target: plan-build" },
+  ];
+  const used = new Set(items.map((item) => item.key));
+  for (const agent of options.agents) {
+    if (used.has(agent.name)) continue;
+    used.add(agent.name);
+    const description = agent.description ? `prompt target: agent (${agent.description})` : "prompt target: agent";
+    items.push({ key: agent.name, label: agent.name, description });
+  }
+  for (const item of items) {
+    item.action = async () => {
+      const current = await getCurrent();
+      if (current === item.key) return;
+      pi.events.emit(TARGET_SET_CHANNEL, { v: 1, target: item.key });
+    };
+  }
+  return { key: "t", label: "Target", items };
+}
+
 export function buildEntries(
   pi: ExtensionAPI,
   openScopedModels: (ctx: ExtensionContext) => Promise<void>,
+  getCurrentTarget: () => Promise<string | null>,
+  _notify: (message: string, tone?: "info" | "warning" | "error") => void,
+  options: TargetOptions,
 ): TopLevelEntry[] {
   return [
     {
@@ -27,6 +133,10 @@ export function buildEntries(
       label: "Subagents",
       description: "open the subagents panel",
       action: (ctx) => runCommand(ctx, "/subagents"),
+    },
+    {
+      type: "group",
+      group: buildTargetGroup(pi, getCurrentTarget, options),
     },
     {
       type: "action",
@@ -254,7 +364,7 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
   async function openCommandPlate(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;
 
-    const entries = buildEntries(pi, openScopedModels);
+    const entries = buildEntries(pi, openScopedModels, getCurrentTarget, (message, tone) => ctx.ui.notify(message, tone), targetOptions(ctx.cwd));
 
     const pending: string[] = [];
     const selected = await ctx.ui.custom<ActionItem | null>(
@@ -328,7 +438,7 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
       }
     }
 
-    if (selected) {
+    if (selected?.action) {
       try {
         await selected.action(ctx);
       } catch (err) {
@@ -337,6 +447,22 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
       }
     }
   }
+
+  let currentTarget: string | null = null;
+  const stopTargetSet = pi.events.on(TARGET_SET_CHANNEL, (data: unknown) => {
+    if (typeof data === "object" && data !== null && typeof (data as { target?: unknown }).target === "string") {
+      currentTarget = (data as { target: string }).target;
+    }
+  });
+  const stopSwarmReady = pi.events.on("swarm:ready", (data: unknown) => {
+    if (typeof data === "object" && data !== null && typeof (data as { target?: unknown }).target === "string") {
+      currentTarget = (data as { target: string }).target;
+    }
+  });
+  const getCurrentTarget = async (): Promise<string | null> => currentTarget;
+  const targetOptions = (cwd: string): TargetOptions => ({
+    agents: discoverTargetAgents(cwd, getAgentDir()),
+  });
 
   const plateLeader: { stop: (() => void) | undefined } = { stop: undefined };
   let plateArmed = false;
@@ -363,12 +489,13 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
           return { consume: true };
         }
         if (key && key.length === 1) {
-          const entries = buildEntries(pi, openScopedModels);
-          const action = entries.find((e) => e.type === "action" && e.key === key.toLowerCase());
-          if (action?.type === "action") {
+          const entries = buildEntries(pi, openScopedModels, getCurrentTarget, (message, tone) => ctx.ui.notify(message, tone), targetOptions(ctx.cwd));
+          const lower = key.toLowerCase();
+          const entry = entries.find((e) => (e.type === "group" ? e.group.key === lower : e.key === lower));
+          if (entry?.type === "action") {
             void (async () => {
               try {
-                await action.action(ctx);
+                await entry.action(ctx);
               } catch (err) {
                 const detail = err instanceof Error ? err.stack ?? err.message : String(err);
                 ctx.ui.notify(`Action failed: ${detail}`, "error");
@@ -388,6 +515,8 @@ export default function commandPlateExtension(pi: ExtensionAPI) {
     plateLeader.stop?.();
     plateLeader.stop = undefined;
     plateArmed = false;
+    stopTargetSet();
+    stopSwarmReady();
   });
 
   pi.registerCommand("cp", {

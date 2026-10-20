@@ -1,10 +1,14 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+export interface PlateAction {
+  (ctx: ExtensionContext): void | Promise<void>;
+}
+
 export interface ActionItem {
   key: string;
   label: string;
   description?: string;
-  action: (ctx: ExtensionContext) => void | Promise<void>;
+  action?: PlateAction;
 }
 
 export interface ActionGroup {
@@ -20,5 +24,5 @@ export type TopLevelEntry =
       key: string;
       label: string;
       description?: string;
-      action: (ctx: ExtensionContext) => void | Promise<void>;
+      action: PlateAction;
     };
