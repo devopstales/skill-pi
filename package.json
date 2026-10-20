@@ -1,6 +1,6 @@
 {
   "name": "@devopstales/skill-pi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A pi-based coding agent with bundled extensions, fully isolated from stock pi installs.",
   "license": "MIT",
   "type": "module",
