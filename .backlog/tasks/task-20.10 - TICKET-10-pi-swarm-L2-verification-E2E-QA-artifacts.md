@@ -1,9 +1,10 @@
 ---
 id: TASK-20.10
 title: 'TICKET-10 pi-swarm: L2 verification + E2E + QA artifacts'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:36'
+updated_date: '2026-10-20 10:55'
 labels: []
 dependencies:
   - TASK-20.9
