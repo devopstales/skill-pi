@@ -1,0 +1,46 @@
+{
+  "name": "@devopstales/skill-loader",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Progressive-disclosure skills for pi: a compact skill catalog in session context plus a use_skill tool that loads full SKILL.md bodies on demand.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devopstales/skill-pi.git"
+  },
+  "homepage": "https://github.com/devopstales/skill-pi",
+  "bugs": {
+    "url": "https://github.com/devopstales/skill-pi/issues"
+  },
+  "keywords": [
+    "pi",
+    "extension",
+    "coding-agent",
+    "skills",
+    "skill-loader"
+  ],
+  "files": [
+    "index.ts",
+    "scan.ts",
+    "catalog.ts",
+    "tool.ts",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p .",
+    "test": "node --test \"test/*.test.ts\" \"test/index.test.mjs\""
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^5.0.0"
+  }
+}
