@@ -1,12 +1,6 @@
 import { assert, it } from "vitest";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import {
-  contextZone,
-  renderZoneBar,
-  zoneCeilingRemaining,
-  ZONE_DANGER_PCT,
-  ZONE_WARN_PCT,
-} from "./src/context-zone.ts";
+import { contextZone, renderZoneBar, ZONE_DANGER_PCT, ZONE_WARN_PCT } from "./src/context-zone.ts";
 
 const zoneTheme = {
   fg: (color: string, text: string) => `\x1b[38;5;${colorToCode(color)}m${text}`,
@@ -47,15 +41,6 @@ it("contextZone exposes icons, labels, and colors per zone", () => {
       ["🧟", "dumb", "error"],
     ],
   );
-});
-
-it("zoneCeilingRemaining counts down to the current zone ceiling", () => {
-  assert.equal(zoneCeilingRemaining(36), 4); // 40 - 36
-  assert.equal(zoneCeilingRemaining(0), 40);
-  assert.equal(zoneCeilingRemaining(40), 30); // 70 - 40
-  assert.equal(zoneCeilingRemaining(70), 30); // 100 - 70
-  assert.equal(zoneCeilingRemaining(95), 5);
-  assert.equal(zoneCeilingRemaining(100), 0);
 });
 
 it("renderZoneBar fills, dims, and marks zone boundaries for a 20-char bar", () => {

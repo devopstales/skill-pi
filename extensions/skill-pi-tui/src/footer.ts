@@ -21,7 +21,7 @@ import {
   truncatePath,
   type PrioritizedSegment,
 } from "./utils.ts";
-import { contextZone, renderZoneBar, zoneCeilingRemaining } from "./context-zone.ts";
+import { contextZone, renderZoneBar } from "./context-zone.ts";
 // ponytail: the port keeps the runtime glyph table in icons.ts, but skill-pi's
 // footer renders the bare runtime name instead — drop the nerd symbols.
 import { getUsageTotals, type ModelMeta, type UsageTotals } from "./state.ts";
@@ -62,7 +62,7 @@ function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconG
   if (contextWindow <= 0) return "";
   const contextPct = contextUsage?.percent ?? 0;
   const zone = contextZone(contextPct);
-  return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${zoneCeilingRemaining(contextPct)}% left`)}`;
+  return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${Math.max(0, 100 - contextPct)}% left`)}`;
 }
 
 function renderGitSegment(
@@ -140,7 +140,7 @@ function renderContextBar(
 
   const zone = contextZone(contextPct);
   const zoneIcon = theme.fg(zone.color, zone.icon);
-  const leftText = theme.fg(zone.color, `${zoneCeilingRemaining(contextPct)}%`);
+  const leftText = theme.fg(zone.color, `${Math.max(0, 100 - contextPct)}%`);
   const label = theme.fg("dim", zone.label);
   const reserved = visibleWidth(zoneIcon) + visibleWidth(leftText) + visibleWidth(label) + 4;
   const barWidth = Math.max(8, Math.min(20, width - reserved));

@@ -190,8 +190,8 @@ it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
   const footerData = { getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} };
 
   for (const [pct, icon, label, remaining] of [
-    [36, "🧠", "smart", "4"],
-    [50, "⚠️", "warm", "20"],
+    [36, "🧠", "smart", "64"],
+    [50, "⚠️", "warm", "50"],
     [80, "🧟", "dumb", "20"],
   ] as const) {
     const ctx = {
@@ -202,7 +202,7 @@ it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
     const flat = mainLines.join("\n");
     assert.ok(flat.includes(icon), `${pct}%: zone icon ${icon}`);
     assert.ok(flat.includes(label), `${pct}%: zone label ${label}`);
-    assert.ok(flat.includes(`${remaining}%`), `${pct}%: ${remaining}% remaining to ceiling`);
+    assert.ok(flat.includes(`${remaining}%`), `${pct}%: ${remaining}% remaining of window`);
     assert.ok(flat.includes("left"), `${pct}%: 'left' suffix`);
   }
 });

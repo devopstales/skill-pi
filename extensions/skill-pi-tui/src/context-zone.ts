@@ -22,14 +22,6 @@ export function contextZone(pct: number): ContextZone {
   return { key, ...ZONES[key] };
 }
 
-/**
- * Percentage of context remaining until the current zone's ceiling
- * (smart → 40%, warm → 70%, dumb → 100%).
- */
-export function zoneCeilingRemaining(pct: number): number {
-  return Math.max(0, Math.round(contextZone(pct).ceiling - pct));
-}
-
 export interface ZoneBarOptions {
   warnPos?: number;
   dangerPos?: number;
