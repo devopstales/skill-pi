@@ -30,7 +30,9 @@ is itself a fully isolated skill-pi instance — same `PI_CODING_AGENT_DIR`, no
 - **Prompt-target selector** — `Ctrl+Q` then `Tab` cycles which agent the next
   submitted prompt goes to: `build → plan (if plan-build is loaded) → your
   agent types → build…`. While an agent type is selected, submitting a prompt
-  spawns that child directly instead of entering the main conversation.
+  spawns that child directly instead of entering the main conversation. The
+  same target is set directly from the command plate: `Ctrl+Q` `?` → `t` → pick
+  (command-plate emits `swarm:target-set`, this extension applies it).
 - **Agent types** — `.skill-pi/agents/*.md` definitions (frontmatter + system
   prompt) for project-specific child roles.
 - **Cross-extension RPC protocol** — a versioned `pi.events` bus contract

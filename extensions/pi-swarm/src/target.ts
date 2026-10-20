@@ -7,6 +7,7 @@ export interface TargetSelector {
   cycle(): TargetId;
   cycleList(): readonly TargetId[];
   matchesAgent(id: TargetId): AgentType | undefined;
+  set(id: TargetId): TargetId;
 }
 
 export function createTargetSelector(opts: { agents: readonly AgentType[]; planAvailable: boolean }): TargetSelector {
@@ -29,6 +30,11 @@ export function createTargetSelector(opts: { agents: readonly AgentType[]; planA
     matchesAgent(id: TargetId): AgentType | undefined {
       if (id === "build" || id === "plan") return undefined;
       return byName.get(id);
+    },
+    set(id: TargetId): TargetId {
+      const i = list.indexOf(id);
+      if (i !== -1) index = i;
+      return list[index];
     },
   };
 }

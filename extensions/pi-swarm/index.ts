@@ -17,6 +17,7 @@ const FLEETVIEW_WIDGET_KEY = "pi-swarm";
 const PLAN_PRESENT_EVENT = "swarm:plan-present";
 const SWARM_TARGET_STATUS_KEY = "swarm-target";
 const SWARM_READY_EVENT = "swarm:ready";
+const TARGET_SET_EVENT = "swarm:target-set";
 
 function swarmEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env.SKILL_PI_SWARM?.trim().toLowerCase();
@@ -337,6 +338,16 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
   pi.events.on(PLAN_PRESENT_EVENT, () => {
     for (const session of fleetSessions.values()) {
       session.planAvailable = true;
+      if (session.ctx && session.ctx.hasUI) updateTargetStatus(session);
+    }
+  });
+
+  pi.events.on(TARGET_SET_EVENT, (data: unknown) => {
+    if (typeof data !== "object" || data === null) return;
+    const target = (data as { target?: unknown }).target;
+    if (typeof target !== "string") return;
+    for (const session of fleetSessions.values()) {
+      session.target.set(target as TargetId);
       if (session.ctx && session.ctx.hasUI) updateTargetStatus(session);
     }
   });

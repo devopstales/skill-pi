@@ -69,4 +69,24 @@ describe("target", () => {
     const sel = createTargetSelector({ agents: [auditor], planAvailable: false });
     expect(sel.matchesAgent("ghost")).toBeUndefined();
   });
+
+  it("set() moves to a known id and reports it", () => {
+    const auditor = agent("auditor");
+    const sel = createTargetSelector({ agents: [auditor], planAvailable: true });
+    expect(sel.set("auditor")).toBe("auditor");
+    expect(sel.current()).toBe("auditor");
+  });
+
+  it("set() to an unknown id is a no-op", () => {
+    const sel = createTargetSelector({ agents: [], planAvailable: false });
+    expect(sel.set("ghost")).toBe("build");
+    expect(sel.current()).toBe("build");
+  });
+
+  it("set() to plan requires planAvailable", () => {
+    const sel = createTargetSelector({ agents: [], planAvailable: false });
+    expect(sel.set("plan")).toBe("build");
+    const withPlan = createTargetSelector({ agents: [], planAvailable: true });
+    expect(withPlan.set("plan")).toBe("plan");
+  });
 });
