@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { agentDirFor, ensureAgentDir } from "../lib/config.js";
 import { brandOverlayDir } from "../lib/brand.js";
+import { ensureMnemonicServer } from "../lib/mnemonic.js";
 
 const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -197,6 +198,7 @@ async function main() {
 
   const agentDir = agentDirFor(args.agentDir);
   await ensureAgentDir(agentDir);
+  await ensureMnemonicServer();
 
   const overlay = brandOverlayDir(agentDir);
 
