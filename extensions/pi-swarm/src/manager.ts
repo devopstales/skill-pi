@@ -286,7 +286,7 @@ export class SwarmManager {
     const record = this.records.get(id);
     if (!record) return;
     const wasRunning = record.snapshot.status === "running";
-    record.snapshot = { ...childSnapshot, title: record.snapshot.title, agentType: record.snapshot.agentType, consumed: record.snapshot.consumed };
+    record.snapshot = { ...childSnapshot, id: record.id, title: record.snapshot.title, agentType: record.snapshot.agentType, consumed: record.snapshot.consumed };
     if (isSettled(record.snapshot.status)) this.onSettled(record, wasRunning);
     const set = this.agentListeners.get(id);
     if (set) for (const listener of [...set]) listener(record.snapshot);

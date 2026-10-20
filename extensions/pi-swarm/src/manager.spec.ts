@@ -65,6 +65,11 @@ class FakeChild {
     };
   }
 
+  emit(snapshot: AgentSnapshot): void {
+    this.state = snapshot;
+    for (const listener of [...this.listeners]) listener(this.state);
+  }
+
   settle(status?: "done" | "error" | "interrupted"): void {
     if (this.state.status === "done" || this.state.status === "error" || this.state.status === "interrupted") return;
     const next = this.state;
@@ -318,6 +323,19 @@ describe("SwarmManager", () => {
     const { manager }  = makeManager({});
     manager.spawn({ prompt: "p" });
     expect(() => manager.check("sa-99")).toThrowError(/unknown agent id: sa-99.*sa-1/s);
+  });
+
+  it("keeps the manager-issued id when the child's snapshot carries its own id", async () => {
+    const deliver = vi.fn();
+    const factory = (id: string) => makeFactory({ finalText: "CHILD_OK" }).spawn(id);
+    const { manager } = makeManager({ deliver, factory });
+    const id = manager.spawn({ prompt: "p" }).id;
+    const child = (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)!;
+    child.emit({ ...child.snapshot, id: "sa-83344", status: "error", settledAt: Date.now() });
+    await vi.waitFor(() => expect(deliver).toHaveBeenCalledTimes(1));
+    expect(manager.get(id)?.id).toBe(id);
+    expect(manager.get("sa-83344")).toBeUndefined();
+    expect(deliver).toHaveBeenCalledWith(id);
   });
 
   it("check after settle returns the snapshot with consumed=false and does not add a deliver call", () => {
