@@ -56,11 +56,11 @@ export function shortHostname(hostname: string): string {
   return hostname.split(".")[0] ?? "";
 }
 
-function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs): string {
+export function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconGlyphs): string {
   const contextUsage = ctx.getContextUsage();
   const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
   if (contextWindow <= 0) return "";
-  const contextPct = contextUsage?.percent ?? 0;
+  const contextPct = Math.round(contextUsage?.percent ?? 0);
   const zone = contextZone(contextPct);
   return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${contextPct}% used`)}`;
 }
@@ -126,7 +126,7 @@ function renderTimerSegment(theme: Theme, state: FooterState, glyphs: IconGlyphs
   return "";
 }
 
-function renderContextBar(
+export function renderContextBar(
   theme: Theme,
   ctx: ExtensionContext,
   width: number,
@@ -135,7 +135,7 @@ function renderContextBar(
 ): string {
   const contextUsage = ctx.getContextUsage();
   const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-  const contextPct = contextUsage?.percent ?? 0;
+  const contextPct = Math.round(contextUsage?.percent ?? 0);
   if (contextWindow <= 0) return "";
 
   const zone = contextZone(contextPct);

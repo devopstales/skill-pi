@@ -6,6 +6,8 @@ import { join } from "node:path";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   buildFooterContent,
+  renderContextBar,
+  renderContextCompact,
   shortHostname,
   type FooterConfig,
   type FooterState,
@@ -188,6 +190,20 @@ it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
   };
   const meta: ModelMeta = { provider: "Anthropic", model: "claude-sonnet", effort: undefined };
   const footerData = { getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} };
+
+  {
+    const glyphs = resolveGlyphs(config.iconMode);
+    const fractional = {
+      ...fakeCtx,
+      getContextUsage: () => ({ tokens: 151005, contextWindow: 200000, percent: 75.50234375 }),
+    } as unknown as typeof fakeCtx;
+    const compact = renderContextCompact(theme, fractional, glyphs);
+    assert.ok(compact.includes("76% used"), "compact: fractional percent rounds to a whole number");
+    assert.ok(!compact.includes("."), "compact: no decimal in the footer percent");
+    const bar = renderContextBar(theme, fractional, 160, glyphs, config.iconMode);
+    assert.ok(bar.includes("76% used"), "bar: fractional percent rounds to a whole number");
+    assert.ok(!bar.includes("."), "bar: no decimal in the footer percent");
+  }
 
   for (const [pct, icon, label] of [
     [36, "🧠", "smart"],
