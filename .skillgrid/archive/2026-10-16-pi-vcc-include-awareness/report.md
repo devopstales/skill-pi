@@ -297,23 +297,23 @@ scoped-re-reviewed APPROVED; residual minors parked to W041 as SUGGESTIONS.
 > A human decision always overrides this machine verdict.
 > An epic that fails its criteria with no human decision is recorded as **not accepted** — never as silently accepted.
 
-**Human decision (fill in):** <accept / accept-with-open-items / reject> — <name> — <date>
+**Human decision (fill in):** accept-with-open-items — paladm — 2026-10-20
 
 <!-- reflect completes this half at archive time -->
 
 ## Final-State Facts
 
-**Shipped:** <what actually shipped>
-**Base branch:** <base-branch> · **Chain strategy:** <strategy>
-**Integration:** <merged @ <commit> | PR <url> | kept branch <name>> (from ship context)
+**Shipped:** pi-vcc include-awareness (v0.2.0): `[Standing Rules]` sticky section from handshake file, `vcc_recall` `expandRefs`, `/pi-vcc:status` + `last-compaction.json`, table-driven test hygiene, README + version bump. Plus the separate real-sessions fixture fix (W039) and the whole-branch review fix wave (1 Standards-Important + 2 spec minors).
+**Base branch:** main · **Chain strategy:** same-branch (user-confirmed; no merge step)
+**Integration:** already on main @ `ddaf63b` (commits: f659019, f8c5a96, 60ce814, ca78065, 6661bda, de476bd, c99049d, 4fb90b0, ddaf63b). Archive move @ `497b284`. State update @ `3396520`.
 
 ## Gates
 
 | Gate | Result |
 |------|--------|
-| Ship gate | ✅ success + `diff -r` empty (or: blocked — {reason}) |
-| QA gate | ✅ {PASS \| WAIVED \| CONCERNS — human override recorded} |
-| Verdict gate (advisory) | {accepted \| accepted-with-open-items \| rejected} — recorded, not enforced |
+| Ship gate | ✅ success + `diff -r` empty |
+| QA gate | ✅ PASS |
+| Verdict gate (advisory) | accepted-with-open-items — recorded, not enforced |
 
 ## Decisions
 
@@ -321,25 +321,39 @@ scoped-re-reviewed APPROVED; residual minors parked to W041 as SUGGESTIONS.
 
 | Decision | Tradeoff | Why | Source |
 |----------|----------|-----|--------|
-| <choice made> | <what was given up> | <why it won> | <file:line / commit / ADR / ticket> |
+| Two separate SDD changes (pi-vcc include-awareness + pi-context-include producer) rather than one | Two spec folders, two QA gates, two archive moves | Independent landing order; both degrade gracefully when the other is absent; ADR-0007 self-contained extensions forbid cross-extension imports | briefing.md (both changes); ADR-0007 |
+| Handshake via `<agent-dir>/pi-vcc-includes.json` (resolved absolute paths) rather than re-parsing AGENTS.md | One extra file to maintain; the producer must write it | ADR-0002 (agent-dir only, no cross-extension coupling); pi-vcc never reads AGENTS.md directly — the producer owns `@path` resolution | includes.ts:1929-1951; briefing.md R1 |
+| `buildStandingRules` returns PLAIN lines (not `- `-bullets) | The section header's `format.ts section()` must prefix them | `isClean` in the sticky merge requires plain lines; double-prefix would break dedup | controller ruling (Task 1, commit f659019); summarize.ts mergeHeaderSection |
+| `format-recall.ts` carries a copy of the token grammar (`refTokensIn`) rather than importing `extractRefTokens` | Two copies of the regex; a differential drift-test pins them | Rendered hit lines start `#N [role]` which the line-anchored `extractRefTokens` can't see; the drift-test (60ce814) catches grammar divergence | format-recall.ts:15-18; vcc-recall-expand-refs.test.ts drift-pin |
+| `readIncludedRules` yields an entry for every found file (including cap-zeroed) | Slightly larger return array | `vcc-status` needs to distinguish `loaded` (readable, 0 kept lines) from `missing` (unreadable/absent); the cap-zeroed file IS loaded | includes.ts:92 (unconditional push); vcc-status.ts:51-52; commit 4fb90b0 |
+| `seen.add` moved before the cap check in `readIncludedRules` | Cap-rejected lines now count toward dedup | `dropped` must mean "lines of this file not included" in both per-file-cap and global-cap cases; first-wins dedup is preserved (a line is kept iff first occurrence AND within cap, in either order) | includes.ts:79-90; commit 4fb90b0; re-review trace |
+| real-sessions fixture selection: probe-yielding candidates (not largest-by-bytes) | Helper compiles each candidate (bounded by 50-cap) | The largest file by bytes was a 3-message session with 0 recall probes; the test asserts `probes.length > 0`, so the helper must select files that actually yield probes | tests/support/real-sessions.ts; commit c99049d; W039 |
 
 ## Lessons
 
 | Lesson | Root Cause | Do Differently | Source |
 |--------|-----------|----------------|--------|
-| <what to do differently> | <why it went wrong — root, not symptom> | <the concrete change> | <file:line / commit / ticket> |
+| Verify the actual comment/symbol before quoting it in a fix brief | The brief quoted `REF_TOKEN_SOURCE` but the actual symbol is `REF_RE` — the implementer had to find the real location | When writing a fix brief from a review finding, grep for the symbol name in the file first; quote the actual text, not the reviewer's paraphrase | format-recall.ts:15-18; final-fix-report.md (item 1 concern) |
+| The whole-branch review catches what per-task reviews structurally cannot | Per-task reviews see one diff; the "Task 1" ticketing artifact in a comment only makes sense in the context of the task that wrote it, not the whole branch | Always run a whole-branch review before ship, even when all per-task reviews pass — the cross-task scope is where integration smells surface | Standards review finding (whole-branch); fix commit 4fb90b0 |
+| `dropped` counts need a clear invariant before the code is written | The original `dropped` conflated per-file-cap and global-cap drops because the invariant ("lines of this file not included") wasn't stated before implementation | State the count's invariant in the blueprint ("`dropped` = unique lines of this file not retained, in either cap case") and write the test against that invariant before the code | includes.ts:79-90; commit 4fb90b0; W041(a) |
 
 ## Patterns
 
 | Pattern | Reuse | Source |
 |---------|-------|--------|
-| <named reusable approach / convention> | <when a future change should apply it> | <file:line / commit / ticket> |
+| **Differential drift-pin test** — two copies of a grammar are pinned by a test that feeds a shared sample to both and asserts agreement | Any time two modules must share a parsing grammar but can't import each other (layering, cycle avoidance) | vcc-recall-expand-refs.test.ts drift-pin; commit 60ce814 |
+| **Faithful check in test helper** — the helper calls the same function the test asserts on (`buildCompactReport` → `probes.length`) rather than a cheaper proxy | Any test helper that selects fixtures; guarantees the helper selects what the test asserts | tests/support/real-sessions.ts `yieldsProbe`; commit c99049d |
+| **Loud-fail fallback** — when no viable fixture is found, return the largest probed files so the test still runs and fails loudly (rather than silently passing with 0 samples) | Any test helper with a selection step that can find zero candidates | tests/support/real-sessions.ts fallback; commit c99049d |
+| **Never-throw file reads with caps** — `readIncludes`/`readIncludedRules`/`readLastCompaction` are all try/catch-bounded, size-capped, and return `[]`/`null` on failure | Any extension that reads user-controlled files from the agent dir | includes.ts, last-compaction.ts; ADR-0007 |
 
 ## Surprises
 
 | Surprise | Signal | Source |
 |----------|--------|--------|
-| <non-obvious gotcha / edge case / behavior> | <what the evidence shows> | <file:line / commit / scenario> |
+| The largest session file by bytes is NOT the largest session by content | A 62KB file was a 3-message session inflated by a startup-check blob; the next 7 files (29KB–9KB) all had real goals/files/probes | real-sessions probe4.ts output; commit c99049d; W039 |
+| Moving `seen.add` before the cap check changes `dropped` without changing which lines are kept | Old order: `seen.has → cap check → seen.add` (cap-rejected lines never entered `seen`). New order: `seen.has → seen.add → cap check`. A line is kept iff first occurrence AND within cap — identical in both orders. But cap-rejected lines now count toward dedup, making `dropped` accurate | re-review trace (includes.ts:79-90); commit 4fb90b0 |
+| A file loaded but cut to 0 lines by the global cap was rendered as `missing` | The status label was based on `rules[path]` presence; a cap-zeroed file had `rules[path]` undefined (0 lines kept) → mislabeled `missing` | vcc-status.ts:51-52 (fixed); commit 4fb90b0 |
+| `bun` is not on PATH globally in this environment | `./node_modules/.bin/bun` must be used from `extensions/pi-vcc/`; the root wrapper uses `node --test` | AGENTS.md (toolchain note); all test runs in this session |
 
 ## Environment Retro
 
@@ -347,43 +361,51 @@ scoped-re-reviewed APPROVED; residual minors parked to W041 as SUGGESTIONS.
 
 | Category | Finding | Fix lands in | Source |
 |----------|---------|--------------|--------|
-| <navigation \| automated checks \| coding standards \| steering no-ops \| tool economy \| information access> | <what to change + why> | <linter rule \| pre-commit \| CI job \| ARCHITECTURE.md pointer \| steering file> | <file:line / commit / ticket / session symptom> |
+| tool economy | `bun` is not on PATH globally; every test run requires `./node_modules/.bin/bun` from `extensions/pi-vcc/`. The AGENTS.md toolchain note covers this, but a future agent starting fresh may not find it quickly. Consider adding a `task test:vcc` to the Taskfile that cd's into the extension and uses the local binary. | Taskfile (new task) | AGENTS.md (toolchain note); all test runs in this session |
+| navigation | The `.skillgrid/sdd/blueprint/` execution ledger and task reports are not referenced in AGENTS.md — a resuming agent must discover them by convention. A one-line pointer in AGENTS.md's Skillgrid section would save discovery time. | AGENTS.md (Skillgrid section) | this session (ledger discovered by convention) |
 
 ## Acceptance Verdict
 
-**Verdict:** accepted | accepted-with-open-items | rejected
+**Verdict:** accepted-with-open-items
 
-**Grounding:** <goal from briefing.md + the Goal-Backward Verification / Traceability Matrix evidence above that supports the verdict>
+**Grounding:** The briefing's goal — "Make pi-vcc compaction and recall include-aware: a `[Standing Rules]` sticky section sourced from a resolved-include handshake file, `@path` ref expansion in `vcc_recall`, and a `/pi-vcc:status` diagnostic — all without depending on the user's separate include-extension" — is met. All 8 truths + 3 artifacts + 3 key links + 1 data flow in the Goal-Backward Verification table are VERIFIED by named tests that ran and passed. The Traceability Matrix is 4/4 COMPLIANT. The extension suite exits 0 (266/266). The whole-branch review returned 0 Critical on both axes; the actionable findings were fixed in `4fb90b0` and re-reviewed APPROVED.
 
-**Reasoning:** <2–3 sentences: what drove the verdict>
+**Reasoning:** The goal is met with high confidence — every requirement is verified by tests that exercise the real pipeline. The open items are parked SUGGESTIONS (W041: 4 residual minors from the whole-branch review) that do not affect any success criterion, and the companion producer (pi-context-include) is spec'd but not yet executed — the handshake contract is verified against the JSON shape, not a live writer.
 
 ## Open Items (→ next change)
 
-- <item + path to resolution> (or "None")
+- W041 (4 parked minors from whole-branch review): (a) `dropped` footer overstates overflow when a file has internal duplicate lines; (b) cap constants duplicated in `vcc-status.ts`; (c) `refTokensIn` second scanner (defensible, drift-pinned); (d) `(+N more)` renders when N=0. Path: fix in a future pi-vcc change or leave parked.
+- W040 (README anchor link `#ref-expansionexpandrefs` missing trailing `)`). Path: one-character fix in a future README pass.
+- Companion change 2 (pi-context-include producer) — spec'd at `.skillgrid/specs/2026-10-16-pi-context-include-extension/` but not yet executed. The handshake contract is verified against the JSON shape; a live end-to-end test (producer writes, consumer reads) is owed when change 2 lands. Path: execute change 2.
 
 ## Prior-Change Follow-Through
 
 | Prior open item (from previous archived change) | Addressed by this change? | Evidence |
 |--------------------------------------------------|---------------------------|----------|
-| <item + path to resolution> | yes / no / partially | <commit / file:line / scenario, or "still open"> |
+| (none from the most recent archived changes — 2026-10-16-skill-pi-update and 2026-10-16-pi-context-view-extension had no open items that this change was scoped to address) | n/a | — |
 
 ## Move Evidence (from ship context)
 
 **From:** `.skillgrid/specs/2026-10-16-pi-vcc-include-awareness/` → **To:** `.skillgrid/archive/2026-10-16-pi-vcc-include-awareness/`
-**`diff -r` readback:** <empty → PASS | verbatim output → FAIL>
+**`diff -r` readback:** empty → PASS
+**Move commit:** `497b284` (chore(skillgrid): archive pi-vcc-include-awareness change)
 
 ## Overrides / Waivers / Contradictions
 
-- <QA waiver, human CONCERNS override, size-exception, or "None">
-- <Unrankable contradiction: both statements + sources + when written — or "None">
+- None (QA PASS, no human override needed, no size exception)
+- None
 
 ## Lineage (observation IDs)
 
 Every artifact read this close, for traceability:
 
-- briefing: .skillgrid/specs/2026-10-16-pi-vcc-include-awareness/briefing.md
-- blueprint: .skillgrid/specs/2026-10-16-pi-vcc-include-awareness/blueprint.md
+- briefing: .skillgrid/archive/2026-10-16-pi-vcc-include-awareness/briefing.md
+- blueprint: .skillgrid/archive/2026-10-16-pi-vcc-include-awareness/blueprint.md
 - tasks: none (slicing skipped; tasks dispatched from blueprint)
-- ship: pending
-- report (QA half): this file
+- ship: Return Envelope (in-session; mnemonic save degraded — FK constraint)
+- report (QA half): this file (lines 1-303, pre-retro)
+- fix wave report: .skillgrid/sdd/blueprint/final-fix-report.md
+- real-sessions fix report: .skillgrid/sdd/blueprint/real-sessions-fix-report.md
+- WINDOWS: .skillgrid/WINDOWS.md (W039 closed, W041 opened)
 - research / findings / ADRs: ADR-0002, ADR-0006, ADR-0007 (constraints); companion spec 2026-10-16-pi-context-include-extension (handshake contract)
+- review artifacts: whole-branch Standards + Spec reviews (in-session, 2 parallel reviewers); fix-wave scoped re-review (in-session)
