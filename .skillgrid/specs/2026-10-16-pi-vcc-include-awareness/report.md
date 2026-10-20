@@ -1,7 +1,7 @@
 # Report — pi-vcc include-awareness
 
 > Change: `.skillgrid/specs/2026-10-16-pi-vcc-include-awareness/` (moves to `.skillgrid/archive/2026-10-16-pi-vcc-include-awareness/` at ship)
-> Generated: 2026-10-18T10:55:00+02:00 (qa) · Re-verified: 2026-10-20T09:15:00+02:00 (qa, re-verification mode)
+> Generated: 2026-10-18T10:55:00+02:00 (qa) · Re-verified: 2026-10-20T09:15:00+02:00 (qa, re-verification mode) · Fix-wave re-verified: 2026-10-20T09:45:00+02:00
 > Gate: PASS
 >
 > Two phases, one file: **qa** writes the QA half (the sections above `## Final-State Facts`,
@@ -231,7 +231,9 @@ split). No shell interpolation, no eval, no new network surface.
 | State Drift (9.5) | COMPLETE (guard JSON composite; helper-script error is advisory, recorded) | n/a |
 | Structure Drift (9.6) | N/A (skipped: no --anticipated paths) | n/a |
 
-**Stale-verification:** `STALE: extensions/pi-vcc/tests/support/real-sessions.ts` — the separate fixture fix `c99049d` (2026-10-20) changed a test-support file after the initial QA half; this re-verification run's evidence (full suite 262/262 exit 0, re-run 2026-10-20) is what the gate rests on, not the prior CONCERNS verdict. The production `src/` files this change owns are unchanged since `de476bd`.
+**Stale-verification:** `STALE: extensions/pi-vcc/src/core/includes.ts, src/commands/vcc-status.ts, src/core/format-recall.ts` — the final-review fix wave `4fb90b0` (2026-10-20) changed these production files after the whole-branch review; this run's evidence (full suite 266/266 exit 0, tsc clean, scoped re-review APPROVED 0C/0I/0M) is what the gate rests on.
+
+**Fix-wave note (2026-10-20):** the whole-branch two-axis review returned APPROVED (0 Critical) with 1 Standards-Important + 3 spec minors. Per the user, the Standards-Important (comment named "Task 1" instead of `extractRefTokens()`) and the 2 label/count spec minors (status `loaded`/`missing` for a cap-zeroed file; `(+N more)` dropped-count semantics) were fixed in `4fb90b0` and scoped-re-reviewed APPROVED (0C/0I/0M). The remaining 2 spec minors + 4 standards minors are parked to WINDOWS.md (W041) as SUGGESTIONS — none affect a success criterion.
 
 ## Floor
 
@@ -278,9 +280,11 @@ exits 0, so the P0-suite-exit criterion is met and the floor is no longer capped
 
 **Reasoning:** Every truth, scenario, artifact, and key link of the goal is VERIFIED by named
 tests that ran and passed; all code-quality gates PASS or N/A; security clean; scope COMPLETE;
-and the extension suite exits 0 (262/262, re-verified 2026-10-20). The prior CONCERNS item
+and the extension suite exits 0 (266/266 after the `4fb90b0` fix wave, re-verified 2026-10-20). The prior CONCERNS item
 (the pre-existing `real-sessions.test.ts` failure) was resolved by the separate fixture
-change `c99049d`, clearing the only fail-closed non-answer.
+change `c99049d`, clearing the only fail-closed non-answer. The whole-branch review's
+actionable findings (1 Standards-Important + 2 spec minors) were fixed in `4fb90b0` and
+scoped-re-reviewed APPROVED; residual minors parked to W041 as SUGGESTIONS.
 
 **Open items (if CONCERNS):**
 - None.
