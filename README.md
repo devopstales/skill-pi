@@ -198,6 +198,24 @@ Currently bundled:
   target). See
   [`extensions/pi-swarm/README.md`](extensions/pi-swarm/README.md).
 
+### Bundled npm extensions
+
+Some extensions ship as npm dependencies instead of vendored source. The wrapper
+syncs them from `node_modules` into `~/.skill-pi/agent/extensions/<folder>/` on
+first run or when the installed version changes (stamp: `.skill-pi-sync.json`
+next to the extension). A missing package never blocks startup (fail-open).
+
+Currently bundled:
+
+- **`mnemonic`** (`@devopstales/skillgrid-pi-mnemonic`) — persistent memory over
+  the [Mnemonic](https://github.com/devopstales/skillgrid) HTTP server: `mem_*`,
+  `fact_*`, `code_*`, and `ctx_*` tools, prompt capture on `before_agent_start`,
+  Memory Protocol injection, and compaction recovery. Requires a running
+  `mnemonic serve` (default `http://127.0.0.1:7438`, override with
+  `SKILLGRID_MNEMONIC_HTTP_URL`); every call is fail-open when the server is down.
+  The source lives in the skillgrid repo at `plugins/pi/mnemonic/` (ADR-0043);
+  publish it with `npm publish` from that folder (GitHub Packages, see `.npmrc`).
+
 ## Choosing a model
 
 Pi's model selector has two distinct actions:
