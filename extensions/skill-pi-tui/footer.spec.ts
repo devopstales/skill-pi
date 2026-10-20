@@ -189,10 +189,10 @@ it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
   const meta: ModelMeta = { provider: "Anthropic", model: "claude-sonnet", effort: undefined };
   const footerData = { getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} };
 
-  for (const [pct, icon, label, remaining] of [
-    [36, "🧠", "smart", "64"],
-    [50, "⚠️", "warm", "50"],
-    [80, "🧟", "dumb", "20"],
+  for (const [pct, icon, label] of [
+    [36, "🧠", "smart"],
+    [50, "⚠️", "warm"],
+    [80, "🧟", "dumb"],
   ] as const) {
     const ctx = {
       ...fakeCtx,
@@ -202,7 +202,6 @@ it("buildFooterContent: zone-aware context bar with 40/70 thresholds", () => {
     const flat = mainLines.join("\n");
     assert.ok(flat.includes(icon), `${pct}%: zone icon ${icon}`);
     assert.ok(flat.includes(label), `${pct}%: zone label ${label}`);
-    assert.ok(flat.includes(`${remaining}%`), `${pct}%: ${remaining}% remaining of window`);
-    assert.ok(flat.includes("left"), `${pct}%: 'left' suffix`);
+    assert.ok(flat.includes(`${pct}% used`), `${pct}%: actual usage shown as % used`);
   }
 });

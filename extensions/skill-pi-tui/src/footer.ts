@@ -62,7 +62,7 @@ function renderContextCompact(theme: Theme, ctx: ExtensionContext, glyphs: IconG
   if (contextWindow <= 0) return "";
   const contextPct = contextUsage?.percent ?? 0;
   const zone = contextZone(contextPct);
-  return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${Math.max(0, 100 - contextPct)}% left`)}`;
+  return `${theme.fg(zone.color, zone.icon)} ${theme.fg(zone.color, zone.label)} ${theme.fg(zone.color, `${contextPct}% used`)}`;
 }
 
 function renderGitSegment(
@@ -140,11 +140,11 @@ function renderContextBar(
 
   const zone = contextZone(contextPct);
   const zoneIcon = theme.fg(zone.color, zone.icon);
-  const leftText = theme.fg(zone.color, `${Math.max(0, 100 - contextPct)}%`);
+  const usedText = theme.fg(zone.color, `${contextPct}%`);
   const label = theme.fg("dim", zone.label);
-  const reserved = visibleWidth(zoneIcon) + visibleWidth(leftText) + visibleWidth(label) + 4;
+  const reserved = visibleWidth(zoneIcon) + visibleWidth(usedText) + visibleWidth(label) + 4;
   const barWidth = Math.max(8, Math.min(20, width - reserved));
-  return `${zoneIcon} ${renderZoneBar(contextPct, barWidth, theme)} ${label} ${leftText} ${theme.fg("dim", "left")}`;
+  return `${zoneIcon} ${renderZoneBar(contextPct, barWidth, theme)} ${label} ${usedText} ${theme.fg("dim", "used")}`;
 }
 
 function renderStatsBlock(
