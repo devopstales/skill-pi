@@ -25,6 +25,39 @@ TICKET-10 (tracker TASK-20.10). Final gate for the 2026-10-16-pi-swarm-extension
 | R-rpc-protocol | ✅ | Unit — `protocol.spec.ts`: ping/spawn/steer/consume/stop replies + lifecycle events on fake bus | `extensions/pi-swarm/src/protocol.spec.ts` |
 | R-rpc-version | ✅ | Unit — `protocol.spec.ts`: `v: 99` → version-error reply, no manager call | `protocol.spec.ts` |
 
+## Door check
+
+Task 1's live door check (full transcript in `pi-swarm-task-1-report.md` § Door
+Check) confirmed the RPC event surface against a real `skill-pi --mode rpc`
+child. Representative raw sample — the distinct event `type` values observed
+on stdout (counts inflated by the `pi-ollama` / `plan-build` / `permission`
+extensions emitting `extension_ui_request` + `setStatus`/`setWidget` chatter;
+the agent stream itself is `agent_start` → `message_*` → `agent_end` →
+`agent_settled`):
+
+```
+146 extension_ui_request
+ 70 message_update
+ 48 message_start
+ 38 message_end
+ 20 response
+ 20 agent_start
+ 19 turn_start
+  5 turn_end
+  3 agent_end
+  1 agent_settled
+```
+
+The stream's terminal line is the `agent_settled` event carrying `aborted`:
+
+```
+{"type":"agent_settled","aborted":false}
+```
+
+`agent_settled` is the fold's sole terminal marker (`agent_end` is non-terminal
+in RPC mode — the child stays alive after it; see `## Recorded unknowns
+resolved` and the `How it works` note in `extensions/pi-swarm/README.md`).
+
 ## L2 evidence
 
 Run 2026-10-20 ~10:48 local (after the two fix commits).
