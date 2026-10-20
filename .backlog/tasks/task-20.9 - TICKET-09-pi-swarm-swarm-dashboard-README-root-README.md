@@ -1,9 +1,10 @@
 ---
 id: TASK-20.9
 title: 'TICKET-09 pi-swarm: /swarm dashboard + README + root README'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:36'
+updated_date: '2026-10-20 07:48'
 labels: []
 dependencies:
   - TASK-20.6

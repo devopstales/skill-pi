@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -259,6 +259,23 @@ async function main() {
 
 export { parseArgs, isUpdateCommand, printHelp };
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compare real paths, not the launch string: the binary is typically reached
+// through a symlink chain (e.g. ~/.npm-global/bin -> .../lib/node_modules ->
+// the git checkout), so resolve(argv[1]) is the unresolved symlink path while
+// import.meta.url is the real file. realpathSync both sides so main() runs
+// regardless of which link the user launched through.
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      realpathSync(process.argv[1]) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   main();
 }

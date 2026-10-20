@@ -1,9 +1,10 @@
 ---
 id: TASK-20.8
 title: 'TICKET-08 pi-swarm: cross-extension RPC protocol v1'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:35'
+updated_date: '2026-10-20 07:02'
 labels: []
 dependencies:
   - TASK-20.3

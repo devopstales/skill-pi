@@ -1,9 +1,10 @@
 ---
 id: TASK-20
 title: 'pi-swarm: parallel isolated child agents + FleetView + RPC protocol (pi)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:32'
+updated_date: '2026-10-20 09:07'
 labels: []
 dependencies: []
 references:

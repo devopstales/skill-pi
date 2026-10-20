@@ -1,9 +1,10 @@
 ---
 id: TASK-20.1
 title: 'TICKET-01 pi-swarm: RPC child lifecycle + JSONL codec (door check)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:32'
+updated_date: '2026-10-18 08:48'
 labels: []
 dependencies: []
 references:

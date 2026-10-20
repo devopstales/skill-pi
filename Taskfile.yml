@@ -50,6 +50,29 @@ tasks:
     cmds:
       - SKILL_PI_E2E=1 node --test test/providers.e2e.test.js
 
+  e2e:video:
+    desc: "Record a VHS video of an interactive TUI session exercising all bundled extensions"
+    cmds:
+      - node tests/gen-e2e-tapes.mjs
+      - 'out="tests/e2e-video.mp4"; vhs tests/e2e-tapes/skill-pi-tui.tape -o "$out" && echo "recorded: $out" || echo "vhs failed; see output above"'
+      - 'vhs tests/e2e-tapes/todo.tape -o tests/e2e-todo.mp4'
+      - 'vhs tests/e2e-tapes/ask-user.tape -o tests/e2e-ask-user.mp4'
+      - 'vhs tests/e2e-tapes/permission.tape -o tests/e2e-permission.mp4'
+      - 'vhs tests/e2e-tapes/plan-build.tape -o tests/e2e-plan-build.mp4'
+      - 'vhs tests/e2e-tapes/file-search.tape -o tests/e2e-file-search.mp4'
+      - 'vhs tests/e2e-tapes/webfetch.tape -o tests/e2e-webfetch.mp4'
+      - 'vhs tests/e2e-tapes/providers.tape -o tests/e2e-providers.mp4'
+      - 'vhs tests/e2e-tapes/pi-context-view.tape -o tests/e2e-context.mp4'
+      - 'vhs tests/e2e-tapes/command-plate.tape -o tests/e2e-command-plate.mp4'
+      - 'vhs tests/e2e-tapes/pi-swarm.tape -o tests/e2e-swarm.mp4'
+      - 'vhs tests/e2e-tapes/lsp.tape -o tests/e2e-lsp.mp4'
+      - 'vhs tests/e2e-tapes/pi-hooks.tape -o tests/e2e-hooks.mp4'
+      - 'vhs tests/e2e-tapes/pi-vcc.tape -o tests/e2e-vcc.mp4'
+      - 'ls -lh tests/e2e-*.mp4'
+    preconditions:
+      - test: command -v vhs >/dev/null
+        message: "vhs not found. Install: brew install charmbracelet/tap/vhs"
+
   providers:load:
     desc: "Load the pi-free base in a real skill-pi --print session (door check part 2)"
     cmds:

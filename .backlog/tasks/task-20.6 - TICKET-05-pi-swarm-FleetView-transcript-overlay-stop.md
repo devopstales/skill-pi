@@ -1,9 +1,10 @@
 ---
 id: TASK-20.6
 title: 'TICKET-05 pi-swarm: FleetView transcript overlay + stop'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:35'
+updated_date: '2026-10-18 12:40'
 labels: []
 dependencies:
   - TASK-20.4

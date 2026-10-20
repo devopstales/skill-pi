@@ -1,9 +1,10 @@
 ---
 id: TASK-20.7
 title: 'TICKET-07 pi-swarm: target selector Ctrl+Q Tab + input interception'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:35'
+updated_date: '2026-10-18 13:19'
 labels: []
 dependencies:
   - TASK-20.4

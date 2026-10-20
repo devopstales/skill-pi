@@ -1,9 +1,10 @@
 ---
 id: TASK-20.3
 title: 'TICKET-03 pi-swarm: control tools check/send/cancel + statusline'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:34'
+updated_date: '2026-10-18 10:38'
 labels: []
 dependencies:
   - TASK-20.2

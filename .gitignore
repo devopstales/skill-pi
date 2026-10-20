@@ -5,3 +5,6 @@
 # Local Pi runtime state
 .atl/
 .skill-pi/
+# VHS e2e videos
+tests/e2e-*.mp4
+tests/e2e-tapes/

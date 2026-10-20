@@ -1,9 +1,10 @@
 ---
 id: TASK-20.5
 title: 'TICKET-06 pi-swarm: agent types discovery + frontmatter'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:34'
+updated_date: '2026-10-18 13:45'
 labels: []
 dependencies:
   - TASK-20.2

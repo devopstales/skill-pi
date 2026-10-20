@@ -1,9 +1,10 @@
 ---
 id: TASK-20.2
 title: 'TICKET-02 pi-swarm: SwarmManager + spawn/wait/list tools + deferred delivery'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:33'
+updated_date: '2026-10-18 09:56'
 labels: []
 dependencies:
   - TASK-20.1

@@ -1,9 +1,10 @@
 ---
 id: TASK-20.4
 title: 'TICKET-04 pi-swarm: FleetView list + formatting'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-18 07:34'
+updated_date: '2026-10-18 11:34'
 labels: []
 dependencies:
   - TASK-20.2
