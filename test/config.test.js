@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
 
-import { agentDirFor, ensureAgentDir, defaultPackages, seedDefaultPackages } from "../lib/config.js";
+import { agentDirFor, ensureAgentDir, defaultPackages, seedDefaultPackages, syncBundledExtensions, bundledExtensionPackages } from "../lib/config.js";
 import { importAuth } from "../lib/auth.js";
 
 test("agentDirFor honors SKILL_PI_AGENT_DIR", () => {
@@ -114,6 +115,56 @@ test("ensureAgentDir quarantines a valid-object settings.json with wrong field t
   assert.ok(existsSync(join(dir, "settings.json.bak")));
   const fresh = JSON.parse(readFileSync(settingsPath, "utf8"));
   assert.notEqual(fresh.defaultModel, 42);
+});
+
+test("syncBundledExtensions copies bundled npm extensions into the agent dir", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-bundle-"));
+  syncBundledExtensions(dir);
+  const dest = join(dir, "extensions", "mnemonic");
+  assert.ok(existsSync(join(dest, "index.ts")), "mnemonic entry point copied");
+  assert.ok(existsSync(join(dest, "api.js")), "mnemonic api copied");
+  const stamp = JSON.parse(readFileSync(join(dest, ".skill-pi-sync.json"), "utf8"));
+  assert.equal(stamp.name, "@devopstales/skillgrid-pi-mnemonic");
+  assert.ok(stamp.version, "stamp records the package version");
+});
+
+test("syncBundledExtensions is idempotent and re-syncs on version change", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-bundle2-"));
+  syncBundledExtensions(dir);
+  const stampPath = join(dir, "extensions", "mnemonic", ".skill-pi-sync.json");
+  const firstStamp = readFileSync(stampPath, "utf8");
+  writeFileSync(join(dir, "extensions", "mnemonic", "marker.txt"), "user file");
+  syncBundledExtensions(dir);
+  assert.equal(readFileSync(stampPath, "utf8"), firstStamp, "same version: no rewrite");
+  assert.ok(existsSync(join(dir, "extensions", "mnemonic", "marker.txt")), "same version: dest untouched");
+  const realRequire = createRequire(import.meta.url);
+  const realManifest = realRequire("@devopstales/skillgrid-pi-mnemonic/package.json");
+  syncBundledExtensions(dir, {
+    require: (specifier) => {
+      if (specifier.endsWith("package.json")) {
+        return { ...realManifest, version: "9999.0.0" };
+      }
+      return realRequire(specifier);
+    },
+  });
+});
+
+test("syncBundledExtensions fails open when a package is missing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-bundle3-"));
+  syncBundledExtensions(dir, { require: () => { throw new Error("not found"); } });
+  assert.ok(!existsSync(join(dir, "extensions", "mnemonic")), "no copy, no throw");
+});
+
+test("ensureAgentDir syncs bundled extensions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "skillpi-bundle4-"));
+  await ensureAgentDir(dir);
+  assert.ok(existsSync(join(dir, "extensions", "mnemonic", "index.ts")), "bundled extension present after ensureAgentDir");
+});
+
+test("bundledExtensionPackages lists the mnemonic extension", () => {
+  assert.deepEqual(bundledExtensionPackages, [
+    { name: "@devopstales/skillgrid-pi-mnemonic", folder: "mnemonic" },
+  ]);
 });
 
 test("importAuth copies auth.json and models.json", () => {
