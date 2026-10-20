@@ -124,7 +124,7 @@ test("syncBundledExtensions copies bundled npm extensions into the agent dir", (
   assert.ok(existsSync(join(dest, "index.ts")), "mnemonic entry point copied");
   assert.ok(existsSync(join(dest, "api.js")), "mnemonic api copied");
   const stamp = JSON.parse(readFileSync(join(dest, ".skill-pi-sync.json"), "utf8"));
-  assert.equal(stamp.name, "@devopstales/skillgrid-pi-mnemonic");
+  assert.equal(stamp.name, "@devopstales/pi-mnemonic");
   assert.ok(stamp.version, "stamp records the package version");
 });
 
@@ -138,7 +138,7 @@ test("syncBundledExtensions is idempotent and re-syncs on version change", () =>
   assert.equal(readFileSync(stampPath, "utf8"), firstStamp, "same version: no rewrite");
   assert.ok(existsSync(join(dir, "extensions", "mnemonic", "marker.txt")), "same version: dest untouched");
   const realRequire = createRequire(import.meta.url);
-  const realManifest = realRequire("@devopstales/skillgrid-pi-mnemonic/package.json");
+  const realManifest = realRequire("@devopstales/pi-mnemonic/package.json");
   syncBundledExtensions(dir, {
     require: (specifier) => {
       if (specifier.endsWith("package.json")) {
@@ -163,7 +163,7 @@ test("ensureAgentDir syncs bundled extensions", async () => {
 
 test("bundledExtensionPackages lists the mnemonic extension", () => {
   assert.deepEqual(bundledExtensionPackages, [
-    { name: "@devopstales/skillgrid-pi-mnemonic", folder: "mnemonic" },
+    { name: "@devopstales/pi-mnemonic", folder: "mnemonic" },
   ]);
 });
 

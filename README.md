@@ -207,7 +207,7 @@ next to the extension). A missing package never blocks startup (fail-open).
 
 Currently bundled:
 
-- **`mnemonic`** (`@devopstales/skillgrid-pi-mnemonic`) — persistent memory over
+- **`mnemonic`** (`@devopstales/pi-mnemonic`) — persistent memory over
   the [Mnemonic](https://github.com/devopstales/skillgrid) HTTP server: `mem_*`,
   `fact_*`, `code_*`, and `ctx_*` tools, prompt capture on `before_agent_start`,
   Memory Protocol injection, and compaction recovery. Requires a running
