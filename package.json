@@ -22,7 +22,7 @@
     "SYSTEM.md"
   ],
   "dependencies": {
-    "@devopstales/skillgrid-pi-mnemonic": "file:../skillgrid-v2/plugins/pi/mnemonic",
+    "@devopstales/skillgrid-pi-mnemonic": "^0.1.1",
     "@earendil-works/pi-coding-agent": "^1.2.0",
     "@earendil-works/pi-tui": "^1.2.0",
     "@effect/platform-node": "^4.0.4",
