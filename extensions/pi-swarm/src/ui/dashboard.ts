@@ -1,5 +1,5 @@
 import { parseKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
-import type { AgentSnapshot } from "../domain.ts";
+import { isSettled, type AgentSnapshot } from "../domain.ts";
 import { formatAgentRow, statusGlyph, type FleetTheme } from "../format.ts";
 import {
   DASHBOARD_CONFIRM_MS,
@@ -124,7 +124,7 @@ export function createDashboard(
 
   const isSettledRow = (id: string): boolean => {
     const snapshot = readModel.get(id);
-    return snapshot !== undefined && (snapshot.status === "done" || snapshot.status === "error" || snapshot.status === "interrupted");
+    return snapshot !== undefined && isSettled(snapshot.status);
   };
 
   const selectedId = (): string | undefined => rows[selection];

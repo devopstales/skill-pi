@@ -176,7 +176,7 @@ describe("fleetview keys", () => {
     expect(selectedLine(component)).toContain("first");
   });
 
-  it("x cancels the selected agent", async () => {
+  it("x requires two presses to cancel the selected agent in list mode", async () => {
     const { model, component } = setup([
       snap({ id: "sa-1", title: "first", status: "done", createdAt: 1 }),
       snap({ id: "sa-2", title: "second", status: "running", createdAt: 2 }),
@@ -184,7 +184,23 @@ describe("fleetview keys", () => {
     expect(selectedLine(component)).toContain("second");
     component.handleInput!("x");
     await Promise.resolve();
+    expect(model.cancel).not.toHaveBeenCalled();
+    component.handleInput!("x");
+    await Promise.resolve();
     expect(model.cancel).toHaveBeenCalledWith("sa-2");
+  });
+
+  it("a different key between two list-mode x presses disarms the confirm", async () => {
+    const { model, component } = setup([
+      snap({ id: "sa-1", title: "first", status: "done", createdAt: 1 }),
+      snap({ id: "sa-2", title: "second", status: "running", createdAt: 2 }),
+    ]);
+    expect(selectedLine(component)).toContain("second");
+    component.handleInput!("x");
+    component.handleInput!("a");
+    component.handleInput!("x");
+    await Promise.resolve();
+    expect(model.cancel).not.toHaveBeenCalled();
   });
 
   it("x on the main row does not cancel", async () => {

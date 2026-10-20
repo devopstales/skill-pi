@@ -1,5 +1,5 @@
 import { parseKey, sliceByColumn, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type TUI } from "@earendil-works/pi-tui";
-import type { AgentSnapshot, TranscriptLine } from "../domain.ts";
+import { isSettled, type AgentSnapshot, type TranscriptLine } from "../domain.ts";
 import { formatAgentRow, formatMainRow, statusGlyph as statusGlyphLocal, type FleetTheme } from "../format.ts";
 
 export const FLEETVIEW_HINT = "esc to return · enter to open · x to stop";
@@ -77,7 +77,7 @@ export function transcriptOverlayRows(
 }
 
 export function isFleetViewVisible(agents: readonly AgentSnapshot[]): boolean {
-  return agents.some((a) => a.status === "running" || a.status === "queued");
+  return agents.some((a) => !isSettled(a.status));
 }
 
 const MARKER_WIDTH = visibleWidth("❯ ");
@@ -287,11 +287,13 @@ export function createFleetView(
       }
       if (key === "up") {
         if (selection > 0) selection -= 1;
+        disarmConfirm();
         requestRender();
         return;
       }
       if (key === "down" || key === "left" || key === "right") {
         if (selection < rows.length - 1) selection += 1;
+        disarmConfirm();
         requestRender();
         return;
       }
@@ -307,14 +309,19 @@ export function createFleetView(
         return;
       }
       if (key === "escape") {
+        disarmConfirm();
         requestRender();
         return;
       }
       if (key === "x") {
         const row = selectedRow();
-        if (row?.id) void Promise.resolve(readModel.cancel(row.id)).catch(() => {});
+        if (row?.id) {
+          armConfirm(row.id);
+          requestRender();
+        }
         return;
       }
+      disarmConfirm();
     },
     invalidate() {},
     dispose() {

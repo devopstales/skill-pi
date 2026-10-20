@@ -327,7 +327,6 @@ describe("installSwarmProtocol", () => {
     manager.setSnapshot("sa-1", "running", { turns: 3, tokens: 90 });
     manager.setSnapshot("sa-1", "done", { turns: 7, tokens: 200 });
     const usages = bus.emitted.filter((e) => e.channel === "swarm:usage").map((e) => e.data as { id: string; tokens: number; turns: number });
-    // snapshot counters are cumulative; the event carries the delta for the run that just settled (since run start)
     expect(usages).toEqual([
       { id: "sa-1", tokens: 90, turns: 3 },
       { id: "sa-1", tokens: 200, turns: 7 },

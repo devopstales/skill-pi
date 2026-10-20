@@ -17,9 +17,10 @@ is itself a fully isolated skill-pi instance — same `PI_CODING_AGENT_DIR`, no
   suppresses the auto-delivery (consumed semantics).
 - **FleetView** — a below-prompt list of active children (shown whenever at
   least one is running or queued): status glyph, title, agent type, model,
-  tokens, elapsed. `Enter` opens a child's live transcript overlay (sanitized,
-  auto-follow, scroll-up-to-pause); `x` aborts the selected child (two-press
-  confirm); `Esc` returns to the prompt.
+  tokens, elapsed. (token and model columns are placeholders in v1 — children
+  report no usage stream yet.) `Enter` opens a child's live transcript overlay
+  (sanitized, auto-follow, scroll-up-to-pause); `x` aborts the selected child
+  (two-press confirm); `Esc` returns to the prompt.
 - **`/swarm` dashboard** — a fullscreen management surface with every tracked
   agent (running, queued, and settled with final status + tokens). `j`/`k` or
   `↑`/`↓` move the selection, `Enter` opens the transcript takeover (the same
@@ -67,8 +68,18 @@ result delivered deferred (on parent idle) as a swarm-result message
 
 - Children are driven exclusively through the `--mode rpc` CLI surface
   (JSONL commands on stdin, JSONL events on stdout). The event fold is
-  tolerant: unknown event types are ignored; terminal detection is
-  `agent_end`/`agent_settled` or process exit.
+  tolerant: unknown event types are ignored; `agent_settled` (or process
+  exit) is terminal. pi emits `agent_end` before the child settles and the
+  child process stays alive in RPC mode, so the fold treats `agent_end` as
+  non-terminal and only `agent_settled` (or process exit) settles the
+  record.
+- Children are spawned with `PI_PACKAGE_DIR` removed from the inherited
+  env (the parent wrapper sets it for its brand overlay); a child
+  therefore reads project config from `<project>/.pi/` (pi's default)
+  rather than `<project>/.skill-pi/`. This is deliberate for v1 — children
+  run with the isolated agent dir and no brand overlay; the parent's
+  isolation guarantee (never touch `~/.pi/agent`) is unaffected and
+  asserted in `child.spec.ts`.
 - `MAX_RUNNING` (default 4) extra spawns are **queued**, not rejected; they
   start as running children settle. `MAX_TRACKED` (64) prunes the
   least-recently-settled settled agent first.
