@@ -193,6 +193,10 @@ Currently bundled:
   [dimk90/pi-context-view](https://github.com/dimk90/pi-context-view) (MIT),
   homogenized for the isolated agent dir and the conf.d contract. See
   [`extensions/pi-context-view/README.md`](extensions/pi-context-view/README.md).
+- **`pi-swarm`** — parallel isolated child agents with FleetView, a `/swarm`
+  dashboard, and a cross-extension RPC protocol (Ctrl+Q Tab to switch prompt
+  target). See
+  [`extensions/pi-swarm/README.md`](extensions/pi-swarm/README.md).
 
 ## Choosing a model
 

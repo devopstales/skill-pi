@@ -5,10 +5,13 @@ import { formatAgentRow, formatMainRow, statusGlyph as statusGlyphLocal, type Fl
 export const FLEETVIEW_HINT = "esc to return · enter to open · x to stop";
 export const OVERLAY_HINT = "↑↓ scroll · x stop · esc close";
 
-const OVERLAY_RENDER_THROTTLE_MS = 50;
-const OVERLAY_CONFIRM_MS = 2000;
+export const OVERLAY_RENDER_THROTTLE_MS = 50;
+export const OVERLAY_CONFIRM_MS = 2000;
 const OVERLINE_MIN = 1;
-const OVERLINE_MAX = 16;
+export const OVERLINE_MAX = 16;
+
+export const DASHBOARD_CONFIRM_MS = 2000;
+export const DASHBOARD_RENDER_THROTTLE_MS = 100;
 
 export interface FleetReadModel {
   list(): readonly AgentSnapshot[];
@@ -279,7 +282,7 @@ export function createFleetView(
           requestRender();
           return;
         }
-        if (key !== " " && key !== "") disarmConfirm();
+        disarmConfirm();
         return;
       }
       if (key === "up") {

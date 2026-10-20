@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { parseKey, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -9,6 +9,7 @@ import { formatElapsed, formatTokens } from "./src/format.ts";
 import { discoverAgentTypes, resolveAgentType, type AgentType } from "./src/agents.ts";
 import { createTargetSelector, type TargetId, type TargetSelector } from "./src/target.ts";
 import { createFleetView, isFleetViewVisible, type FleetReadModel } from "./src/ui/fleetview.ts";
+import { createDashboard, type DashboardReadModel } from "./src/ui/dashboard.ts";
 import { installSwarmProtocol } from "./src/protocol.ts";
 
 const MAX_WAIT_IDS = 64;
@@ -265,6 +266,40 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
   };
 
   const leaderArmed = (ctx: ExtensionContext): boolean => fleetSessions.get(sessionKey(ctx))?.leaderArmed ?? false;
+
+  const swarmListText = (mgr: SwarmManager): string => {
+    const agents = mgr.list();
+    if (agents.length === 0) return "no swarm agents";
+    return agents.map(describeLine).join("\n");
+  };
+
+  const showSwarmDashboard = async (ctx: ExtensionCommandContext): Promise<void> => {
+    const mgr = getManager(ctx);
+    const session = fleetSessions.get(sessionKey(ctx));
+    const readModel: DashboardReadModel = {
+      list: () => mgr.list(),
+      get: (id: string) => mgr.get(id),
+      cancel: (id: string) => {
+        void Promise.resolve(mgr.cancel(id)).catch(() => {});
+      },
+      subscribe: (listener: () => void) => mgr.subscribe(listener),
+    };
+    const dashboard = createDashboard(readModel);
+    await ctx.ui.custom<void>((tui) => {
+      const component = dashboard;
+      component.tui = tui;
+      const wrapped: Component & { dispose(): void } = {
+        render: (width: number) => component.render(width),
+        handleInput: (data: string) => {
+          component.handleInput?.(data);
+        },
+        invalidate: () => component.invalidate(),
+        dispose: () => component.dispose(),
+      };
+      return wrapped;
+    });
+    if (session) updateFleetWidget(session);
+  };
 
   const getManager = (ctx: ExtensionContext): SwarmManager => {
     const key = sessionKey(ctx);
@@ -582,6 +617,18 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
           isError: true,
         };
       }
+    },
+  });
+
+  pi.registerCommand("swarm", {
+    description: "Show the swarm dashboard: all tracked child agents, live transcripts, and stop controls",
+    handler: async (_args, ctx) => {
+      const mgr = getManager(ctx);
+      if (!ctx.hasUI) {
+        process.stdout.write(swarmListText(mgr) + "\n");
+        return;
+      }
+      await showSwarmDashboard(ctx);
     },
   });
 

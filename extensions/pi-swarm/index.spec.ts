@@ -157,7 +157,12 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 import piSwarm from "./index.ts";
 
 describe("pi-swarm index", () => {
+  interface RegisteredCommand {
+    name: string;
+    options: { description?: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> | void };
+  }
   let tools: Map<string, RegisteredTool>;
+  let commands: Map<string, RegisteredCommand>;
   let ctx: ExtensionContext;
   let setStatus: ReturnType<typeof vi.fn>;
   let handlers: Map<string, unknown[]>;
@@ -184,9 +189,13 @@ describe("pi-swarm index", () => {
       busHandlers.set(channel, list);
       return () => {};
     };
+    commands = new Map<string, RegisteredCommand>();
     const pi = {
       registerTool: (def: RegisteredTool) => {
         tools.set(def.name, def);
+      },
+      registerCommand: (name: string, options: RegisteredCommand["options"]) => {
+        commands.set(name, { name, options });
       },
       registerMessageRenderer: vi.fn(),
       sendMessage: vi.fn(),
@@ -223,6 +232,46 @@ describe("pi-swarm index", () => {
     await setup([]);
     expect([...tools.keys()].sort()).toEqual(["swarm_cancel", "swarm_check", "swarm_list", "swarm_send", "swarm_spawn", "swarm_wait"]);
   });
+
+  it("registers the /swarm command", async () => {
+    await setup([]);
+    expect(commands.get("swarm")).toBeDefined();
+    expect(commands.get("swarm")!.options.description).toMatch(/swarm/i);
+  });
+
+  it("non-TUI /swarm handler prints the swarm_list output", async () => {
+    await setup([]);
+    const handler = commands.get("swarm")!.options.handler;
+    const noUiCtx: ExtensionContext = {
+      ...ctx,
+      hasUI: false,
+      mode: "print",
+      ui: { ...ctx.ui, custom: async () => { throw new Error("custom should not be called without UI"); } },
+    } as ExtensionContext;
+    const origWrite = process.stdout.write;
+    const chunks: string[] = [];
+    process.stdout.write = ((chunk: string) => { chunks.push(chunk); return true; }) as typeof process.stdout.write;
+    try {
+      await handler("", noUiCtx);
+    } finally {
+      process.stdout.write = origWrite;
+    }
+    expect(chunks.join("")).toMatch(/no swarm agents/);
+  });
+
+  it("TUI /swarm handler shows the dashboard via ui.custom", async () => {
+    await setup([snap({ id: "sa-1", status: "running" })]);
+    let customCalled = false;
+    const tuiCtx: ExtensionContext = {
+      ...ctx,
+      ui: { ...ctx.ui, custom: async () => { customCalled = true; } },
+    } as ExtensionContext;
+    const handler = commands.get("swarm")!.options.handler;
+    await handler("", tuiCtx);
+    expect(customCalled).toBe(true);
+  });
+
+
 
   it("installs the swarm rpc protocol once per session, wired to the session manager and pi.events", async () => {
     await setup([]);
