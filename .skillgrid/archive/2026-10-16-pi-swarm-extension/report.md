@@ -152,3 +152,134 @@ Mirrors `extensions/pi-swarm/README.md` § Limitations:
 - Backstop truth (E2E) executed live; the two defects it surfaced were real, minimal, TDD-pinned fixes in separate commits — which is the gate working as designed.
 - Acceptance: 13/13 scenarios satisfied (unit + door check + live E2E evidence above).
 - Advisory items carried (expected by blueprint Task 10 Step 3): the plan-present seam (lazy cycle-list rebuild), the prompt-prefix system-prompt mechanism, FleetView `belowEditor` placement — all confirmed working, none blocking.
+
+<!-- reflect completes this half at archive time -->
+
+## Final-State Facts
+
+**Shipped:** the `pi-swarm` bundled extension (`extensions/pi-swarm/`, 11 source files, 169 tests) — parallel isolated child skill-pi agents as `--mode rpc` subprocesses, swarm_spawn/wait/list/check/send/cancel tools, below-prompt FleetView + transcript overlay, `/swarm` dashboard, Ctrl+Q `Tab` prompt-target selector (ADR-0010), agent types from `.skill-pi/agents/`, frozen v1 cross-extension RPC protocol (`swarm:rpc:*`), plus the one additive plan-build emit line.
+**Base branch:** `main` · **Chain strategy:** stacked-to-main (commits on main directly; no PRs)
+**Integration:** kept on local `main` @ `b0cbf83` — 15 change commits `2bb822a..b0cbf83` (10 task commits + 2 E2E bug fixes + 3 review-fix commits + 1 ship commit `8b16195`); push to origin deferred by the user (origin/main 6 behind at close, including interleaved WIP that is not this change). Worktree: none (normal repo).
+
+## Gates
+
+| Gate | Result |
+|------|--------|
+| Ship gate | ✅ success + `diff -r` empty (move committed in `8b16195`; readback verbatim in ship envelope, 2026-10-20) |
+| QA gate | ✅ PASS (this file, `## QA gate`, pre-move) |
+| Review gate (advisory) | ✅ met-with-fixes — floor across 3 axes (Standards met-with-fixes 0C/5I/10M, Spec met 13/13, Security secure-with-fixes 0C/0H/1M/2L), Grade B ×3; all fix-now items landed in `ae282d6`/`535caca`/`868103d`; 0 Important open at close |
+| Verdict gate (advisory) | accepted-with-open-items — recorded, not enforced |
+
+## Decisions
+
+**Every entry MUST cite a source** — a file:line, a commit, a ticket ID, or a scenario name. No source = undiagnosed, not a learning.
+
+| Decision | Tradeoff | Why | Source |
+|----------|----------|-----|--------|
+| Children are `skill-pi --mode rpc` subprocesses, not in-process SDK sessions | Per-child memory + model-call overhead; hand-rolled JSONL fold instead of reusing pi's RpcClient | Isolation is the product (AGENTS.md rule: never touch stock `~/.pi/agent`); a crashed child cannot crash the parent | `blueprint.md` Task 1; `child.ts:32-37`; door check in this file § Door check |
+| `PI_PACKAGE_DIR` deleted from the child env (child reads `<project>/.pi/`, not `.skill-pi/`) | One-directional deviation from ADR-0002 D2 for children; a project with stock-pi config behaves differently under a child | Children run with the isolated agent dir and no brand overlay; the parent's isolation guarantee is unaffected and asserted in a test | `child.ts:34`; `child.spec.ts` ("no PI_PACKAGE_DIR"); documented at `extensions/pi-swarm/README.md` How-it-works (added in `535caca` per review) |
+| `agent_end` is non-terminal; `agent_settled` is the sole terminal marker | Fold is more complex (settle-then-rearm on `agent_end`) | Live-observed pi behavior: the child stays alive after `agent_end`; settling there double-settles on the late SIGKILL and corrupts the already-delivered result | `cb68653` (3 regression tests); live evidence § E2E run 2 |
+| Prompt-prefixing as the system-prompt mechanism (`## Agent instructions` marker) | No true system-prompt separation; agent instructions share the first user turn | pi 1.2.0 has no `--append-system-prompt` CLI flag; verified against dist | `blueprint.md` Task 6; `index.ts` swarm_spawn wiring (`bbdd7ed`) |
+| `swarm_wait` 300s deadline with force-settle on expiry | A legitimately long child run past 5 minutes reports `error: wait timed out` | A wedged child (no settle, no exit) otherwise blocks the parent model turn forever — the review's worst issue | `ae282d6` (manager.spec deadline tests); `review.md` security M1 |
+| RPC contract v1 frozen as a one-way door at TICKET-08 | Renaming any `swarm:rpc:*` channel or envelope field now requires a protocol bump | Another bundled extension can consume the bus; the contract is public from first consumption | `blueprint.md` Task 8 one-way tag; `755a6c4`; `review.md` (verified byte-for-byte) |
+| Committed live-RPC E2E probe skipped | The hand-rolled fold's match with a real child is guarded by session-level evidence only (door check + E2E run 3), not a CI test | `test/rpc.test.js` is a known 15s model-latency flake; adding a second live child to CI risks more flakes than it catches | user ruling 2026-10-20, recorded in `review.md` triage; tracked in TASK-20.11 |
+| Two-press `x` confirm unified across list + overlay | One extra keystroke to stop a child from the list | The ticket scope said two-press confirm; one-press list cancel was an inconsistent partial | `535caca` (fleetview.spec); `review.md` minor + spec partial |
+
+## Lessons
+
+| Lesson | Root Cause | Do Differently | Source |
+|--------|-----------|----------------|--------|
+| Verify terminal-event semantics against the live protocol before freezing a fold | The blueprint's "agent_end/agent_settled OR exit" wording was never checked against a real child during design; both the door check and E2E found the fold wrong in different ways | For any hand-rolled protocol fold: capture the exact event stream of one live run during the door check, write the fold to match the capture, and pin a test per terminal-transition (not per naive assumption) | `cb68653`; § E2E run 2; `pi-swarm-task-1-report.md` § Door Check |
+| A blocking tool needs a deadline, not just the child's own timeouts | `swarm_wait` delegated liveness to the child; the child's only bounded path (5s abort timer) arms only on explicit cancel and is `unref()`-ed | Every manager `waitFor`/tool that blocks on a subprocess gets a per-call deadline + force-settle from the start; the deadline is a first-class option, not a fix | `ae282d6`; `review.md` security M1 |
+| Force-settle paths must fire every listener the normal settle path fires | The deadline force-settle bypassed `onChildSnapshot`, so `whenSettled` never resolved and `waitFor` hung in the new test | When adding a parallel settle path, grep the normal path's side effects (subscriptions, delivered flags, notify) and mirror them in the new path — the RED test for the new path is what catches the omission | `ae282d6` (review-fixes report, "item 2 subtle bug") |
+| The no-comments rule is unconditional and applies to spec files too | Implementers treated "no comments" as "no comments in prod code"; 5 comment sites (3 prod, 2 spec) survived to review | Brief the implementer subagents that the rule covers `*.spec.ts`; add the comment-scan grep to the per-task verification step, not just the final review | `535caca`; `review.md` standards #1 |
+
+## Patterns
+
+| Pattern | Reuse | Source |
+|---------|-------|--------|
+| **Door check as first ticket** — the tracer-thread's Task 1 is a live round-trip (real child, real model, `SWARM_DOOR_OK` marker, isolation mtime proof) before any manager code | Any change that hand-rolls a protocol against an external runtime: make ticket 1 a live probe that records the exact wire format; later tickets' fakes must match the recorded capture | `2bb822a`; § Door check; `blueprint.md` Task 1 Step 6 |
+| **Session-keyed manager map + lazy creation** — one `SwarmManager` per session id, created on first tool call; `session_shutdown` disposes only on `reason === "quit"` (session switches don't kill children) | Any extension that owns per-session long-lived state (children, timers, UI widgets) | `0352920` index.ts; `review.md` standards (verified against the todo extension's pattern) |
+| **Injected seams for subprocess tests** — `spawnFn` (3-arg node spawn shape) + fake-child factory + injectable clock, so the whole lifecycle (settle, promote, LRU, abort timeout) tests without a live pi | Any manager that owns child processes: inject the spawn function and the clock, never the timers | `child.spec.ts`, `manager.spec.ts` |
+| **Armed-leader keybinding** — raw `onTerminalInput`, 2s one-key window, action-key rebindable via env, disarm on any other key; multiple extensions coexist because each handles only its own action key | Any new ADR-0010 leader action in another extension: reuse the pattern, never `registerShortcut`, never re-arm | `a421c27` index.ts; `extensions/command-plate/index.ts:263-278` (the source pattern) |
+| **Spec-zone-before-code** — briefing/blueprint/tasks/acceptance committed (d7170a8/c634b33/585a823) strictly before the first code commit (2bb822a); the spec reviewer verified this from git log | Every change: commit the spec zone first; it is what makes the spec-review axis's "RED before GREEN" check mechanically verifiable | `review.md` spec axis (spec-zone rule held) |
+
+## Surprises
+
+| Surprise | Signal | Source |
+|----------|--------|--------|
+| `agent_end` is emitted and then the RPC child stays alive; `agent_settled {aborted}` follows the abort | A fold settling on `agent_end` produced `done` → late SIGKILL → `error` on an already-consumed result; the parent saw `[error] turns: 0` | `cb68653`; § E2E run 2 |
+| The wrapper's `parseArgs` adopts the token after `--mode` as the project path — child argv must put the project positional first, or the child's cwd mis-resolves to `<repo>/rpc` | Door check with the blueprint's naive argv order spawned a child in the wrong cwd | `pi-swarm-task-1-report.md` § Decisions #1; `buildChildInvocation` (`child.ts:32`) |
+| pi's RPC mode has no `--print` and no initial handshake — the child is a long-running stdin server that never self-exits after a prompt | The door runner's 90s SIGKILL (exit 2) was expected, not a settle defect; settle is event-driven, not exit-driven | `pi-swarm-task-1-report.md` § Door check (c) |
+| pi 1.2.0's tool API does expose `signal: AbortSignal` as the 3rd `execute()` arg (it was documented/typed as `_signal` — invisible in the .d.ts scan) | The review fix wired `swarm_wait` early-resolve on abort instead of skipping the item | `ae282d6` (review-fixes report, item 9c) |
+| `setStatus` has no color parameter — per-target colors in the `swarm-target` status segment are theme-token names embedded in the text | Target-selector status display is colorless on themes without token rendering | `a421c27` (task-7 report, deviation note) |
+| This machine's vLLM answers a one-line prompt in ~15s — right at the E2E's per-run kill budget, so the happy-path child settle is a coin flip locally | E2E runs 1-2 hit the kill before the assistant text; run 3 + the isolated child probe (14.4s) + the door check carry the happy-path proof | § E2E runs 1-3; `pi-swarm-task-1-report.md` |
+
+## Environment Retro
+
+**Written by `skillgrid:environment-retro` (a reflect sub-phase), not qa.** Improvements to the *agent environment*, never the code. A finding appears only where its "Use when" fired; a clean session leaves this empty.
+
+Existing guardrails read before proposing (per the skill): `config.yaml` `testing.runner` = `node --test "test/**/*.test.js"` (no setup, no coverage, no mutation); root `package.json` has exactly one script (`test`); **no linter config at root, no `.husky`/`.githooks`, no CI workflows** — the only deterministic guardrail in the repo is `tsc` per extension. That absence is itself the standing finding below.
+
+| Category | Finding | Fix lands in | Source |
+|----------|---------|--------------|--------|
+| automated checks | The repo has **no deterministic guardrail at all** (no linter, no pre-commit, no CI) — the unconditional AGENTS.md rule "No comments in code unless asked" was breached in 5 places (3 prod, 2 spec) and survived to the third-party review instead of being caught by a check. Mechanical rule → deterministic check, not a standards line. | Add a pre-commit hook (or CI job once CI exists) running a comment scan on changed files: `grep -rnE '^\s*//' <changed .ts files> | grep -v '^\s*//!\|http'` (allowlist shebang/URL); fail with the offending lines. Cheap, local, catches the exact class this change shipped. | `review.md` standards #1 (5 comment sites); `535caca` (the cleanup commit); guardrail scan above (no linter/hooks/CI at root) |
+| automated checks | The root `node --test` suite contains a known model-latency flake (`test/rpc.test.js` — 15s internal timeout, fails under load, passes standalone) and the flake is documented nowhere in the repo — this session re-litigated it 4× (Task 2) before ruling it. | Document the flake + the rerun protocol where the runner is declared: a one-line note under the `test:` task in `Taskfile.yml` ("rpc.test.js is model-latency-flaky under load; on failure rerun standalone — exit 0 there is the ruling") or in `AGENTS.md` Rules. No code change. | session: 4 runs of `test/rpc.test.js` across Task 2 (2 baseline stashes + 2 reruns); `test/rpc.test.js:49`; `progress.md` Task 2 ruling |
+| tool economy | The `sdd-workspace` script has a `#!/usr/bin/env bash` shebang but was invoked as `node <script>` by the controller, producing a SyntaxError and a wasted retry with `bash`. | The subagent-execution setup reference (`references/setup.md`) states the command — make it explicitly `bash scripts/sdd-workspace PLAN_FILE` (it currently shows the path without the interpreter), so the first call is the right one. | session: Task 1 setup, `node .../sdd-workspace` → SyntaxError, retry with `bash` succeeded |
+| information access | `mnemonic mem_save` failed twice this session with `constraint failed: FOREIGN KEY constraint failed (787)` (fix wave + ship) — the degrade-to-in-repo fallback worked, root cause undiagnosed. Lineage in this report had to be written as "Mnemonic degraded" instead of observation IDs. | File a skillgrid/mnemonic issue (FK chain rejects a save whose session row isn't pre-registered — verify in the mnemonic repo); until fixed, record FK 787 as transient + non-blocking in the mnemonic skill's error-handling note so controllers stop retrying blindly. | session: 2 `mem_save` calls returning FK 787 (fix wave, ship); `report.md` § Lineage |
+| steering-file no-ops | `state.yaml` `notes` is a single 8.3k→10.7k-char one-line string (each ship appends to it) — reading the current change's state requires `head -c` truncation; it is effectively an append-only log living in a "state" field. | Move per-change ship summaries to per-archive `report.md` (where they already live) and keep `notes` to the last change only (or a bounded tail). Judgement call on the bound — steering-file edit, not a check. | `state.yaml` line 10 (1074 chars after this ship's prepend; 8338 before); ship step 3.5 |
+
+**Clean categories:** Navigation (no slow finds — the codebase's extension layout was navigable from AGENTS.md pointers), Coding standards (the reviewers did their job — the gap is the *missing check* above, captured under Automated checks, not a reviewer failure), Information access beyond the mnemonic FK item (all protocol facts were resolvable from the installed dist + live probes).
+
+**Real builds offered as follow-up tickets** (this skill proposes; it does not implement): (1) the comment-scan pre-commit hook, (2) the rpc.test.js flake note in Taskfile.yml. Both are small; the mnemonic FK issue is a separate repo. See the open-items note — offered to the user at close.
+
+## Acceptance Verdict
+
+**Verdict:** accepted-with-open-items
+
+**Grounding:** briefing goal — "a bundled pi extension that spawns parallel isolated child skill-pi agents with FleetView, cross-extension RPC, and a prompt-target selector" — met: 13/13 acceptance scenarios satisfied (this file § Acceptance matrix, each with a unit + live-evidence pointer); the QA gate is PASS; the live E2E proved the full delivery pipeline (spawn → settle → `swarm-result` follow-up turn, exactly-once, `~/.pi/agent` untouched); the three-axis review closed at 0 Important open. Open items below are hardening, not goal gaps.
+
+**Reasoning:** Every must-have from the briefing is implemented, tested, and (where the spec required live proof) live-verified. The residual items — child env allowlisting, token/modelLabel population, a committed live-RPC probe — were explicitly parked by ruling (TASK-20.11) after the review, with the design's documented limitation (children are full agents in a shared trust domain) covering the gap until then.
+
+## Open Items (→ next change)
+
+- **TASK-20.11 (Backlog.md)** — the parked hardening ticket: (1) minimal allowlisted env for swarm children instead of the full parent `process.env` spread (defense-in-depth, v2); (2) populate `tokens`/`modelLabel` from the child usage stream (README now notes they are v1 placeholders); (3) committed live-RPC E2E probe — re-add only if the RPC surface changes (user ruling 2026-10-20); (4) ~~terms-file rows~~ (DONE at ship — reconcile added 6 rows to `02-technical-terms.md`, `8b16195`); (5) pin `typebox` to the host version at publish time.
+- **Push to origin deferred** — local main is 6 commits ahead of origin/main at close (includes interleaved WIP that is not this change); the user pushes when ready. Rollback before push: revert individual ticket commits on local main.
+
+## Web-cache promotion candidates
+
+No web-cache promotion candidates — web cache disabled/empty for this change (all protocol facts were verified against the installed `node_modules/@earendil-works/pi-coding-agent` dist + live door check, not web sources).
+
+## Prior-Change Follow-Through
+
+| Prior open item (from previous archived change) | Addressed by this change? | Evidence |
+|--------------------------------------------------|---------------------------|----------|
+| W037 (2026-10-16-skill-pi-update): README tension one-word disambiguation | no | still open — not touched by this change (README.md edits here are the pi-swarm bullet + the interleaved mnemonic section from `9f8207e`) |
+| W038 (2026-10-16-skill-pi-update): npm-ci surface drift | no | still open |
+| W034-W036 (2026-10-16-webfetch-extension): picomatch root-carry, private:true, .npmrc token | no | still open — family-wide ADR-0007 items, not touched here (the pi-swarm extension follows the same ADR-0007 self-contained pattern, including the `typebox: "*"` shape flagged as FYI in `review.md`) |
+| ADR-0010 (in force since the ctrlq change): extension keybindings move to the Ctrl+Q leader | yes | pi-swarm's target cycle is the first new ADR-0010 action key (Tab) and conforms exactly (raw `onTerminalInput`, 2s window, env-rebindable action key, coexists with command-plate/plan-build) — `a421c27`; verified by the standards axis |
+
+## Move Evidence (from ship context)
+
+**From:** `.skillgrid/specs/2026-10-16-pi-swarm-extension/` → **To:** `.skillgrid/archive/2026-10-16-pi-swarm-extension/`
+**`diff -r` readback:** empty → PASS (pre-move snapshot `mktemp` dir, `git mv`, source-gone check, readback at ship; committed in `8b16195`)
+
+## Overrides / Waivers / Contradictions
+
+- None (no QA waiver, no human CONCERNS override, no size exception).
+- Contradictions: none unrankable. The only stale-snapshot case — `report.md` QA half's "161/161" test count vs. the final 169/169 — is resolved by the higher-ranked close state: the review fix wave (`ae282d6`, `535caca`) added 8 regression tests after the QA half was written; the final integrated-tree run at ship is 169/169 (this file § Gates).
+
+## Lineage (observation IDs)
+
+Every artifact read this close, for traceability:
+
+- briefing: in-repo `.skillgrid/archive/2026-10-16-pi-swarm-extension/briefing.md` (Mnemonic save degraded — FK 787)
+- blueprint: in-repo `.skillgrid/archive/2026-10-16-pi-swarm-extension/blueprint.md` (Mnemonic degraded)
+- tasks: in-repo `.skillgrid/archive/2026-10-16-pi-swarm-extension/tasks.md` (Mnemonic degraded)
+- review: in-repo `.skillgrid/archive/2026-10-16-pi-swarm-extension/review.md` (committed `b0cbf83`)
+- report (QA half): in-repo, this file lines 1-154 (written by TICKET-10, commit `4a5a889`)
+- ship: in-repo `state.yaml` notes line + commit `8b16195` (Mnemonic degraded — FK 787)
+- execution ledger: `.skillgrid/sdd/blueprint/progress.md` + per-task reports `pi-swarm-task-{1..10,review-fixes}-report.md` (gitignored zone)
+- research / findings / ADRs: ADR-0010 (`.skillgrid/artifacts/04-adr-0010-ctrlq-leader-keybindings.md`), ADR-0002 (shim status), `02-technical-terms.md` (reconciled `8b16195`)
+- Review independence: Grade B ×3 (fresh subagent contexts, same model family as implementer, no session narrative leaked — `review.md` § Independence)
+- Pre-merge catches: 5 Important + 10 Minor (standards), 2 partials (spec), 1 Medium + 2 Low (security) — all fix-now items closed in `ae282d6`/`535caca`/`868103d`; zero findings escaped to this close
