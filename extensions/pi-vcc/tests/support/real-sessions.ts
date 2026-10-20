@@ -2,8 +2,20 @@ import { mkdir, mkdtemp, copyFile, chmod, readdir, stat } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { buildCompactReport } from "../../src/core/report";
+import { loadSessionMessages } from "./load-session";
 
 const SESSION_ROOT = join(getAgentDir(), "sessions");
+const MAX_PROBE_CANDIDATES = 50;
+
+const yieldsProbe = (file: string): boolean => {
+  try {
+    const { messages } = loadSessionMessages(file);
+    return buildCompactReport({ messages }).recall.probes.length > 0;
+  } catch {
+    return false;
+  }
+};
 
 export interface SessionSample {
   source: string;
@@ -23,16 +35,25 @@ const walk = async (dir: string): Promise<string[]> => {
   return out;
 };
 
-const pickLargest = async (limit: number): Promise<string[]> => {
+export const prepareSessionSamples = async (limit = 2): Promise<SessionSample[]> => {
   const files = await walk(SESSION_ROOT);
   const sized = await Promise.all(
     files.map(async (file) => ({ file, size: (await stat(file)).size })),
   );
-  return sized.sort((a, b) => b.size - a.size).slice(0, limit).map((x) => x.file);
-};
-
-export const prepareSessionSamples = async (limit = 2): Promise<SessionSample[]> => {
-  const selected = await pickLargest(limit);
+  // Largest-by-bytes is not the same as a large session: the biggest file can
+  // be a tiny session inflated by one blob, yielding zero recall probes.
+  // Keep the size order but skip candidates that would produce no probes.
+  const ordered = sized
+    .sort((a, b) => b.size - a.size)
+    .slice(0, MAX_PROBE_CANDIDATES);
+  const selected: string[] = [];
+  for (const { file } of ordered) {
+    if (yieldsProbe(file)) {
+      selected.push(file);
+      if (selected.length === limit) break;
+    }
+  }
+  if (selected.length === 0) selected.push(...ordered.slice(0, limit).map((x) => x.file));
   const dir = await mkdtemp(join(tmpdir(), "pi-vcc-sessions-"));
   await mkdir(dir, { recursive: true });
   const samples: SessionSample[] = [];
