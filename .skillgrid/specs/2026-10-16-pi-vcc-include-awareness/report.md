@@ -1,8 +1,8 @@
 # Report — pi-vcc include-awareness
 
 > Change: `.skillgrid/specs/2026-10-16-pi-vcc-include-awareness/` (moves to `.skillgrid/archive/2026-10-16-pi-vcc-include-awareness/` at ship)
-> Generated: 2026-10-18T10:55:00+02:00 (qa)
-> Gate: CONCERNS
+> Generated: 2026-10-18T10:55:00+02:00 (qa) · Re-verified: 2026-10-20T09:15:00+02:00 (qa, re-verification mode)
+> Gate: PASS
 >
 > Two phases, one file: **qa** writes the QA half (the sections above `## Final-State Facts`,
 > through `## Gate Decision` + `## Human Override`) into the spec folder. **ship** reads the
@@ -48,9 +48,17 @@ table-driven edge cases.
 toolchain); the project's `testing.runner` (`node --test "test/**/*.test.js"`) covers the
 wrapper and was run as a regression net (58 tests, 51 pass / 0 fail / 7 skipped — the 7
 skipped are pre-existing e2e/env-gated skips, not this change). All rows above ran in the
-extension suite: 262 tests, 261 pass / 1 fail (pre-existing `real-sessions.test.ts`,
-verified red on the clean pre-change baseline 998c6ed during Task 1 — environmental,
-missing large-session fixture data, not a regression of this change).
+extension suite: 262 tests, **262 pass / 0 fail, exit 0** (re-verified 2026-10-20 after the
+separate fixture-selection fix `c99049d` — see Re-Verification note below).
+
+**Re-Verification note (2026-10-20):** the prior CONCERNS rest on one named non-answer —
+the pre-existing `real-sessions.test.ts` failure. That was a separate change
+(`2026-10-18-pi-vcc-real-sessions-fixture`, commit `c99049d`): `tests/support/real-sessions.ts`
+selected the 2 largest session files *by bytes*, and the largest was a 3-message session
+inflated by a startup blob (no goal/file/blocker → `probesOf` yields 0 probes). The fix selects
+the first size-descending candidates that yield ≥1 recall probe (faithful `buildCompactReport`
+check, 50-cap, loud-fail fallback), test-helper-only, no production change. Reviewed clean
+(0C/0I). Full suite now exits 0, clearing the only CONCERNS item.
 
 ### Edge-Case Matrix
 
@@ -223,7 +231,7 @@ split). No shell interpolation, no eval, no new network surface.
 | State Drift (9.5) | COMPLETE (guard JSON composite; helper-script error is advisory, recorded) | n/a |
 | Structure Drift (9.6) | N/A (skipped: no --anticipated paths) | n/a |
 
-**Stale-verification:** `STALE: none` — no code-zone change since the Task 4 review (de476bd is HEAD for this change); this run's own suite runs (262 tests, extension) + root suite (58 tests) are the evidence.
+**Stale-verification:** `STALE: extensions/pi-vcc/tests/support/real-sessions.ts` — the separate fixture fix `c99049d` (2026-10-20) changed a test-support file after the initial QA half; this re-verification run's evidence (full suite 262/262 exit 0, re-run 2026-10-20) is what the gate rests on, not the prior CONCERNS verdict. The production `src/` files this change owns are unchanged since `de476bd`.
 
 ## Floor
 
@@ -238,13 +246,10 @@ split). No shell interpolation, no eval, no new network surface.
 | Security audit | PASS (0 findings) |
 | Verification scope (composite) | COMPLETE |
 
-**FLOOR:** all dimensions at their best value — floor is PASS-eligible. The gate renders
-**CONCERNS** (not PASS) solely on the fail-closed treatment of one named non-answer: the
-pre-existing `real-sessions.test.ts` failure is outside this change's scope (verified red on
-the clean pre-change baseline) but it keeps the extension suite from exiting 0, which is the
-P0-suite-exit criterion. A human can clear this by (a) accepting the baseline failure as
-environmental (the evidence for that is in the Task 1 ledger + this report's Test Plan note),
-or (b) fixing the missing-fixture issue in a separate change.
+**FLOOR:** all dimensions at their best value — floor is PASS. (Re-verified 2026-10-20: the
+single prior non-answer — the pre-existing `real-sessions.test.ts` failure keeping the suite
+from exiting 0 — was cleared by the separate fixture-selection fix `c99049d`; full suite now
+exits 0, so the P0-suite-exit criterion is met and the floor is no longer capped at CONCERNS.)
 
 ## Findings
 
@@ -254,12 +259,10 @@ or (b) fixing the missing-fixture issue in a separate change.
 
 ### WARNING (should fix before archive)
 
-- Pre-existing `tests/real-sessions.test.ts` failure ("compiles copied large sessions without
-  mutating originals" — expects > 0 large-session fixtures, finds 0). Red on the clean
-  pre-change baseline 998c6ed (verified by controller during Task 1: the test fails identically
-  when the pi-vcc tree is checked out at baseline). Not caused by this change; blocks the
-  suite from exiting 0. Path to resolution: restore/commit the large-session fixture data, or
-  mark the suite env-gated — as a SEPARATE change (out of scope here).
+- (RESOLVED 2026-10-20) Pre-existing `tests/real-sessions.test.ts` failure — fixed by the
+  separate change `2026-10-18-pi-vcc-real-sessions-fixture` (commit `c99049d`): the helper now
+  selects probe-yielding session fixtures instead of largest-by-bytes. Full suite exits 0.
+  W039 closed.
 
 ### SUGGESTION (nice to have)
 
@@ -271,20 +274,16 @@ or (b) fixing the missing-fixture issue in a separate change.
 
 ## Gate Decision
 
-**Verdict:** CONCERNS
+**Verdict:** PASS
 
 **Reasoning:** Every truth, scenario, artifact, and key link of the goal is VERIFIED by named
-tests that ran and passed; all code-quality gates PASS or N/A; security clean; scope COMPLETE.
-The single non-answer is the pre-existing environmental `real-sessions.test.ts` failure, which
-keeps the extension suite from exiting 0 — verified pre-existing at baseline, not a regression
-of this change. Per the fail-closed rule, that routes the gate off PASS to CONCERNS with a
-named re-run path.
+tests that ran and passed; all code-quality gates PASS or N/A; security clean; scope COMPLETE;
+and the extension suite exits 0 (262/262, re-verified 2026-10-20). The prior CONCERNS item
+(the pre-existing `real-sessions.test.ts` failure) was resolved by the separate fixture
+change `c99049d`, clearing the only fail-closed non-answer.
 
 **Open items (if CONCERNS):**
-- Pre-existing `real-sessions.test.ts` environmental failure — human decision: accept as
-  environmental (evidence: red at baseline 998c6ed, before any change commit) or schedule a
-  separate fixture-restore change. Re-run path: `cd extensions/pi-vcc && ./node_modules/.bin/bun test`
-  exits 0 once the fixture data is restored.
+- None.
 
 **Waiver (if WAIVED):**
 - n/a
