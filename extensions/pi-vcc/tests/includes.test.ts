@@ -70,6 +70,39 @@ describe("readIncludedRules", () => {
     const out = readIncludedRules([{ path: "/no/such/file.md" }]);
     expect(out).toEqual([]);
   });
+
+  it("dropped counts this file's own cap overflow, not global-cap loss of a later file", () => {
+    const dir = tmp();
+    const big = writeMd(dir, "big.md", Array.from({ length: 200 }, (_, i) => `big ${i}`).join("\n"));
+    const small = writeMd(dir, "small.md", "only line\n");
+    const out = readIncludedRules([{ path: big }, { path: small }]);
+    expect(out[0].lines).toHaveLength(150);
+    expect(out[0].dropped).toBe(50);
+    expect(out[0].truncated).toBe(true);
+    expect(out[1].lines).toHaveLength(0);
+    expect(out[1].dropped).toBe(1);
+  });
+
+  it("dropped counts this file's per-file-capped remainder when the global cap cuts it short", () => {
+    const dir = tmp();
+    const filler = writeMd(dir, "filler.md", Array.from({ length: 149 }, (_, i) => `filler ${i}`).join("\n"));
+    const big = writeMd(dir, "big.md", Array.from({ length: 40 }, (_, i) => `big ${i}`).join("\n"));
+    const out = readIncludedRules([{ path: filler }, { path: big }]);
+    expect(out[0].lines).toHaveLength(149);
+    expect(out[0].dropped).toBe(0);
+    expect(out[1].lines).toHaveLength(1);
+    expect(out[1].dropped).toBe(39);
+    expect(out[1].truncated).toBe(true);
+  });
+
+  it("yields a lines-0 entry for a found file whose content is entirely cap-zeroed", () => {
+    const dir = tmp();
+    const big = writeMd(dir, "big.md", Array.from({ length: 150 }, (_, i) => `big ${i}`).join("\n"));
+    const small = writeMd(dir, "small.md", "only line\n");
+    const out = readIncludedRules([{ path: big }, { path: small }]);
+    expect(out).toHaveLength(2);
+    expect(out[1]).toEqual({ file: small, lines: [], truncated: true, dropped: 1 });
+  });
 });
 
 describe("extractRefTokens (line-start, fenced-safe)", () => {

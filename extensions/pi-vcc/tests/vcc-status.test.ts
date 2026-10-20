@@ -118,6 +118,30 @@ describe("vcc-status (SATISFIES: vcc-status)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("marks a found file whose content is entirely cap-zeroed as loaded, not missing", async () => {
+    const dir = tmp();
+    const { lastPath, configPath } = seed(dir);
+    const bigMd = join(dir, "big.md");
+    const bigLines = ["first line", ...Array.from({ length: 199 }, (_, i) => `x ${i}`)];
+    writeFileSync(bigMd, `${bigLines.join("\n")}\n`);
+    const includesPath = join(dir, "pi-vcc-includes.json");
+    writeFileSync(includesPath, JSON.stringify({ includes: [{ path: join(dir, "included.md") }, { path: bigMd }] }));
+    process.env.PI_VCC_LAST_COMPACT_PATH = lastPath;
+    process.env.PI_VCC_CONFIG_PATH = configPath;
+    process.env.PI_VCC_INCLUDES_PATH = includesPath;
+    const { invoke, messages } = harness(dir);
+
+    await invoke();
+
+    const out = messages[0].message.content;
+    expect(out).toContain(`loaded ${basename(bigMd)}`);
+    expect(out).not.toContain(`missing ${bigMd}`);
+    expect(out).toContain(`loaded included.md`);
+    expect(out).toContain("152/150 lines");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("shows empty include list when the handshake file is missing", async () => {
     const dir = tmp();
     const { lastPath, configPath } = seed(dir);

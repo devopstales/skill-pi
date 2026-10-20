@@ -12,9 +12,10 @@ export interface RecallOutputOpts {
   knownIncludes?: IncludeEntry[];
 }
 
-// Fence-safe: fenced blocks are skipped. Matches the same @path shape as
-// Task 1's extractRefTokens, which only sees line starts; rendered hit lines
-// carry a "#N [role]" prefix, so we also try the body with that prefix off.
+// Fence-safe: fenced blocks are skipped. Matches the token grammar of
+// src/core/includes.ts extractRefTokens(), which only sees line starts;
+// rendered hit lines carry a "#N [role]" prefix, so we also try the body
+// with that prefix off.
 const REF_RE = /^\s*(?:[-*+]|\d+\.)?\s*@(\S+)/;
 
 export const refTokensIn = (body: string): string[] => {

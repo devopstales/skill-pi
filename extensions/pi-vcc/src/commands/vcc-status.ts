@@ -48,6 +48,8 @@ const renderIncludes = (): string[] => {
     lines.push(`  none (0/${MAX_RULES_LINES} lines, 0/${MAX_RULES_BYTES} bytes)`);
   }
   for (const entry of entries) {
+    // an entry in the result means the file was found, even if the global cap
+    // left it 0 lines — that is still "loaded", not "missing"
     const rules = readIncludedRules([entry]);
     if (rules.length > 0) {
       lines.push(`  loaded ${basename(entry.path)}`);

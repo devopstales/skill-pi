@@ -78,18 +78,18 @@ export const readIncludedRules = (entries: IncludeEntry[] = readIncludes()): Inc
     let truncated = false;
     for (const line of stripFencedLines(text)) {
       if (seen.has(line)) continue;
+      seen.add(line);
       const usedLines = linesUsed + kept.length;
       if (usedLines + 1 > MAX_RULES_LINES || bytesUsed + utf8Bytes(line) > MAX_RULES_BYTES) {
         dropped++;
         truncated = true;
         continue;
       }
-      seen.add(line);
       kept.push(line);
       bytesUsed += utf8Bytes(line);
     }
     linesUsed += kept.length;
-    if (kept.length > 0) out.push({ file: entry.path, lines: kept, truncated, dropped });
+    out.push({ file: entry.path, lines: kept, truncated, dropped });
   }
   return out;
 };
