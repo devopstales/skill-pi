@@ -198,7 +198,11 @@ export class SwarmChild {
         this.settle(event.aborted === true ? "interrupted" : "done");
         break;
       case "agent_end":
+        // Non-terminal: pi emits agent_end at run end but stays alive in RPC
+        // mode (aborts still follow it with agent_settled). settle() is
+        // idempotent, so a later agent_settled can refine done -> interrupted.
         this.settle("done");
+        this.state.status = "running";
         break;
       default:
         break;

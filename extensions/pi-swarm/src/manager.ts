@@ -61,6 +61,7 @@ interface AgentRecord {
   snapshot: AgentSnapshot;
   createdAt: number;
   waiters: number;
+  delivered: boolean;
 }
 
 export interface SwarmManagerOptions {
@@ -119,6 +120,7 @@ export class SwarmManager {
       },
       createdAt,
       waiters: 0,
+      delivered: false,
     };
     this.children.set(id, record.child);
     this.records.set(id, record);
@@ -286,6 +288,9 @@ export class SwarmManager {
     const record = this.records.get(id);
     if (!record) return;
     const wasRunning = record.snapshot.status === "running";
+    if (isSettled(childSnapshot.status) && !isSettled(record.snapshot.status)) {
+      record.snapshot.settledAt = childSnapshot.settledAt ?? Date.now();
+    }
     record.snapshot = { ...childSnapshot, id: record.id, title: record.snapshot.title, agentType: record.snapshot.agentType, consumed: record.snapshot.consumed };
     if (isSettled(record.snapshot.status)) this.onSettled(record, wasRunning);
     const set = this.agentListeners.get(id);
@@ -309,7 +314,8 @@ export class SwarmManager {
       record.snapshot = { ...record.snapshot, status: "running" };
     }
     this.notify();
-    if (settledRecord && isSettled(settledRecord.snapshot.status) && settledRecord.waiters === 0 && !settledRecord.snapshot.consumed) {
+    if (settledRecord && isSettled(settledRecord.snapshot.status) && settledRecord.waiters === 0 && !settledRecord.snapshot.consumed && !settledRecord.delivered) {
+      settledRecord.delivered = true;
       this.opts.deliver(settledRecord.id);
     }
   }

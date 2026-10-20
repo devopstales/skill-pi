@@ -24,7 +24,7 @@ function makeFakeChild(
   lines: string[],
   closeCode?: number,
   kill?: (signal?: string) => void,
-): FakeChild {
+): FakeChild & { emitLine: (line: string) => void; emitClose: (code: number | null, signal: NodeJS.Signals | null) => void } {
   const child = new EventEmitter() as ChildProcessWithoutNullStreams;
   const stdout = new PassThrough();
   const stdin = new PassThrough();
@@ -54,8 +54,11 @@ function makeFakeChild(
     queueMicrotask(() => emitClose(null, (signal as NodeJS.Signals) ?? "SIGKILL"));
     return true;
   }) as ChildProcess["kill"];
+  const emitLine = (line: string) => {
+    stdout.emit("data", Buffer.from(line + "\n"));
+  };
   for (const line of lines) {
-    setTimeout(() => stdout.emit("data", Buffer.from(line + "\n")), 0);
+    setTimeout(() => emitLine(line), 0);
   }
   if (closeCode !== undefined) {
     setTimeout(() => emitClose(closeCode, null), CLOSE_DELAY_MS);
@@ -70,7 +73,7 @@ function makeFakeChild(
   Object.defineProperty(spawn, "capturedCwd", { get: () => capturedCwd });
   Object.defineProperty(spawn, "capturedEnv", { get: () => capturedEnv });
   Object.defineProperty(spawn, "stdin", { get: () => stdin });
-  return { child, spawn };
+  return { child, spawn, emitLine, emitClose };
 }
 
 const fakeStdins = new WeakMap<PassThrough, Buffer[]>();
@@ -135,6 +138,30 @@ describe("SwarmChild event fold", () => {
     expect(child.snapshot.turns).toBeGreaterThanOrEqual(1);
     expect(child.snapshot.latestText).toBe("hello");
     expect(child.snapshot.transcript).toEqual([{ kind: "assistant", text: "hello" }]);
+  });
+
+  it("treats agent_end as non-terminal in rpc mode: running resumes until agent_settled, then done", async () => {
+    const { spawn, emitLine } = makeFakeChild(['{"type":"agent_start"}']);
+    const child = await SwarmChild.spawn(invocation(), "/proj", spawn);
+    await new Promise((r) => setTimeout(r, 10));
+    emitLine('{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"x"}]}}');
+    emitLine('{"type":"agent_end"}');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(child.snapshot.status).toBe("running");
+    emitLine('{"type":"agent_settled","aborted":false}');
+    await settleOf(child);
+    expect(child.snapshot.status).toBe("done");
+  });
+
+  it("agent_settled interrupted refines an agent_end settle into interrupted", async () => {
+    const { spawn, emitLine } = makeFakeChild(['{"type":"agent_start"}']);
+    const child = await SwarmChild.spawn(invocation(), "/proj", spawn);
+    await new Promise((r) => setTimeout(r, 10));
+    emitLine('{"type":"agent_end"}');
+    await new Promise((r) => setTimeout(r, 10));
+    emitLine('{"type":"agent_settled","aborted":true}');
+    await settleOf(child);
+    expect(child.snapshot.status).toBe("interrupted");
   });
 
   it("observes running state before settling done", async () => {

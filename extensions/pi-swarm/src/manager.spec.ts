@@ -255,6 +255,22 @@ describe("SwarmManager", () => {
     expect(deliver).toHaveBeenCalledWith(id);
   });
 
+  it("delivers exactly once when a child settles done via agent_end and later interrupted via agent_settled", async () => {
+    const deliver = vi.fn();
+    const factory = (id: string) => makeFactory({ finalText: "x" }).spawn(id);
+    const { manager } = makeManager({ deliver, factory });
+    const id = manager.spawn({ prompt: "p" }).id;
+    const child = (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)!;
+    child.emit({ ...child.snapshot, status: "done", settledAt: 1000, finalText: "x" });
+    await vi.waitFor(() => expect(deliver).toHaveBeenCalledTimes(1));
+    expect(manager.get(id)?.settledAt).toBe(1000);
+    child.emit({ ...child.snapshot, status: "interrupted", settledAt: 2000 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(manager.get(id)?.status).toBe("interrupted");
+    expect(manager.get(id)?.settledAt).toBe(2000);
+  });
+
   it("cancel resolves within the injected bound on an abort-ignoring child and settles interrupted", async () => {
     vi.useFakeTimers();
     try {
