@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { decodeJsonlLine, decodeJsonlBuffer } from "./jsonl.ts";
+import { JSONL_BUFFER_MAX } from "./domain.ts";
 
 describe("jsonl", () => {
   it("decodes a complete line", () => {
@@ -16,5 +17,13 @@ describe("jsonl", () => {
     const b = decodeJsonlBuffer(a.remainder + 'tart"}\n{"type":"agent_end"}');
     expect(b.events).toEqual([{ type: "agent_start" }]);
     expect(b.remainder).toBe('{"type":"agent_end"}');
+  });
+  it("discards a partial remainder above the high-water mark and still decodes subsequent events", () => {
+    const big = "x".repeat(JSONL_BUFFER_MAX + 10);
+    const a = decodeJsonlBuffer(`{"type":"agent_start"}\n${big}`);
+    expect(a.events).toEqual([{ type: "agent_start" }]);
+    expect(a.remainder).toBe("");
+    const b = decodeJsonlBuffer('{"type":"agent_end"}\n');
+    expect(b.events).toEqual([{ type: "agent_end" }]);
   });
 });

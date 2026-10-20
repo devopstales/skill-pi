@@ -5,7 +5,7 @@ import { PassThrough } from "node:stream";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildChildInvocation, resolveSkillPiExe, SwarmChild, type SpawnFn } from "./child.ts";
-import { ERROR_TEXT_BUDGET } from "./domain.ts";
+import { ERROR_TEXT_BUDGET, TRANSCRIPT_MAX_LINES } from "./domain.ts";
 
 const REAL_EXE = join(fileURLToPath(import.meta.url), "..", "..", "..", "..", "bin", "skill-pi.js");
 
@@ -50,7 +50,6 @@ function makeFakeChild(
     if (killed) return true;
     killed = true;
     kill?.(signal);
-    // A real killed process emits close with the signal.
     queueMicrotask(() => emitClose(null, (signal as NodeJS.Signals) ?? "SIGKILL"));
     return true;
   }) as ChildProcess["kill"];
@@ -219,6 +218,20 @@ describe("SwarmChild event fold", () => {
     const child = await SwarmChild.spawn(invocation(), "/proj", spawn);
     await settleOf(child);
     expect(child.snapshot.status).toBe("done");
+  });
+
+  it("caps the transcript at TRANSCRIPT_MAX_LINES keeping the most recent lines", async () => {
+    const lines = ['{"type":"agent_start"}'];
+    for (let i = 0; i < TRANSCRIPT_MAX_LINES + 5; i += 1) {
+      lines.push(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"line ${i}"}]}}`);
+    }
+    lines.push('{"type":"agent_settled","aborted":false}');
+    const { spawn } = makeFakeChild(lines);
+    const child = await SwarmChild.spawn(invocation(), "/proj", spawn);
+    await settleOf(child);
+    expect(child.snapshot.transcript.length).toBe(TRANSCRIPT_MAX_LINES);
+    expect(child.snapshot.transcript[0]).toEqual({ kind: "assistant", text: `line 5` });
+    expect(child.snapshot.transcript[TRANSCRIPT_MAX_LINES - 1]).toEqual({ kind: "assistant", text: `line ${TRANSCRIPT_MAX_LINES + 4}` });
   });
 });
 

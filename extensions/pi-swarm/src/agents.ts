@@ -21,7 +21,6 @@ export function resolveProjectDir(cwd: string): string {
       return isAbsolute(target) ? target : resolve(dirname(link), target);
     }
   } catch {
-    // no project entry in cwd
   }
   return cwd;
 }

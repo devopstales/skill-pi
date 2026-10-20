@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type AgentSnapshot, type SpawnRequest, type SwarmStatus } from "./domain.ts";
+import { PROTOCOL_VERSION, isSettled, type AgentSnapshot, type SpawnRequest, type SwarmStatus } from "./domain.ts";
 
 export interface RpcEnvelope {
   v: number;
@@ -31,10 +31,6 @@ const RPC_CHANNELS: Record<string, string> = {
 };
 
 const REPLY_CHANNEL = "swarm:rpc:reply";
-
-function isSettled(status: SwarmStatus): boolean {
-  return status === "done" || status === "error" || status === "interrupted";
-}
 
 export function installSwarmProtocol(bus: RpcBus, manager: SwarmProtocolManager): { dispose(): void } {
   const prevStatus = new Map<string, SwarmStatus>();

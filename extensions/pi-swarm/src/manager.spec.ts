@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { ABORT_TIMEOUT_MS, CHECK_BUDGET, CHECK_MAX_LINES, WAIT_BUDGET_TOTAL, type AgentSnapshot } from "./domain.ts";
 import { SwarmManager, checkPreview, formatStatusline, truncate, waitPerAgentBudget } from "./manager.ts";
+import { WAIT_TIMEOUT_MS } from "./domain.ts";
 
 interface FakeChildOpts {
   settle?: () => void;
@@ -14,6 +15,7 @@ interface FakeChildOpts {
 class FakeChild {
   readonly id: string;
   readonly sentTexts: string[] = [];
+  readonly killedSignals: string[] = [];
   private listeners = new Set<(s: AgentSnapshot) => void>();
   private state: AgentSnapshot;
   private readonly opts: Required<Omit<FakeChildOpts, "onAbort">> & { onAbort?: () => void };
@@ -56,6 +58,11 @@ class FakeChild {
     this.opts.onAbort?.();
     if (this.opts.ignoreAbort) return new Promise(() => {});
     return Promise.resolve();
+  }
+
+  kill(signal?: string): boolean {
+    this.killedSignals.push(signal ?? "SIGKILL");
+    return true;
   }
 
   onSnapshot(listener: (s: AgentSnapshot) => void): () => void {
@@ -104,6 +111,7 @@ function makeManager(opts: {
   deliver?: (agentId: string) => void;
   factory?: (id: string) => FakeChild;
   abortTimeoutMs?: number;
+  waitTimeoutMs?: number;
 }) {
   const deliver = opts.deliver ?? vi.fn();
   const factory = opts.factory ?? ((id: string) => makeFactory().spawn(id));
@@ -115,6 +123,7 @@ function makeManager(opts: {
       maxRunning: opts.maxRunning,
       maxTracked: opts.maxTracked,
       abortTimeoutMs: opts.abortTimeoutMs,
+      waitTimeoutMs: opts.waitTimeoutMs,
       spawnChild: (id, createdAt) => factory(id),
     }),
     deliver,
@@ -255,6 +264,22 @@ describe("SwarmManager", () => {
     expect(deliver).toHaveBeenCalledWith(id);
   });
 
+  it("a throwing deliver does not reject the settle path", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const { manager } = makeManager({ deliver: () => { throw new Error("boom"); } });
+      const id = manager.spawn({ prompt: "p" }).id;
+      (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)?.settle("done");
+      await vi.waitFor(() => expect(manager.get(id)?.status).toBe("done"));
+      expect(manager.get(id)?.finalText).toBeDefined();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it("delivers exactly once when a child settles done via agent_end and later interrupted via agent_settled", async () => {
     const deliver = vi.fn();
     const factory = (id: string) => makeFactory({ finalText: "x" }).spawn(id);
@@ -287,6 +312,37 @@ describe("SwarmManager", () => {
     }
   });
 
+  it("waitFor enforces a per-call deadline on a never-settling child and force-settles it error", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const { manager } = makeManager({ waitTimeoutMs: 50 });
+      const id = manager.spawn({ prompt: "p" }).id;
+      const start = Date.now();
+      const snapshots = await manager.waitFor([id]);
+      expect(Date.now() - start).toBeLessThan(2000);
+      expect(snapshots[0].status).toBe("error");
+      expect(snapshots[0].errorText).toBe("wait timed out");
+      expect(manager.get(id)?.status).toBe("error");
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it("waitFor deadline resolves a second wait-interested caller on the same child", async () => {
+    const { manager } = makeManager({ waitTimeoutMs: 50 });
+    const id = manager.spawn({ prompt: "p" }).id;
+    const first = manager.waitFor([id]);
+    const second = manager.waitFor([id]);
+    const snapshots = await first;
+    expect(snapshots[0].status).toBe("error");
+    const snapshots2 = await second;
+    expect(snapshots2[0].status).toBe("error");
+    expect(manager.get(id)?.status).toBe("error");
+  });
+
   it("LRU prunes the least-recently-settled settled agent first, never running or queued", () => {
     const m2 = makeManager({ maxTracked: 3 }).manager;
     const a = m2.spawn({ prompt: "a" }).id;
@@ -296,7 +352,6 @@ describe("SwarmManager", () => {
     children.get(a)?.settle("done");
     children.get(b)?.settle("done");
     children.get(c)?.settle("done");
-    // refresh b so a is the least-recently-settled
     children.get(b)?.settle("done");
     const d = m2.spawn({ prompt: "d" }).id;
     children.get(d)?.settle("done");
@@ -398,6 +453,23 @@ describe("SwarmManager", () => {
     expect(manager.get(a)?.status).toBe("interrupted");
     expect(manager.get(a)?.settledAt).toBeDefined();
     expect(manager.get(b)?.status).toBe("running");
+  });
+
+  it("cancel of an abort-ignoring child kills the process with SIGKILL on the timeout path", async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager } = makeManager({ abortTimeoutMs: 100, factory: (id) => makeFactory({ ignoreAbort: true }).spawn(id) });
+      const id = manager.spawn({ prompt: "p" }).id;
+      const child = (manager as unknown as { children: Map<string, FakeChild> }).children.get(id)!;
+      const promise = manager.cancel(id);
+      expect(child.killedSignals).toEqual([]);
+      await vi.advanceTimersByTimeAsync(200);
+      await promise;
+      expect(child.killedSignals).toEqual(["SIGKILL"]);
+      expect(manager.get(id)?.status).toBe("interrupted");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("cancel of a settled agent reports the was-already outcome and keeps its original status", async () => {

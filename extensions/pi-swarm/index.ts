@@ -265,8 +265,6 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     updateFleetWidget(session);
   };
 
-  const leaderArmed = (ctx: ExtensionContext): boolean => fleetSessions.get(sessionKey(ctx))?.leaderArmed ?? false;
-
   const swarmListText = (mgr: SwarmManager): string => {
     const agents = mgr.list();
     if (agents.length === 0) return "no swarm agents";
@@ -367,8 +365,6 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
     return { action: "handled" as const };
   });
 
-  void leaderArmed;
-
   pi.registerTool({
     name: "swarm_spawn",
     label: "Swarm Spawn",
@@ -452,7 +448,7 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
       }),
     }),
     executionMode: "sequential",
-    async execute(_toolCallId, params, _signal, onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const mgr = getManager(ctx);
       if (params.ids.length === 0) {
         return { content: [{ type: "text" as const, text: "no ids to wait for" }], details: {} };
@@ -463,7 +459,15 @@ export default function piSwarm(pi: ExtensionAPI, env: NodeJS.ProcessEnv = proce
         details: { waiting: true },
       });
       try {
-        const snapshots = await mgr.waitFor(ids);
+        const waitPromise = mgr.waitFor(ids);
+        let abortListener: ((...args: unknown[]) => void) | undefined;
+        const aborted = new Promise<AgentSnapshot[]>((resolve) => {
+          if (!signal || signal.aborted) return resolve(ids.map((id) => mgr.get(id)!) as AgentSnapshot[]);
+          abortListener = () => resolve(ids.map((id) => mgr.get(id)!) as AgentSnapshot[]);
+          signal.addEventListener("abort", abortListener, { once: true });
+        });
+        const snapshots = await Promise.race([waitPromise, aborted]);
+        if (abortListener && signal) signal.removeEventListener("abort", abortListener);
         const budget = waitPerAgentBudget(snapshots.length);
         const parts: string[] = [];
         for (const s of snapshots) {

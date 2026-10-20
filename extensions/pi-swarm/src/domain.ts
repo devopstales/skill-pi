@@ -2,6 +2,9 @@ export const MAX_RUNNING = 4;
 export const MAX_TRACKED = 64;
 export const ABORT_TIMEOUT_MS = 5000;
 export const RESULT_BUDGET = 24 * 1024;
+export const WAIT_TIMEOUT_MS = 300_000;
+export const JSONL_BUFFER_MAX = 65536;
+export const TRANSCRIPT_MAX_LINES = 500;
 export const WAIT_BUDGET_TOTAL = 48 * 1024;
 export const WAIT_BUDGET_PER_AGENT = 16 * 1024;
 export const CHECK_BUDGET = 2 * 1024;
@@ -11,6 +14,10 @@ export const PROTOCOL_VERSION = 1;
 export const RESULT_CUSTOM_TYPE = "swarm-result";
 
 export type SwarmStatus = "queued" | "running" | "done" | "error" | "interrupted";
+
+export function isSettled(status: SwarmStatus): boolean {
+  return status === "done" || status === "error" || status === "interrupted";
+}
 
 export interface AgentSnapshot {
   id: string;
@@ -39,7 +46,6 @@ export interface SpawnRequest {
   title?: string;
   agentType?: string;
   model?: string;
-  inheritContext?: boolean;
 }
 
 export interface SwarmChildHandle {
@@ -47,5 +53,6 @@ export interface SwarmChildHandle {
   readonly snapshot: AgentSnapshot;
   send(text: string): void;
   abort(): Promise<void>;
+  kill(signal?: NodeJS.Signals): boolean;
   onSnapshot(listener: (s: AgentSnapshot) => void): () => void;
 }

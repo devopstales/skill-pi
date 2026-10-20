@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeJsonlBuffer } from "./jsonl.ts";
-import { ERROR_TEXT_BUDGET, type AgentSnapshot, type SwarmStatus, type TranscriptLine } from "./domain.ts";
+import { ERROR_TEXT_BUDGET, TRANSCRIPT_MAX_LINES, type AgentSnapshot, type SwarmStatus, type TranscriptLine } from "./domain.ts";
 
 export type SpawnFn = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
@@ -44,6 +44,11 @@ interface ChildState {
   errorText?: string;
   transcript: TranscriptLine[];
   settledAt?: number;
+}
+
+function appendTranscript(transcript: TranscriptLine[], line: TranscriptLine): void {
+  transcript.push(line);
+  while (transcript.length > TRANSCRIPT_MAX_LINES) transcript.shift();
 }
 
 function textOf(message: unknown): string {
@@ -177,7 +182,7 @@ export class SwarmChild {
         if (message?.role === "assistant") {
           const text = textOf(message);
           if (text !== "") {
-            this.state.transcript.push({ kind: "assistant", text });
+            appendTranscript(this.state.transcript, { kind: "assistant", text });
             this.state.latestText = text;
             this.state.finalText = text;
             this.state.turns += 1;
@@ -190,7 +195,7 @@ export class SwarmChild {
       case "tool_execution_update":
       case "tool_execution_end": {
         const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-        this.state.transcript.push({ kind: "tool", text: toolName });
+        appendTranscript(this.state.transcript, { kind: "tool", text: toolName });
         this.notify();
         break;
       }
@@ -198,9 +203,6 @@ export class SwarmChild {
         this.settle(event.aborted === true ? "interrupted" : "done");
         break;
       case "agent_end":
-        // Non-terminal: pi emits agent_end at run end but stays alive in RPC
-        // mode (aborts still follow it with agent_settled). settle() is
-        // idempotent, so a later agent_settled can refine done -> interrupted.
         this.settle("done");
         this.state.status = "running";
         break;

@@ -7,6 +7,8 @@ import {
   RESULT_BUDGET,
   WAIT_BUDGET_PER_AGENT,
   WAIT_BUDGET_TOTAL,
+  WAIT_TIMEOUT_MS,
+  isSettled,
   type SpawnRequest,
   type SwarmStatus,
 } from "./domain.ts";
@@ -71,6 +73,7 @@ export interface SwarmManagerOptions {
   maxRunning?: number;
   maxTracked?: number;
   abortTimeoutMs?: number;
+  waitTimeoutMs?: number;
   spawnChild?: (id: string, createdAt: number) => SwarmChildHandle;
 }
 
@@ -79,7 +82,7 @@ export class SwarmManager {
   private readonly records = new Map<string, AgentRecord>();
   private readonly listeners = new Set<() => void>();
   private readonly agentListeners = new Map<string, Set<(s: AgentSnapshot) => void>>();
-  private readonly opts: Required<Pick<SwarmManagerOptions, "cwd" | "agentDir" | "deliver" | "maxRunning" | "maxTracked" | "abortTimeoutMs">> &
+  private readonly opts: Required<Pick<SwarmManagerOptions, "cwd" | "agentDir" | "deliver" | "maxRunning" | "maxTracked" | "abortTimeoutMs" | "waitTimeoutMs">> &
     Pick<SwarmManagerOptions, "spawnChild">;
   private runningCount = 0;
   private seq = 0;
@@ -92,6 +95,7 @@ export class SwarmManager {
       maxRunning: opts.maxRunning ?? MAX_RUNNING,
       maxTracked: opts.maxTracked ?? MAX_TRACKED,
       abortTimeoutMs: opts.abortTimeoutMs ?? ABORT_TIMEOUT_MS,
+      waitTimeoutMs: opts.waitTimeoutMs ?? WAIT_TIMEOUT_MS,
       spawnChild: opts.spawnChild,
     };
   }
@@ -188,6 +192,23 @@ export class SwarmManager {
       record.waiters += 1;
       return { record, settled: this.whenSettled(record) };
     });
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      deadlineTimer = setTimeout(() => {
+        for (const { record } of waiters) {
+          if (!isSettled(record.snapshot.status)) this.forceSettleTimeout(record);
+        }
+        for (const { record } of waiters) {
+          const set = this.agentListeners.get(record.id);
+          if (set) for (const listener of [...set]) listener(record.snapshot);
+        }
+        resolve();
+      }, this.opts.waitTimeoutMs);
+      (deadlineTimer as { unref?: () => void }).unref?.();
+    });
+    Promise.all([deadline, Promise.all(waiters.map(({ settled }) => settled))]).finally(() => {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    });
     return Promise.all(
       waiters.map(({ record, settled }) =>
         settled.then((s) => this.finishWait(record, s)),
@@ -216,6 +237,7 @@ export class SwarmManager {
     const abortPromise = child.abort();
     const timeout = new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
+        child.kill();
         this.forceSettle(record);
         resolve();
       }, this.opts.abortTimeoutMs);
@@ -275,6 +297,7 @@ export class SwarmManager {
         resolved?.send(text);
       },
       abort: () => resolved?.abort() ?? childPromise.then((c) => c.abort()),
+      kill: (signal?: NodeJS.Signals) => resolved?.kill(signal) ?? false,
       onSnapshot: (listener: (s: AgentSnapshot) => void) => {
         listeners.add(listener);
         return () => {
@@ -316,7 +339,10 @@ export class SwarmManager {
     this.notify();
     if (settledRecord && isSettled(settledRecord.snapshot.status) && settledRecord.waiters === 0 && !settledRecord.snapshot.consumed && !settledRecord.delivered) {
       settledRecord.delivered = true;
-      this.opts.deliver(settledRecord.id);
+      try {
+        this.opts.deliver(settledRecord.id);
+      } catch {
+      }
     }
   }
 
@@ -343,9 +369,15 @@ export class SwarmManager {
     this.onSettled(record, wasRunning);
   }
 
+  private forceSettleTimeout(record: AgentRecord): void {
+    const wasRunning = record.snapshot.status === "running";
+    record.snapshot = { ...record.snapshot, status: "error", errorText: "wait timed out", settledAt: record.snapshot.settledAt ?? Date.now() };
+    this.onSettled(record, wasRunning);
+  }
+
   private prune(): void {
     const settled = [...this.records.values()].filter((r) => isSettled(r.snapshot.status) && r.waiters === 0);
-    if (settled.length + 0 <= this.opts.maxTracked) return;
+    if (settled.length <= this.opts.maxTracked) return;
     settled.sort((a, b) => (a.snapshot.settledAt ?? 0) - (b.snapshot.settledAt ?? 0));
     const excess = settled.length - (this.opts.maxTracked - [...this.records.values()].filter((r) => !isSettled(r.snapshot.status)).length);
     for (const record of settled.slice(0, Math.max(0, excess))) this.remove(record);
@@ -366,8 +398,4 @@ export class SwarmManager {
   private notify(): void {
     for (const listener of [...this.listeners]) listener();
   }
-}
-
-function isSettled(status: AgentSnapshot["status"]): boolean {
-  return status === "done" || status === "error" || status === "interrupted";
 }
