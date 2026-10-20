@@ -251,6 +251,9 @@ async function main() {
       },
     },
   );
+  if (spawn.error) {
+    fail(`failed to launch pi: ${spawn.error.message}`);
+  }
   process.exit(spawn.status ?? 1);
 }
 
