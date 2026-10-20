@@ -22,6 +22,7 @@ import { BashArity } from "./bash-arity.js";
 import { extractBashCommands } from "./bash-parser.js";
 import { getExtensionSettingsPaths } from "./project.js";
 import { buildHardRejectedReason, resolvePermissionRejection } from "./rejection.js";
+import { showCommandPreviewDialog } from "./command-dialog.js";
 import { showPermissionReviewDialog } from "./review-dialog.js";
 import {
   buildEditPermissionPreview,
@@ -400,6 +401,9 @@ async function promptForPermission(
   }
 
   const details = argValue ?? JSON.stringify(input, null, 2);
+  if (argValue && (argValue.length > 80 || argValue.includes("\n"))) {
+    return showCommandPreviewDialog(ctx, { toolName, command: argValue });
+  }
   const title = `${toolName}\n\n${details}\n\nChoose permission:`;
   const choice = await ctx.ui.select(title, [...PERMISSION_CHOICES]);
   return isPermissionPromptChoice(choice) ? choice : undefined;
