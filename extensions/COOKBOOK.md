@@ -1658,15 +1658,634 @@ pi-swarm adds a **2-second auto-disarm timer** (`onLeaderArm` sets `setTimeout((
 
 ## 11. Defensive Coding Checklist
 
-The non-negotiables: try/catch around I/O (fail-open), timeouts on external commands, structural feature detection for newer pi APIs, `?.`-chained env reads, version audits, prompt-cache awareness. _Filled in by Task 4._
+The non-negotiables. Every one of these is a rule that keeps an extension from crashing the host session: an extension's worst failure mode is not a missing feature, it is a `throw` that takes pi down with it.
+
+### 1. Every I/O in try/catch — fail-open, never crash the session
+
+An extension that reads config, writes a handoff file, or probes a tool must treat failure as "feature off", not as a session-killer. The pattern, verbatim from `extensions/lsp/index.ts` lines 26–44 — a `session_start` handler that loads config and eager-inits servers, where a missing or malformed `lsp.conf` is a warning, not a throw:
+
+```typescript
+pi.on("session_start", (_event, ctx) => {
+  try {
+    const config = loadConfig(ctx.cwd);
+    if (!config.eagerInit) return;
+    for (const server of serversForWorkspace(config, ctx.cwd)) {
+      manager
+        .getClient(config, ctx.cwd, { serverId: server.id })
+        .catch(() => {
+          // lazy re-attempt happens on first code_symbols call; the
+          // serverId:rootPath key is evicted on failure so it is not cached
+          console.warn(`[lsp] eager init failed for server "${server.id}" (will retry on first code_symbols call)`);
+        });
+    }
+  } catch (err) {
+    // no config or a malformed conf: the tool re-loads on first call and
+    // surfaces a precise error there, so this is a warning, not a throw
+    console.warn(`[lsp] session_start config load skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+});
+```
+
+The same shape appears where the fallback is a default value instead of a warning — `extensions/lsp/src/config.ts` lines 26–37: `git rev-parse` fails (not a git repo) and the code falls back to the given `cwd`:
+
+```typescript
+export function resolveProjectRoot(cwd: string): string {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out ? resolve(out) : resolve(cwd);
+  } catch {
+    return resolve(cwd);
+  }
+}
+```
+
+And in the discard path of `extensions/webfetch/src/webfetch/fetcher.ts` lines 214–228, the catch is silent because re-emitting an error on an unlistened stream would crash the host:
+
+```typescript
+export async function discardBody(body: ResponseBodyStream, signal?: AbortSignal): Promise<void> {
+  body.on?.("error", () => {});
+  body.once?.("error", () => {});
+  try {
+    if (typeof body.dump === "function") {
+      await body.dump(signal ? { limit: 1024, signal } : { limit: 1024 });
+      return;
+    }
+    await drainBody(body, signal);
+  } catch {
+    // Discard failures are not actionable for the caller.
+  } finally {
+    body.destroy();
+  }
+}
+```
+
+Rule: a user-facing failure is reported where the user is looking (a tool result, a command reply); a background failure is a `console.warn` or a silent skip. An extension handler that throws on `session_start` kills the session.
+
+### 2. Every external command has a timeout
+
+`execFile`/`exec` with no timeout hangs the session indefinitely. The bundled extensions pin timeouts at the call site:
+
+`extensions/file-search/index.ts` line 104 and lines 214–228 — a 60-second bound on every search, surfaced through Effect's timeout error channel:
+
+```typescript
+const EXEC_TIMEOUT_MS = 60_000;
+// …
+async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+  const exit = await Effect.runPromiseExit(
+    Effect.gen(function* () {
+      const outcome = yield* runSearch("fd", buildFdArgs(params), ctx);
+      return searchToolContent("fd", outcome, "matchCount") satisfies AgentToolResult<FdToolDetails>;
+    }),
+    signal ? { signal } : undefined,
+  );
+  return unwrapToolExit(exit, "fd");
+}
+```
+
+`extensions/webfetch/src/webfetch/fetcher.ts` lines 54–79 — `AbortController` + `setTimeout`, with the timeout clamped to a hard ceiling before it is ever used (lines 13, 93–97):
+
+```typescript
+export async function fetchUrl(options: FetchOptions): Promise<FetchResult> {
+  validateUrl(options.url);
+
+  const timeoutSeconds = clampTimeout(options.timeoutSeconds);
+  const timeoutMs = timeoutSeconds * 1000;
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new WebfetchTimeoutError(`Request timed out after ${timeoutSeconds}s`)),
+    timeoutMs,
+  );
+  const removeAbortForwarder = forwardAbort(options.signal, controller);
+
+  try {
+    const response = await requestUrl({
+      url: options.url,
+      format: options.format,
+      signal: controller.signal,
+      timeoutMs,
+    });
+
+    return await readHttpResponse(response, controller.signal);
+  } finally {
+    clearTimeout(timeout);
+    removeAbortForwarder();
+  }
+}
+```
+
+```typescript
+export const MAX_TIMEOUT_SECONDS = 120;
+// …
+export function clampTimeout(timeoutSeconds: number | undefined): number {
+  if (timeoutSeconds === undefined) return DEFAULT_TIMEOUT_SECONDS;
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return DEFAULT_TIMEOUT_SECONDS;
+  return Math.min(Math.ceil(timeoutSeconds), MAX_TIMEOUT_SECONDS);
+}
+```
+
+`extensions/lsp/src/lsp-client.ts` lines 119, 165–177 — a `Promise.race` against a 60-second init timer, so a hung language server can never wedge the client:
+
+```typescript
+static readonly INIT_TIMEOUT_MS = 60_000;
+// …
+const timeout = new Promise<never>((_, reject) => {
+  setTimeout(
+    () =>
+      reject(
+        new Error(
+          `LSP server ${match.server.id} initialization timed out after ${LspClient.INIT_TIMEOUT_MS}ms`,
+        ),
+      ),
+    LspClient.INIT_TIMEOUT_MS,
+  );
+});
+await Promise.race([client.initialize(), timeout]);
+```
+
+Even a one-shot `--version` probe is bounded — `extensions/file-search/src/binaries.ts` lines 399–412:
+
+```typescript
+export const liveBinaryEnv: BinaryEnv = {
+  probe: (command, tool) =>
+    Effect.promise(async () => {
+      try {
+        const args =
+          tool === "fd" ? ["--max-results", "1", "--", ""] : ["--version"];
+        await execFileAsync(command, args, {
+          cwd: tmpdir(),
+          timeout: 5_000,
+        });
+        return true;
+      } catch {
+        return false;
+```
+
+Rule: no `exec*`, no HTTP request, no child-process `spawn` without a timeout. When the timeout fires, produce a normal tool result ("timed out"), not an unhandled rejection.
+
+### 3. Structural feature detection for newer pi APIs
+
+An extension pinned to an older pi must not assume the newer method exists. Test the shape, then branch:
+
+`extensions/todo/index.ts` lines 301–303 — `ctx.ui.onTerminalInput` only exists on pi builds that shipped it:
+
+```typescript
+if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
+```
+
+`extensions/webfetch/src/webfetch/fetcher.ts` line 218 — undici builds differ; check the body's shape before calling `dump()`:
+
+```typescript
+if (typeof body.dump === "function") {
+  await body.dump(signal ? { limit: 1024, signal } : { limit: 1024 });
+  return;
+}
+```
+
+The `registerToolRenderer` detection in the brief follows the same shape as `extensions/quiet-tools`'s host check in gentle-shell (`extensions/quiet-tools.ts` lines 880–882, fetched from the upstream repo):
+
+```typescript
+const host = pi as typeof pi & { registerToolRenderer?: (resolver: (toolName: string, next: () => unknown) => unknown) => void };
+if (typeof host.registerToolRenderer === "function") {
+  host.registerToolRenderer((toolName, next) =>
+```
+
+Rule: `typeof host.x === "function"` for anything optional; a missing method is a no-op path, never a crash.
+
+### 4. Env var reads are `?.` chained with fallbacks
+
+`process.env` values are strings or `undefined` — nothing else. Chain optional access and normalize:
+
+`extensions/todo/index.ts` lines 90–99:
+
+```typescript
+export function todoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.SKILL_PI_TODO?.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "off");
+}
+
+export function todoCollapseKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const value = env.SKILL_PI_TODO_KEY?.trim();
+  if (value === undefined) return COLLAPSE_KEY_DEFAULT;
+  return value === "" || value.toLowerCase() === "off" ? undefined : value;
+}
+```
+
+`extensions/webfetch/index.ts` lines 32–46 — unknown values fall back to default-on rather than throwing:
+
+```typescript
+function parseEnableEnv(envVar: string): boolean {
+  const envValue = process.env[envVar];
+  if (!envValue) {
+    return true;
+  }
+  const normalized = envValue.trim().toLowerCase();
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  // Unknown values fall back to default-on behavior.
+  return true;
+}
+```
+
+Rule: every env read goes through a named parser with a defined default; a garbage value degrades to the default, never to `undefined` leaking into a template string.
+
+### 5. Version audit before enabling features
+
+When a feature depends on a specific host version (or a specific runtime layout), audit the version *before* turning the feature on — and treat an unparseable version as "unknown", not "supported":
+
+`extensions/pi-context-view/src/pi-version.ts` (whole file, 29 lines):
+
+```typescript
+export const MIN_PI_VERSION = "1.2.0";
+
+export function isSupportedPiVersion(version: string): boolean {
+  const current = parseVersionCore(version);
+  const minimum = parseVersionCore(MIN_PI_VERSION);
+  if (current === undefined || minimum === undefined) return true;
+  for (const [index, part] of current.entries()) {
+    if (part !== minimum[index]) return part > minimum[index];
+  }
+  return true;
+}
+
+function parseVersionCore(version: string): [number, number, number] | undefined {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+  if (match === null) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+```
+
+The refusal is user-facing, `extensions/pi-context-view/src/command.ts` lines 124–129:
+
+```typescript
+export function reportUnsupportedPi(context: ExtensionCommandContext, version: string): void {
+  reportCommandMessage(context,
+    `/context requires Pi ${MIN_PI_VERSION} or newer; this is Pi ${version}. Nothing was captured.`,
+    "error",
+  );
+}
+```
+
+The strict end of the spectrum is gentle-shell's Vim runtime audit: the entire Gentle Vim editor mode is enabled only when the running pi editor matches an explicitly audited release list (`lib/vim-editor-adapter.ts`, `AUDITED_PI_EDITOR_VERSIONS = ["0.99.1", "0.99.2", "1.0.0", "1.1.0", "1.2.0"]`), and `extensions/gentle-shell.ts` lines 486–493 close the gate with a compatibility notice instead of a crash:
+
+```typescript
+this.vimRejected = false;
+try { this.vimAdapter(); }
+catch {
+  this.vimRejected = true;
+  // …
+  this.deps.notifyCompatibility?.("Gentle Vim unsupported by this Pi editor layout/version; ordinary editing remains active.");
+}
+```
+
+Rule: a feature gate reads the host version, compares it once at enable time, and degrades with a one-line notice. Never probe-try-and-catch your way into a feature.
+
+### 6. Prompt-cache awareness: hidden messages are append-only, never rewritten
+
+The model's prompt is prefix-cached (Anthropic) / delta-encoded (OpenAI). Anything the extension puts in the transcript must therefore be **append-only**: rewrite an earlier hidden message and you invalidate the cache for the whole session. The canonical example is `todo`'s `context` handler, `extensions/todo/index.ts` lines 384–405 — the snapshot is only ever re-attached as a trailing message when the transcript lost it (compaction, branch navigation); existing messages are never mutated:
+
+```typescript
+pi.on("context", (event, ctx) => {
+  const current = session(ctx);
+  const trailing: Array<{ role: "custom"; customType: string; content: string; display: false; timestamp: number }> = [];
+  const last = [...event.messages].reverse().find((message) => (message as { customType?: string }).customType === TODO_STATE_MESSAGE_TYPE) as { content?: unknown } | undefined;
+  const seen = typeof last?.content === "string" ? last.content : undefined;
+  const state = todoStateMessage(current.state) ?? (seen === undefined || seen === TODO_CLOSED_MARKER ? undefined : TODO_CLOSED_MARKER);
+  if (state !== undefined && seen !== state) {
+    // The transcript lost the current snapshot (compaction, branch
+    // navigation): treat the re-attached list as fresh so the stale counter
+    // does not fire on the next few turns.
+    current.lastWriteTurn = current.turn;
+    trailing.push({ role: "custom", customType: TODO_STATE_MESSAGE_TYPE, content: state, display: false, timestamp: Date.now() });
+    if (current.pending !== state) persistState(current, state);
+  }
+  const actionable = current.state.tasks.some((task) => task.status === "pending" || task.status === "in_progress");
+  if (!current.reminded && current.toolTurnsSinceWrite >= REMIND_AFTER_TOOL_TURNS && actionable) {
+    current.reminded = true;
+    trailing.push({ role: "custom", customType: TODO_REMINDER_MESSAGE_TYPE, content: TODO_REMINDER_TEXT, display: false, timestamp: Date.now() });
+  }
+  if (trailing.length === 0) return undefined;
+  return { messages: [...event.messages, ...trailing] };
+});
+```
+
+Rule: `pi.sendMessage({ display: false })` and `context`-event trailing messages are append-only. To "update" state, send a new hidden message; to "delete" it, send a closed marker. Never splice, replace, or rewrite a message that was already in a request.
 
 ## 12. Testing Patterns
 
-Per-extension vitest setup, factory injection for testability, pure-function extraction, `__testing` exports, golden file tests. _Filled in by Task 4._
+Per-extension, self-contained (ADR-0007): each extension owns its toolchain and its tests. `todo` declares it in `extensions/todo/package.json`:
+
+```json
+"scripts": {
+  "check": "tsc --noEmit -p .",
+  "test": "vitest run",
+  "test:watch": "vitest"
+},
+"devDependencies": {
+  "@types/node": "^24.0.0",
+  "typescript": "^5.5.0",
+  "vitest": "^5.0.0"
+}
+```
+
+ADR-0007 allows vitest (todo's choice) or `bun test` (pi-context-include's choice) — the pattern is what matters, not the runner.
+
+### Pattern 1 — Factory injection: the extension factory takes its dependencies
+
+The extension's default export is a factory that accepts its environment as a parameter, so tests inject fakes:
+
+`extensions/todo/index.ts` line 122:
+
+```typescript
+export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env): void {
+  if (!todoEnabled(env)) return;
+```
+
+The test side, `extensions/todo/index.spec.ts`: `makeCtx`/`makePi` build a mocked `ExtensionAPI` that records registrations, and `emit` fires events through them:
+
+```typescript
+function makePi(): MockPi {
+  const ctx = makeCtx();
+  const mock: MockPi = {
+    tools: new Map(),
+    shortcuts: [],
+    events: new Map(),
+    sent: [],
+    ctx,
+  };
+  const pi = {
+    on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
+      const list = mock.events.get(event) ?? [];
+      list.push(handler);
+      mock.events.set(event, list);
+      return () => undefined;
+    },
+    registerTool: (tool: RecordedTool & { name: string }) => {
+      mock.tools.set(tool.name, tool);
+    },
+    // …
+    sendMessage: (message: { customType: string; content: string; display: boolean }) => {
+      mock.sent.push(message);
+    },
+    // …
+  } as unknown as ExtensionAPI;
+  piTodo(pi);
+  return mock;
+}
+
+function emit(mock: MockPi, event: string, payload: unknown = {}, ctx: ExtensionContext = mock.ctx): unknown {
+  const handlers = mock.events.get(event) ?? [];
+  let last: unknown;
+  for (const handler of handlers) {
+    const result = handler(payload, ctx);
+    if (result !== undefined) last = result;
+  }
+  return last;
+}
+```
+
+A real test that drives the tool through the mock and asserts on recorded side effects (`index.spec.ts` lines 159–170):
+
+```typescript
+it("write persists a hidden state message for the transcript", async () => {
+  const mock = makePi();
+  const tool = mock.tools.get(TODO_TOOL_NAME)!;
+  await tool.execute("1", { action: "write", tasks: [{ title: "A" }] }, undefined, undefined, mock.ctx);
+  assert.equal(mock.sent.length, 1);
+  assert.equal(mock.sent[0].customType, TODO_STATE_MESSAGE_TYPE);
+  assert.equal(mock.sent[0].display, false);
+  assert.match(mock.sent[0].content, /- \[1\] A \(pending\)/);
+  const again = await tool.execute("2", { action: "list" }, undefined, undefined, mock.ctx);
+  assert.ok(again.content[0]);
+  assert.equal(mock.sent.length, 1, "list does not re-persist");
+});
+```
+
+Env-injection tests cover the kill-switch without touching `process.env` (the pure-parser variant, lines 233–245):
+
+```typescript
+it("env: SKILL_PI_TODO=0 disables the extension", () => {
+  assert.equal(todoEnabled({ SKILL_PI_TODO: "0" } as NodeJS.ProcessEnv), false);
+  assert.equal(todoEnabled({ SKILL_PI_TODO: "off" } as NodeJS.ProcessEnv), false);
+  assert.equal(todoEnabled({} as NodeJS.ProcessEnv), true);
+  assert.equal(todoEnabled({ SKILL_PI_TODO: "1" } as NodeJS.ProcessEnv), true);
+});
+```
+
+And the end-to-end variant that does swap the process env, guarded by try/finally so a failure cannot leak state (lines 280–297):
+
+```typescript
+it("disabled env: registers nothing", () => {
+  const ctx = makeCtx();
+  const mock: MockPi = { tools: new Map(), shortcuts: [], events: new Map(), sent: [], ctx };
+  const pi = {
+    on: () => () => undefined,
+    registerTool: () => undefined,
+    registerShortcut: () => undefined,
+  } as unknown as ExtensionAPI;
+  const original = process.env;
+  process.env = { ...original, SKILL_PI_TODO: "0" } as NodeJS.ProcessEnv;
+  try {
+    piTodo(pi);
+  } finally {
+    process.env = original;
+  }
+  assert.equal(mock.tools.size, 0);
+  assert.equal(mock.shortcuts.length, 0);
+});
+```
+
+The same factory shape is what gentle-shell uses for its heavier extensions — `session-scratch.ts` exports `createSessionScratchExtension(options)` with injected `env`, `now`, `isProcessAlive`, `processStartToken`, `graceMs`, `platform`; `gentle-herdr-activity.ts` does the same with `isSocket`, `send`, `watch`, `columns`.
+
+### Pattern 2 — Pure function extraction: model logic without the framework
+
+Everything that is not pi wiring lives in a pure module. `extensions/todo/src/model.ts` has zero pi imports — `applyTodo`, `todoSummary`, `parseSnapshot`, `replayTodo`, `staleTurns` are plain functions over plain data:
+
+```typescript
+export function applyTodo(state: TodoState, params: TodoParams, turn: number): TodoApplyResult {
+  switch (params.action) {
+    case "write":
+      return applyWrite(state, params);
+    case "add":
+      return applyAdd(state, params);
+    case "update":
+      return applyUpdate(state, params);
+    case "clear":
+      return state.tasks.length === 0
+        ? { state, text: "Todo list is empty.", changed: false }
+        : { state: emptyTodo(), text: "Todo list cleared.", changed: true };
+    case "list":
+      return { state, text: renderList(state), changed: false };
+    default:
+      return { state, text: "", error: `unknown action: ${String((params as { action?: unknown }).action)}`, changed: false };
+  }
+  void turn;
+}
+```
+
+The spec (`extensions/todo/model.spec.ts`, 21 tests) imports only `./src/model.ts` — no `ExtensionAPI`, no pi types:
+
+```typescript
+import {
+  applyTodo,
+  emptyTodo,
+  parseSnapshot,
+  parseSnapshotMessage,
+  replayTodo,
+  staleTurns,
+  todoStateMessage,
+  todoSummary,
+  TODO_CLOSED_MARKER,
+  TODO_STATE_MESSAGE_TYPE,
+  type TodoState,
+} from "./src/model.ts";
+
+it("write: replaces the list, keeps existing ids, assigns new ids", () => {
+  let state = emptyTodo();
+  let result = applyTodo(state, { action: "write", tasks: [{ title: "A" }, { title: "B" }] }, 0);
+  assert.ok(!result.error);
+  state = result.state;
+  assert.deepEqual(state.tasks.map((t) => t.id), [1, 2]);
+  assert.equal(state.nextId, 3);
+
+  result = applyTodo(state, { action: "write", tasks: [{ id: 1, title: "A2", status: "done" }, { title: "C" }] }, 1);
+  assert.ok(!result.error);
+  state = result.state;
+  assert.deepEqual(state.tasks.map((t) => [t.id, t.title, t.status]), [
+    [1, "A2", "done"],
+    [3, "C", "pending"],
+  ]);
+  assert.equal(state.nextId, 4);
+});
+```
+
+Rule: if a function takes `state + params` and returns `state + text + error`, it belongs in `src/model.ts` and is testable without a mock at all.
+
+### Pattern 3 — Golden file tests for rendering
+
+Card rendering is layout-sensitive; asserting "it contains X" misses wrapping regressions. `extensions/todo/card-golden.spec.ts` pins the exact rendered lines and regenerates them with an env flag:
+
+```typescript
+const GOLDEN: Record<string, string[]> = {
+  empty: [
+    "╭─ ◔ Todo · 0/0 · 0 open ──────────────╮",
+    "│ No todos yet.                        │",
+    "╰─────────────────── 0 open · 0/0 done ╯",
+  ],
+  "all-statuses": [
+    "╭─ ◔ Todo · 1/5 · 3 open ──────────────────────╮",
+    "│ ○ First task                                 │",
+    "│ ▶ Second task · writing tests                │",
+    "│ ⛔ Third task · waiting for admin            │",
+    "│ ⊘ Old task                                   │",
+    "│ ✓ Shipped                                    │",
+    "╰─────────────────────────── 3 open · 1/5 done ╯",
+  ],
+  // …
+};
+
+function dump(): void {
+  for (const c of CASES) {
+    const actual = renderTodoCard(state(c.tasks), fakeTheme, c.width, c.options);
+    // eslint-disable-next-line no-console
+    console.log(JSON.stringify({ name: c.name, lines: actual }));
+  }
+}
+
+it("renderTodoCard golden: output is stable across the dedup refactor", () => {
+  if (process.env.DUMP_GOLDEN) {
+    dump();
+    assert.fail("dump mode");
+  }
+  for (const c of CASES) {
+    const s = state(c.tasks);
+    const actual = renderTodoCard(s, fakeTheme, c.width, c.options);
+    const expected = GOLDEN[c.name];
+    assert.deepEqual(actual, expected, `case ${c.name}\n--- expected ---\n${expected.map((l) => JSON.stringify(l)).join("\n")}\n--- actual ---\n${actual.map((l) => JSON.stringify(l)).join("\n")}`);
+  }
+});
+```
+
+The workflow: run `DUMP_GOLDEN=1 vitest run`, copy the dumped lines into `GOLDEN`, re-run green. The `fakeTheme` from the same file (and `card.spec.ts`) is the standard trick for deterministic rendering — the theme is an injectable object, so colors are stripped in tests:
+
+```typescript
+const fakeTheme = {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+};
+```
+
+### Pattern 4 — Rendering specs assert invariants, not just snapshots
+
+`extensions/todo/card.spec.ts` pairs the golden test with invariant assertions — width bounds, wrap behavior, collapsed-mode contracts — using an ANSI stripper so the assertions run on visible text:
+
+```typescript
+function plain(line: string): string {
+  return line.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+it("renderTodoCard: empty state renders a short card within width", () => {
+  const lines = renderTodoCard(emptyTodo(), fakeTheme, 40);
+  assert.ok(lines.length >= 2, "header + footer at minimum");
+  for (const line of lines) {
+    assert.ok(plain(line).length <= 40, `line too wide: ${JSON.stringify(line)}`);
+  }
+});
+```
+
+### Test layout and runners
+
+`todo`'s spec file listing — the pattern to copy:
+
+```
+extensions/todo/
+  index.ts            # factory + wiring (thin)
+  index.spec.ts       # integration: mock ExtensionAPI, drive tools + events
+  card.spec.ts        # rendering invariants
+  card-golden.spec.ts # golden output
+  src/model.ts        # pure state logic (no pi imports)
+  src/model.spec.ts   # pure unit tests
+```
+
+Runners: `vitest run` (todo) or `bun test` (pi-context-include) — both self-contained per ADR-0007, so `cd extensions/todo && npm test` works without the root toolchain. The root wrapper suite (`node --test "test/**/*.test.js"`) stays the integration gate; extension tests are per-extension.
 
 ## 13. Gentle-Shell Pattern Index
 
-A 20-row table mapping each gentle-shell extension to the pattern(s) it demonstrates, with file paths and line references. _Filled in by Task 4._
+The 20 files of gentle-shell's `extensions/` directory (`Gentleman-Programming/gentle-shell`, MIT, fetched from `main` — the repo is not checked out in this project, so line numbers below are as of the fetch; in-repo equivalents are named where one exists). This is the "read this file to learn X" index.
+
+| File | Patterns | What it does |
+|---|---|---|
+| `extensions/ask-user-choice.ts` | `registerTool` + `ctx.ui.select` dialog fallback; tool result `details` envelope | Single-select question tool with 2–4 options, opt-in custom response; TUI overlay with `tui.select.cancel` keybinding, RPC fallback through `ctx.ui.select` |
+| `extensions/ask-user-question.ts` | `registerTool` dual-mode (TUI overlay / RPC dialog); rejection convention for bad input | Free-text and multi-part question tool; writes into the calling extension's own tool map, in-repo equivalent `extensions/ask-user/` |
+| `extensions/child-context.ts` | env-gated factory (`GENTLE_PI_AGENTS_CHILD`); `before_agent_start` options mutation; conditional tool registration | In delegated child sessions: strips orchestrator-only blocks from context files and registers the codegraph tool only when requested and absent |
+| `extensions/child-safety.ts` | `tool_call` blocking handler (`{ block: true, reason }`); env-gated factory | Children return `{ block: true }` for recognized destructive shell commands — they cannot authorize data loss |
+| `extensions/codegraph-tools.ts` | `registerTool` from a reusable `createXTool` factory; lazy import | CodeGraph code-intelligence tools; also imported by child-context so children can opt in without the full package |
+| `extensions/gentle-agents.ts` | `spawn` with injected deps; `WeakMap` keyed by request object; identity checks before spawn | Orchestrator subagents: spawns child pi sessions, tracks them in a `WeakMap<TaskRequest, …>`, refuses to write from a changed session |
+| `extensions/gentle-ai.ts` | `AbortSignal.timeout` on every external probe; version-probe adapters; structured error taxonomy | The largest extension (10.8k lines): review host relay with bounded probes (`timeoutMs: 10_000`), time-vs-refusal error classification, session-scoped negotiation |
+| `extensions/gentle-herdr-activity.ts` | factory injection (`isSocket`, `send`, `watch`, `columns`); tool result `details` side channel; socket stat with try/catch | Publishes todo + activity to the herdr socket every 10s; reads `details.gentleTodo` from `tool_execution_end` (the in-repo writer of that key is `extensions/todo/index.ts`) |
+| `extensions/gentle-notifications.ts` | ownership lease (`claimNotificationOwner`); event bus (`pi.events`); injected `now` | One owner per process for notifications; context-high latch, audio ownership, visual-policy store; in-repo event-bus analog `extensions/pi-swarm` |
+| `extensions/gentle-shell.ts` | version audit gate (`AUDITED_PI_EDITOR_VERSIONS`); try/catch feature enable with compatibility notice | Core runtime: Gentle Vim editor mode enabled only for audited pi editor versions; un-audited layouts notify instead of crash |
+| `extensions/gentle-stats.ts` | `registerCommand` with argument completions; env key parsing (`GENTLE_PI_STATS_VIEW_KEY`); full-terminal overlay | `/gentle:stats` panel over local session history (tokens, cost, models); reads the session files pi already writes, persists nothing |
+| `extensions/gentle-todo.ts` | tool result `details` key; hidden transcript messages (`sendMessage` display:false) | The upstream of in-repo `extensions/todo/`: same `details` + hidden-state-message contract |
+| `extensions/gentle-voice.ts` | lazy registration — nothing probed until the user acts | `/gentle:voice` local dictation; command registers eagerly, probing/recording only on demand |
+| `extensions/nan-provider.ts` | minimal `registerProvider` | 7-line provider registration: the smallest possible shape for `pi.registerProvider` |
+| `extensions/pi-pretty.ts` | lazy `import()` memoized behind a promise; `Proxy` scoping of a bundled dependency's host APIs | Wraps the third-party `@heyhuynhgiabuu/pi-pretty` extension: memoized dynamic import, `Proxy(api)` that no-ops the owned editor APIs in TUI mode, env save/restore in try/finally |
+| `extensions/quiet-tools.ts` | `registerToolRenderer` structural detection; `WeakMap` render cache | Rendering-only tool renderers attached to native tools through `pi.registerToolRenderer` (guarded by `typeof host.registerToolRenderer === "function"`); per-row caches in a `WeakMap` |
+| `extensions/resume-hint.ts` | `Symbol.for` on `globalThis` for `/reload` idempotency; env-var claiming (`delete env[KEY]`); `wx` create-only write | Writes the resume handoff file on quit: claims the launcher's env var once per process, keeps the claimed path in `Symbol.for("gentle-pi.resume-hint")` across reloads, best-effort `writeFileSync(..., { flag: "wx" })`; in-repo `Symbol.for` analog `extensions/skill-pi-tui/src/card.ts` |
+| `extensions/runtime-metrics.ts` | injected `now`/`send`/`native` deps; `WeakSet` for seen messages; try/catch around every bus handler | Per-request runtime telemetry with one deferred, discardable delivery attempt; telemetry failures never reach the shared event bus |
+| `extensions/session-scratch.ts` | `WeakMap<ProcessEnv, ActiveSession>` keyed by env; ledger persistence; `registerCommand` with confirm flow; process-liveness checks with start tokens | Per-session scratch `TMPDIR` + artifact ledger: the WeakMap survives a same-module `/reload`, the JSON ledger survives a re-evaluated module; in-repo WeakMap analog `extensions/pi-swarm/src/child.spec.ts` |
+| `extensions/skill-registry.ts` | `globalThis` source-key duplicate-load guard; SHA1 fingerprint cache (mtime + size + content hash); `fs.watch` with debounce | Maintains `.atl/skill-registry.md` from the skills directory; skips a second load of the same source, rebuilds only when the fingerprint changes |
+| `extensions/startup-banner.ts` | `registerCommand` batch (three commands); config file read/write with mkdir | First-run banner and launcher commands; writes launcher config JSON with `mkdir` + `writeFile` |
+
+Reading order for a new extension: `nan-provider.ts` (minimal shape) → `gentle-todo.ts` (tool + state + details + hidden messages) → `resume-hint.ts` (reload idempotency) → `session-scratch.ts` (factory injection + ledger durability) → `gentle-shell.ts` (feature gating).
 
 ## 14. Building a New Extension — Checklist
 
