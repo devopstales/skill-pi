@@ -217,11 +217,227 @@ The base it extends, `extensions/skill-pi-tui/tsconfig.json`, is the canonical c
 
 ## 2. ExtensionAPI Surface
 
-The complete table of `ExtensionAPI` methods (from pi 1.2.0's `@earendil-works/pi-coding-agent` types) with one-line descriptions and a bundled extension that uses each. _Filled in by Task 2._
+The complete `ExtensionAPI` interface from pi 1.2.0 (`dist/core/extensions/types.d.ts`). The factory receives `pi: ExtensionAPI`; everything an extension can do is on it. ADR-0006: build on this public surface only — never import pi internals.
+
+Every method, with its signature (from the 1.2.0 `.d.ts`) and at least one bundled extension that uses it.
+
+### Event subscription
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.on(event, handler)` | Subscribe to a typed pi event (see Section 3); returns an unsubscribe function | `todo` (`pi.on("context", …)`, line 384), `permission` (line 93), all 14 |
+| `pi.events` | `EventBus` — shared extension-to-extension bus, `on`/`emit` | `command-plate` (line 452, 109), `pi-swarm` (line 338, 333), `ask-user` (line 89) |
+
+### Registration
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.registerTool(tool: ToolDefinition): void` | Register an LLM-callable tool (Section 4) | `todo` (line 252), `file-search` (lines 210, 261), `ask-user` |
+| `pi.registerCommand(name, options): void` | Register a `/slash` command | `permission` (line 56), `pi-vcc` (`src/commands/*.ts`), `plan-build`, `command-plate` |
+| `pi.registerShortcut(keyId, options): void` | Register a keyboard shortcut | `todo` (line 333, alt+shift+up/down), `permission` (line 51, configurable auto-accept) |
+| `pi.registerFlag(name, options): void` | Register a CLI flag (`boolean` or `string`, optional default) | `plan-build` (`src/ui.ts` line 40: `--plan`, `--build`) |
+| `pi.registerProvider(provider \| name, config): void` | Register/override a model provider (models, `baseUrl`, `apiKey`, `oauth`, `streamSimple`); queued during load, immediate after bind | `providers/zen/provider.ts` (line 117), `providers/antigravity/provider.ts` (line 115) |
+| `pi.unregisterProvider(name): void` | Remove a provider and restore overridden built-in models | — (no bundled usage; API-only) |
+| `pi.registerMcpServer(name, config): void` | Register an MCP server (same config as `mcp.json`); not persisted — re-register on every load | — in production (exercised by `pi-context-view` runtime tests, e.g. `test/payload-runtime.test.ts` line 192) |
+| `pi.unregisterMcpServer(name): void` | Remove an MCP server and close its connection | — (API-only) |
+| `pi.registerVirtualModel(model): void` | Register a selectable virtual model that routes each request to a physical model | — (API-only) |
+| `pi.unregisterVirtualModel(provider, id): void` | Remove a virtual model | — (API-only) |
+| `pi.registerMessageRenderer(customType, renderer): void` | Render a `CustomMessageEntry` in the transcript | `pi-swarm` (line 650, swarm result messages) |
+| `pi.registerEntryRenderer(customType, renderer): void` | Render a `CustomEntry` (never sent to the LLM) | `plan-build` (`src/question-ui.ts`) |
+| `pi.registerToolRenderer(resolver): void` | Choose how tool calls are drawn; resolvers run in extension load order | — (API-only) |
+| `pi.registerMarkdownTransformer(transformer): void` | Transform user/assistant Markdown before interactive rendering | — (API-only) |
+
+### Message sending & persistence
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.sendMessage(message, options?)` | Append a custom message to the session; `options`: `{ triggerTurn?: boolean, deliverAs?: "steer" \| "followUp" \| "nextTurn" }` | `todo` (hidden state messages, line 153), `skill-loader` (catalog), `pi-hooks` (`src/hook-context.ts` line 45) |
+| `pi.sendUserMessage(content, options?)` | Send a user message that always triggers a turn; `options`: `{ deliverAs?: "steer" \| "followUp", expandPromptTemplates?: boolean }` | `pi-vcc` (`src/commands/pi-vcc.ts` line 21), `plan-build` (handoff), `pi-context-view` (`src/probe/trigger.ts` line 88) |
+| `pi.appendEntry(customType, data?)` | Append a custom entry for state persistence — **not** sent to the LLM (Section 6, Pattern 2) | `plan-build` (line 154), `pi-context-view` (`src/usage.ts`), `pi-vcc` |
+
+### Session metadata & process
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.setSessionName(name): void` | Set the session display name (session selector) | — (session names come from the TUI footer's `ctx.sessionManager.getSessionName()`, `skill-pi-tui/src/footer.ts` line 247) |
+| `pi.getSessionName(): string \| undefined` | Get the current session name | — (API-only) |
+| `pi.setLabel(entryId, label): void` | Set or clear a user-defined label on an entry (bookmarking) | — (API-only) |
+| `pi.exec(command, args, options?): Promise<ExecResult>` | Run a shell command; `options`: `{ signal?, timeout?, cwd? }`, result `{ stdout, stderr, code, killed }` | — in production (extensions run processes via `Effect` `ChildProcess` or `node:child_process` instead, e.g. `file-search/src/process.ts` line 98) |
+
+### Tools & settings queries
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.getActiveTools(): string[]` | Names of the tools declared to the model | `plan-build`, `pi-context-view` |
+| `pi.setActiveTools(toolNames): void` | Activate tools by name; unknown/`hidden` ignored | `plan-build` |
+| `pi.getAllTools(): ToolInfo[]` | Every configured tool: schema, guidelines, exposure, source | `permission`, `pi-context-view`, `skill-pi-tui` (counts custom tools) |
+| `pi.getSettings(): Settings` | Effective settings (global + project merged) | `skill-pi-tui` (line 209, wrapped in try/catch), `pi-context-view` (`src/settings.ts`) |
+| `pi.getCommands(): SlashCommandInfo[]` | Available slash commands | `permission`, `pi-context-view` |
+
+### Model & thinking level
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.setModel(model): Promise<boolean>` | Set the model for this session only (not the default); `false` when the provider has no auth | `plan-build` (`src/handoff.ts` line 44) |
+| `pi.getThinkingLevel(): ThinkingLevel` | Current thinking level | `skill-pi-tui` (line 203, behind try/catch — structural feature detection) |
+| `pi.setThinkingLevel(level): void` | Set thinking level (clamped to model capabilities) | `plan-build` (`src/handoff.ts` line 49) |
+| `pi.getFlag(name): boolean \| string \| undefined` | Read a registered CLI flag | `plan-build` (`hooks.ts` line 291: `pi.getFlag("plan")`) |
+
+### MCP & editor
+
+| Method | Description | Used by |
+|---|---|---|
+| `pi.getMcpServers(): RegisteredMcpServer[]` | Every MCP server registered by extensions | `skill-pi-tui` (line 234, footer MCP count) |
+| `ctx.ui.getEditorComponent(): EditorFactory \| undefined` | Read the active editor factory (lives on `ctx.ui`, not `pi`) | — (API-only) |
+
+Two conventions every bundled extension follows when using this surface:
+
+- **Feature-detect newer APIs.** `skill-pi-tui/index.ts` (lines 201–205) wraps `pi.getThinkingLevel()` in try/catch and stores the function, so an older pi without it degrades instead of crashing:
+
+```typescript
+try {
+  getThinkingLevelFn = () => pi.getThinkingLevel();
+} catch {
+  getThinkingLevelFn = undefined;
+}
+```
+
+- **Guard optional actions.** `todo/index.ts` (line 152) checks `pi.sendMessage` before calling it — the factory runs in every mode, including print, where some actions are absent.
 
 ## 3. Event Taxonomy
 
-All pi events grouped by lifecycle category (session, agent, turn, message, tool, context/prompt, provider, model, input, UI, system) with handler signatures, return-value semantics (which events can block, which can modify, which are void), and a bundled example per event. _Filled in by Task 2._
+All pi 1.2.0 events, from the `ExtensionEvent` union in `dist/core/extensions/types.d.ts`, grouped by lifecycle category. Every handler has the same shape — return nothing for a void event, or the event's result type to block/modify:
+
+```typescript
+type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;
+```
+
+`pi.on(...)` returns an unsubscribe function. The only exception is `project_trust`, which uses `ProjectTrustContext` (no `sessionManager`) instead of `ExtensionContext` because it fires before a session exists.
+
+### System
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `project_trust` | **DECIDES** — must return `{ trusted: "yes" \| "no" \| "undecided", remember? }`; fires before session start, cannot be cancelled by return | — (no bundled extension; trust is pi's default prompt) |
+| `resources_discover` | **EXTENDS** — return `{ skillPaths?, promptPaths?, themePaths? }` after `session_start`/`reload` | — (no bundled extension) |
+| `mcp_servers_change` | void — fired when an extension registers/unregisters an MCP server after bind; handling it marks your extension as the MCP connector | — (no bundled extension) |
+
+### Session lifecycle
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `session_start` | void — `{ reason: "startup" \| "reload" \| "new" \| "resume" \| "fork", previousSessionFile? }`; the place to initialize per-session state | `lsp` (line 26, eager server init), `todo` (line 339, replay state), `skill-loader` (line 80), `skill-pi-tui` (line 193) |
+| `session_info_changed` | void — `{ name }` when session metadata changes | — (no bundled extension) |
+| `session_before_switch` | **CAN CANCEL** — `{ cancel?: boolean }` | — (no bundled extension) |
+| `session_before_fork` | **CAN CANCEL** — `{ cancel?, skipConversationRestore? }` | — (no bundled extension) |
+| `session_before_compact` | **CAN CANCEL** — `{ cancel?, compaction? }` | `pi-context-view` (`src/compaction.ts` line 41) |
+| `session_compact` | void — fired after compaction succeeds | `skill-pi-tui` (line 419, refresh), `pi-context-view` (`src/compaction.ts` line 46) |
+| `session_compact_failed` | void — `{ errorMessage?, aborted, willRetry }` | `pi-context-view` (`src/compaction.ts` line 50) |
+| `session_before_tree` | **CAN CANCEL** — `{ cancel?, summary?, customInstructions?, replaceInstructions?, label? }` | — (no bundled extension) |
+| `session_tree` | void — after tree navigation | `plan-build` (`src/tool-presentation.ts` line 29, re-attach state) |
+| `session_shutdown` | void — `{ reason: "quit" \| "reload" \| "new" \| "resume" \| "fork" }`; the place to **delete** per-session state | `todo` (line 359: `sessions.delete(sessionKey(ctx))`), `lsp` (line 46, stop servers), `pi-swarm` (line 662) |
+
+### Agent loop
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `agent_start` | void — agent loop begins | `skill-pi-tui` (line 332) |
+| `agent_end` | void — `{ messages }` — agent loop ends | `todo` (line 412, clear-all flag), `pi-hooks` (`src/hooks/stop-hooks.ts` line 101), `skill-pi-tui` (line 339) |
+| `agent_before_settle` | **CAN EXTEND** — return `{ entries?: SessionBoundaryDraft[], continue?: boolean }` to append entries (custom, compaction, context-edit) before settlement and ensure one more provider request | — (no bundled extension) |
+| `agent_settled` | void — run fully settled, no retry/compaction/queued continuation will run; `{ aborted }` | `skill-pi-tui` (line 395) |
+
+### Turn
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `turn_start` | void — `{ turnIndex, timestamp }` | — (no bundled extension) |
+| `turn_end` | **CAN EXTEND** — return `{ entries?, continue? }` like `agent_before_settle` | `todo` (line 375, count tool-only turns) |
+
+### Message
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `message_start` | void — `{ message }` | `skill-pi-tui` (line 348) |
+| `message_update` | void — token-by-token assistant stream: `{ message, assistantMessageEvent }` | `skill-pi-tui` (line 357) |
+| `message_end` | **CAN REPLACE** — return `{ message? }`; the replacement must keep the original role | `skill-pi-tui` (line 375) |
+
+### Tool
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `tool_call` | **CAN BLOCK** — return `{ block?, reason?, terminate? }`; to **modify arguments, mutate `event.input` in place** (later handlers see the mutation; no re-validation) | `permission` (line 93: `{ block: true, reason: "…Denied by permission settings…" }`) |
+| `tool_result` | **CAN MODIFY** — return `{ content?, details?, structuredContent?, isError?, usage? }`; replacing `content` without `structuredContent` drops the structured content | — (no bundled extension) |
+| `tool_execution_start` | void — `{ toolCallId, toolName, args, parentToolCallId? }` | — (observed in `pi-swarm/src/child.ts` line 194 via RPC events) |
+| `tool_execution_update` | void — `{ partialResult }` during streaming execution | — (observed in `pi-swarm/src/child.ts` line 195 via RPC events) |
+| `tool_execution_end` | void — `{ result, isError, durationMs? }` | `todo` (line 407, refresh card), `skill-pi-tui` (line 415, invalidate sidebar) |
+
+### Context & prompt
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `before_agent_start` | **CAN OVERRIDE** — return `{ message?, systemPrompt? }` to replace the complete system prompt for this turn (or inject a custom message); `event.systemPromptOptions` is also mutable in place | `todo` (line 363, turn counting), `pi-vcc` (`src/hooks/compact-handler.ts` line 88) |
+| `context` | **CAN REPLACE** — return `{ messages? }` for the full replacement of the conversation (without system messages); fires before each LLM call | `todo` (line 384, re-inject hidden state), `skill-loader` (line 55, re-inject catalog) |
+| `context_with_system` | **CAN REPLACE** — return `{ messages? }` for the full transcript **including** system messages; the handler owns the prompt and tool declarations (result sent as returned) | — (no bundled extension) |
+| `cache_warming_decision` | returns `CacheWarmingDecisionEventResult` — decides prompt-cache warming | — (no bundled extension) |
+
+### Provider
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `before_provider_request` | **CAN REPLACE** — return a replacement for `event.payload` before the HTTP call | — (no bundled extension) |
+| `before_provider_headers` | **MUTATES** — mutate `event.headers` in place (a `null` value deletes a header); return value ignored | — (no bundled extension) |
+| `after_provider_response` | void — `{ status, headers }` before the response stream is consumed | — (no bundled extension) |
+| `provider_stream_event` | void — parsed provider stream event before normalization: `{ provider, api, model, data }` | — (no bundled extension) |
+
+### Model
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `model_select` | void — `{ model, previousModel, source: "set" \| "cycle" \| "restore" }` | `skill-pi-tui` (line 407, refresh status) |
+| `thinking_level_select` | void — `{ level, previousLevel }` | `skill-pi-tui` (line 411, refresh status) |
+
+### Input
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `input` | **TRANSFORMS / HANDLES** — return `{ action: "continue" } \| { action: "transform", text, images? } \| { action: "handled" }` | `pi-swarm` (line 363), `pi-context-view` (`src/probe/silent-probe.ts` line 265) |
+| `user_bash` | **CAN REPLACE EXECUTION** — return `{ operations }` (custom `BashOperations`) or `{ result }` (full `BashResult` replacement) | — (no bundled extension) |
+
+### UI
+
+| Event | Return semantics | Example |
+|---|---|---|
+| `ui_prompt_start` | void — pi starts waiting on a blocking extension UI prompt: `{ kind: "select" \| "confirm" \| "input" \| "editor" \| "custom", title? }` | — (no bundled extension) |
+| `ui_prompt_end` | void — pi stops waiting on that prompt | — (no bundled extension) |
+
+Summary of the three capabilities:
+
+- **Can block:** `tool_call` (stops tool execution), `session_before_*` (switch/fork/compact/tree via `cancel`), `input` (via `{ action: "handled" }` — swallows the prompt).
+- **Can modify:** `tool_call` (`event.input` in place), `tool_result` (returned replacements), `context` / `context_with_system` (message lists), `before_agent_start` (system prompt, per turn), `message_end` (finalized message), `before_provider_request` (payload), `before_provider_headers` (in place), `user_bash` (execution), `input` (transformed prompt).
+- **Can extend the transcript:** `agent_before_settle` / `turn_end` (`entries` + `continue`).
+- **Everything else is void** — observers only.
+
+`permission/index.ts` (lines 93–112) is the canonical blocking handler — it shows both the `allow` early-return and the blocking path:
+
+```typescript
+pi.on("tool_call", async (event, ctx) => {
+  // …
+  if (mode === "allow") {
+    return undefined;
+  }
+
+  if (mode === "deny") {
+    ctx.abort();
+    return {
+      block: true,
+      reason: `${STATUS_REJECTED} Denied by permission settings (${event.toolName})`,
+    };
+  }
+  // …
+  const outcome = await handleToolCallPermission(/* … */);
+  return { block: true, reason: outcome.reason };
+});
+```
 
 ## 4. ToolDefinition Reference
 
@@ -571,7 +787,156 @@ If there is no UI (`!ctx.hasUI`), return a result the model can act on — never
 
 ## 6. State Management Patterns
 
-The four patterns: per-session `Map`, hidden transcript messages (prompt-cache-friendly persistence), `Symbol.for()` / `globalThis` for `/reload` idempotency, `WeakMap` keyed by env or object. _Filled in by Task 2._
+Four patterns, matched to the state's lifetime:
+
+1. **Per-session `Map`** — state that dies with the session (counters, UI handles).
+2. **Hidden transcript messages** — state that must survive across turns and process restarts (prompt-cache-friendly persistence).
+3. **`Symbol.for` / `globalThis`** — state that must survive `/reload` re-evaluation.
+4. **`WeakMap` keyed by a stable object** — state keyed by env or an object, without leaks or re-registration.
+
+### Pattern 1 — Per-session `Map`
+
+Key by `ctx.sessionManager.getSessionId()`, create-on-demand, delete on `session_shutdown`. The factory's closure holds the map, so it is re-created per extension load — exactly what you want for per-process, per-session state. From `extensions/todo/index.ts` (lines 118–149, 359–361):
+
+```typescript
+function sessionKey(ctx: ExtensionContext): string {
+  return ctx.sessionManager.getSessionId() ?? "";
+}
+
+export default function piTodo(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process.env): void {
+  if (!todoEnabled(env)) return;
+  const sessions = new Map<string, TodoSession>();
+  const collapseKey = todoCollapseKey(env);
+
+  const session = (ctx: ExtensionContext): TodoSession => {
+    const key = sessionKey(ctx);
+    let current = sessions.get(key);
+    if (!current) {
+      current = {
+        state: emptyTodo(),
+        turn: 0,
+        // …
+      };
+      sessions.set(key, current);
+    }
+    return current;
+  };
+  // …
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    sessions.delete(sessionKey(ctx));
+  });
+```
+
+Rules: every event handler and `execute` call goes through `session(ctx)` — never a module-level singleton, because pi runs multiple sessions in one process (swarm children, resume). The `session_shutdown` delete is mandatory: without it, every session leaks a map entry for the process lifetime.
+
+### Pattern 2 — Hidden transcript messages
+
+For state that must survive a process restart (resume, `/reload` with new process, fork), persist it **in the transcript** as a custom message with `display: false`. Writing from `extensions/todo/index.ts` (lines 151–156):
+
+```typescript
+const persistState = (current: TodoSession, state: string) => {
+  if (!pi.sendMessage) return;
+  pi.sendMessage({ customType: TODO_STATE_MESSAGE_TYPE, content: state, display: false }, { triggerTurn: false });
+  current.lastSent = state;
+  current.pending = state;
+};
+```
+
+Why a hidden **message** instead of an **entry** (`pi.appendEntry`): messages are appended to the LLM context, so the model sees the current state every turn without you injecting it. `display: false` keeps the transcript clean, and `triggerTurn: false` prevents the message itself from starting an agent run.
+
+**Why this is prompt-cache-friendly:** the transcript is append-only — each turn adds a new snapshot, never rewrites the old one. Providers prefix-cache by stable leading bytes: Anthropic's cache breakpoints and OpenAI's delta encoding both keep the cache hit as long as earlier messages are byte-identical. Rewriting an entry in place (or re-sending the whole state as a fresh user message) would invalidate everything downstream of the change.
+
+Re-attach on loss. Compaction and branch navigation can drop the snapshot, so the `context` handler re-injects it: from `extensions/todo/index.ts` (lines 384–405):
+
+```typescript
+pi.on("context", (event, ctx) => {
+  const current = session(ctx);
+  const trailing: Array<{ role: "custom"; customType: string; content: string; display: false; timestamp: number }> = [];
+  const last = [...event.messages].reverse().find((message) => (message as { customType?: string }).customType === TODO_STATE_MESSAGE_TYPE) as { content?: unknown } | undefined;
+  const seen = typeof last?.content === "string" ? last.content : undefined;
+  const state = todoStateMessage(current.state) ?? (seen === undefined || seen === TODO_CLOSED_MARKER ? undefined : TODO_CLOSED_MARKER);
+  if (state !== undefined && seen !== state) {
+    // The transcript lost the current snapshot (compaction,
+    // branch navigation): treat the re-attached list as fresh so the stale counter
+    // does not fire on the next few turns.
+    current.lastWriteTurn = current.turn;
+    trailing.push({ role: "custom", customType: TODO_STATE_MESSAGE_TYPE, content: state, display: false, timestamp: Date.now() });
+    if (current.pending !== state) persistState(current, state);
+  }
+  const actionable = current.state.tasks.some((task) => task.status === "pending" || task.status === "in_progress");
+  if (!current.reminded && current.toolTurnsSinceWrite >= REMIND_AFTER_TOOL_TURNS && actionable) {
+    current.reminded = true;
+    trailing.push({ role: "custom", customType: TODO_REMINDER_MESSAGE_TYPE, content: TODO_REMINDER_TEXT, display: false, timestamp: Date.now() });
+  }
+  if (trailing.length === 0) return undefined;
+  return { messages: [...event.messages, ...trailing] };
+});
+```
+
+The same pattern with `display: true` is how `pi-vcc` re-injects recall output (`src/commands/vcc-recall.ts` line 32: `pi.sendMessage({ customType: "vcc-recall", content: output, display: true }, { triggerTurn: true })`), and `pi-hooks` injects hook context (`src/hook-context.ts` lines 44–51).
+
+When to use Pattern 2 instead of `pi.appendEntry` (the non-LLM variant): entries never reach the model — `plan-build` uses them for UI state (`index.ts` line 154). Messages reach the model — use them when the model needs to see the state.
+
+### Pattern 3 — `Symbol.for` / `globalThis` for `/reload` idempotency
+
+`/reload` re-runs every extension factory. Module-level singletons re-initialize, which can double-register listeners or reset state mid-session. A `Symbol.for` key on `globalThis` (or on a long-lived pi object such as the TUI terminal) survives re-evaluation: same key, same slot, `??=` skips re-initialization. Real code from `extensions/skill-pi-tui/src/card.ts` (lines 32–41):
+
+```typescript
+const CARD_STYLE_SLOT = Symbol.for("skill-pi-tui.card-style");
+const styleState = globalThis as typeof globalThis & { [CARD_STYLE_SLOT]?: unknown };
+
+export function cardStyle(): CardStyle {
+  return styleState[CARD_STYLE_SLOT] === CARD_STYLE.NEON ? CARD_STYLE.NEON : CARD_STYLE.FLOAT;
+}
+
+export function setCardStyle(style: CardStyle): void {
+  styleState[CARD_STYLE_SLOT] = style;
+}
+```
+
+When the state must live on a **pi-owned object** rather than `globalThis` (because pi keeps the object across things that re-create modules — e.g. regular/fullscreen transitions), store it on that object with a `Symbol.for` key. `extensions/skill-pi-tui/src/sidebar.ts` (lines 3–5, 32–35):
+
+```typescript
+// Store on the terminal, not a module singleton: extension loaders may isolate
+// modules, while Pi keeps this terminal across regular/fullscreen transitions.
+const STATE = Symbol.for("skill-pi-tui.sidebar.state");
+// …
+
+export function sidebarState(tui: TUI): SidebarState {
+  const terminal = tui.terminal as unknown as Record<symbol, SidebarState>;
+  return terminal[STATE] ??= { active: false, parts: new Map() };
+}
+```
+
+The cache variant, `extensions/skill-pi-tui/src/sidebar-layout.ts` (lines 40–45):
+
+```typescript
+const CACHE = Symbol.for("skill-pi-tui.sidebar.cache");
+
+function sidebarCache(tui: TUI): SidebarCache {
+  const terminal = tui.terminal as unknown as Record<symbol, SidebarCache>;
+  return terminal[CACHE] ??= { revision: 0 };
+}
+```
+
+Two rules: name the symbol `skill-pi.<extension>.<purpose>` (global namespace — collisions are silent), and always initialize with `??=`, never assignment. gentle-shell does the same in `resume-hint.ts` and `skill-registry.ts` (`Symbol.for("gentle-pi.…")` slots on `globalThis`).
+
+### Pattern 4 — `WeakMap` keyed by env or object
+
+When state is naturally keyed by an object (a stream, an env record, a session handle) and should die when the key dies, use a `WeakMap` — no explicit cleanup, no leak, and re-`/reload` simply re-creates the map with the same live keys. The pattern, as used in `extensions/pi-swarm/src/child.spec.ts` (lines 78–82):
+
+```typescript
+const fakeStdins = new WeakMap<PassThrough, Buffer[]>();
+function stdinText(stdin: PassThrough): string {
+  const chunks = fakeStdins.get(stdin) ?? [];
+  return Buffer.concat(chunks).toString();
+}
+```
+
+gentle-shell's production version keys `ProcessEnv`: `new WeakMap<ProcessEnv, ActiveSession>()` in `session-scratch.ts` — one scratch record per env object, garbage-collected when the env object is no longer referenced. Use `WeakMap` over `Map<object, V>` whenever the key is a live object: a plain `Map` pins the key and defeats garbage collection.
+
+Choosing: session-scoped runtime state → Pattern 1; state the model or a resumed process needs → Pattern 2; cross-`/reload` idempotency → Pattern 3; per-object scratch → Pattern 4. They compose: `todo` uses 1 + 2 together (map for the live session, hidden messages for durability).
 
 ## 7. Config Patterns
 
