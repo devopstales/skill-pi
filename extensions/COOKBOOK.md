@@ -940,19 +940,721 @@ Choosing: session-scoped runtime state → Pattern 1; state the model or a resum
 
 ## 7. Config Patterns
 
-The three mechanisms: conf.d (ADR-0008), settings.json block, env kill-switch (`SKILL_PI_<NAME>`, default on, `0/false/no/off` disables). _Filled in by Task 3._
+Three mechanisms, matched to what you need to configure:
+
+| Mechanism | Use case | Precedence |
+|---|---|---|
+| conf.d (ADR-0008) | Structured JSON config (paths, toggles, lists) | project `.skill-pi/conf.d/<name>.conf` > user `$AGENT_HOME/conf.d/<name>.conf` |
+| settings.json block | A single named block inside pi's own settings file | `<cwd>/.pi/settings.json` replaces `<agent-dir>/settings.json` (not merged) |
+| Env kill-switch | On/off toggle, optional single value (`SKILL_PI_<NAME>`, `SKILL_PI_<NAME>_KEY`) | process env, default on |
+
+### Mechanism 1: conf.d (ADR-0008)
+
+Two JSON files, merged project-over-user:
+
+- **User:** `<agent-home>/conf.d/<name>.conf` (resolved via `dirname(getAgentDir())`)
+- **Project:** `<git-root>/.skill-pi/conf.d/<name>.conf`
+
+The contract: read both (missing file = absent), parse as JSON, merge project fields over user. From `extensions/lsp/src/config.ts` (lines 17–93):
+
+```typescript
+const CONFIG_FILE = "lsp.conf";
+
+export function userConfPath(): string {
+  return join(dirname(getAgentDir()), "conf.d", CONFIG_FILE);
+}
+
+export function resolveProjectRoot(cwd: string): string {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out ? resolve(out) : resolve(cwd);
+  } catch {
+    return resolve(cwd);
+  }
+}
+
+export function projectConfPath(cwd: string): string {
+  return join(resolveProjectRoot(cwd), ".skill-pi", "conf.d", CONFIG_FILE);
+}
+
+function loadConfigFromFile(
+  path: string,
+  label: string,
+): ExtensionConfig | undefined {
+  if (!existsSync(path)) return undefined;
+  return parseConfigDocument(readFileSync(path, "utf8"), label);
+}
+
+function mergeConfigs(
+  global: ExtensionConfig,
+  local: ExtensionConfig,
+): ExtensionConfig {
+  const localIds = new Set(local.servers.map((s) => s.id));
+  const globalOnly = global.servers.filter((s) => !localIds.has(s.id));
+  return {
+    servers: [...local.servers, ...globalOnly],
+    defaultLimit: local.defaultLimit ?? global.defaultLimit,
+    maxLimit: local.maxLimit ?? global.maxLimit,
+    eagerInit: local.eagerInit ?? global.eagerInit,
+  };
+}
+
+export function loadConfig(cwd: string): ExtensionConfig {
+  const userConfig = loadConfigFromFile(userConfPath(), userConfPath());
+  const projectConfig = loadConfigFromFile(
+    projectConfPath(cwd),
+    projectConfPath(cwd),
+  );
+
+  if (projectConfig && userConfig) {
+    return mergeConfigs(userConfig, projectConfig);
+  }
+  if (projectConfig) return projectConfig;
+  if (userConfig) return userConfig;
+
+  throw new Error(
+    `No ${CONFIG_FILE} configuration found (expected in .skill-pi/conf.d or the agent home conf.d)`,
+  );
+}
+```
+
+The `permission` extension uses a shared helper (`extensions/permission/project.ts`) that layers a third scope (local) on top:
+
+```typescript
+export function getExtensionSettingsPaths(name: string, cwd: string): ConfSettingsPaths {
+  const root = resolveProjectRoot(cwd);
+  return {
+    global: path.join(agentHome(), "conf.d", `${name}.conf`),
+    project: path.join(root, ".skill-pi", "conf.d", `${name}.conf`),
+    local: path.join(root, ".skill-pi", "conf.d", `${name}.local.conf`),
+  };
+}
+
+export function loadExtensionSettings<T>(
+  name: string,
+  cwd: string,
+  merge: (a: Partial<T>, b: Partial<T>) => Partial<T>,
+): Partial<T> {
+  const paths = getExtensionSettingsPaths(name, cwd);
+  const g = loadJsonSafe<T>(paths.global);
+  const p = loadJsonSafe<T>(paths.project);
+  const l = loadJsonSafe<T>(paths.local);
+  const withUser = merge(g, p);
+  return merge(withUser, l);
+}
+
+export function loadJsonSafe<T>(filePath: string): Partial<T> {
+  if (!fs.existsSync(filePath)) return {};
+  const raw = fs.readFileSync(filePath, "utf-8");
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid JSON in ${filePath}: ${message}`);
+  }
+}
+```
+
+Rules:
+
+- The merge function is caller-supplied — each extension defines its own field-level precedence (`local ?? global`, or union for lists).
+- A missing file is not an error; it resolves to `{}`.
+- The file is plain JSON (`.conf` is the extension convention, not a format requirement).
+- `lsp` catches the `loadConfig` throw at `session_start` and downgrades it to `console.warn` (the tool re-loads lazily on first call).
+
+### Mechanism 2: settings.json block
+
+For a single named block that lives inside pi's own settings file rather than a standalone conf:
+
+- **Global:** `<agent-dir>/settings.json`
+- **Project:** `<cwd>/.pi/settings.json` (replaces the global file entirely — no merge)
+
+The pattern (as designed for `pi-context-include`): read the settings file with try/catch (missing or malformed → `{}`), extract the named block, validate fields. Sketch:
+
+```typescript
+function readSettingsFile(path: string): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function validLimit(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return undefined;
+  return value;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.length > 0);
+}
+
+export function loadContextIncludeConfig(cwd: string): ContextIncludeConfig {
+  const global = readSettingsFile(join(getAgentDir(), "settings.json"));
+  const project = readSettingsFile(join(cwd, ".pi", "settings.json"));
+  const block = (project.contextInclude ?? global.contextInclude) as Record<string, unknown> | undefined;
+  if (!block) return { enabled: true, paths: [], maxChars: 5000 };
+  return {
+    enabled: block.enabled !== false,
+    paths: parseStringArray(block.paths),
+    maxChars: validLimit(block.maxChars) ?? 5000,
+  };
+}
+```
+
+Precedence: the project file **replaces** the global (pi's own semantics for `.pi/settings.json`). The extension picks one file, not a merge. This is simpler than conf.d and appropriate when the config is a single small block, not a multi-section document.
+
+### Mechanism 3: Env kill-switch
+
+A `SKILL_PI_<NAME>` environment variable that defaults to **on** and is disabled by `0/false/no/off`. For extensions with a configurable action key, a companion `SKILL_PI_<NAME>_KEY` sets the leader's second key.
+
+From `extensions/webfetch/index.ts` (lines 30–50):
+
+```typescript
+const ENABLE_ENV = "SKILL_PI_WEBFETCH";
+
+function parseEnableEnv(envVar: string): boolean {
+  const envValue = process.env[envVar];
+  if (!envValue) {
+    return true;
+  }
+  const normalized = envValue.trim().toLowerCase();
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  // Unknown values fall back to default-on behavior.
+  return true;
+}
+
+export function isWebfetchEnabled(): boolean {
+  return parseEnableEnv(ENABLE_ENV);
+}
+```
+
+The shorter inline variant from `extensions/todo/index.ts` (lines 90–99):
+
+```typescript
+export function todoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.SKILL_PI_TODO?.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "off");
+}
+
+export function todoCollapseKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const value = env.SKILL_PI_TODO_KEY?.trim();
+  if (value === undefined) return COLLAPSE_KEY_DEFAULT;
+  return value === "" || value.toLowerCase() === "off" ? undefined : value;
+}
+```
+
+Rules:
+
+- Default is **on** — the extension works with zero configuration.
+- `0/false/no/off` (case-insensitive, trimmed) disables.
+- Unknown values fall back to on (fail-open).
+- The factory checks the kill-switch first and returns early if disabled — no registration side effects.
+- The `env` parameter is injectable (defaults to `process.env`) so tests can drive it with a fake.
 
 ## 8. Sidebar Card Integration
 
-How to add a card to the skill-pi-tui fullscreen sidebar: import `sidebarPart` / `sidebarState` / `invalidateSidebar` from `skill-pi-tui/src/`, build a `Component`, register via `ctx.ui.setWidget()`, wire `tool_execution_end` to refresh. _Filled in by Task 3._
+A sidebar card is a `Component` registered via `ctx.ui.setWidget()` that renders in the skill-pi-tui fullscreen right sidebar rail (terminals ≥ 140 columns). On narrow terminals the card renders as a bottom widget in the main column.
+
+The complete integration, from `extensions/todo/index.ts`:
+
+### Step 1 — Import sidebar helpers
+
+```typescript
+import { Text, matchesKey, parseKey, truncateToWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import { sidebarPart } from "../skill-pi-tui/src/sidebar.ts";
+import { invalidateSidebar } from "../skill-pi-tui/src/sidebar-layout.ts";
+```
+
+`sidebarPart` wraps the widget component so it renders in the rail (fullscreen) but suppresses its main-column paint when the rail owns the host. `invalidateSidebar` marks the sidebar cache stale, triggering a re-render.
+
+### Step 2 — Build the card Component
+
+The card is a `Component` with `render(width)` returning string lines and `invalidate()`. From `extensions/todo/index.ts` (lines 167–226):
+
+```typescript
+const makeCard = (
+  current: TodoSession,
+  theme: TodoTheme,
+  inSidebar: boolean,
+): Component & { dispose(): void; digest(): string; scrollBy(lines: number): void } => {
+  let bodyLines: string[] = [];
+  let topLines: string[] = [];
+  let bottomLine = "";
+  const scroll = { top: 0, height: 0 };
+  const card: Component = {
+    render(width: number) {
+      const options: TodoCardOptions = {
+        collapsed: current.collapsed,
+        staleTurns: staleTurns(current.state, current.turn, current.lastWriteTurn),
+        collapseKey,
+      };
+      const rows =
+        current.state.tasks.length > 0
+          ? renderTodoCard(current.state, theme, width, options)
+          : [];
+      if (rows.length === 0) {
+        topLines = [];
+        bodyLines = [];
+        bottomLine = "";
+        scroll.height = 0;
+        return [];
+      }
+      const headerRow = cardHeaderRow(theme, width, options);
+      topLines = rows.slice(0, headerRow + 1);
+      bodyLines = rows.slice(headerRow + 1, rows.length - 1);
+      bottomLine = rows[rows.length - 1] ?? "";
+      const terminalRows = current.tui?.terminal?.rows ?? 48;
+      const budget = inSidebar ? 16 : Math.min(16, Math.floor(terminalRows / 3));
+      const chrome = topLines.length + 1;
+      const room = Math.max(1, budget - chrome);
+      scroll.height = Math.min(bodyLines.length, room);
+      if (scroll.top > bodyLines.length - scroll.height) scroll.top = Math.max(0, bodyLines.length - scroll.height);
+      const visible = bodyLines.slice(scroll.top, scroll.top + scroll.height);
+      const overflow = !current.collapsed && bodyLines.length > scroll.height;
+      const out = [...topLines, ...visible, bottomLine];
+      if (overflow && !inSidebar) {
+        out.push(theme.fg("muted", truncateToWidth(`↑↓ ${scroll.top + 1}–${Math.min(bodyLines.length, scroll.top + scroll.height)}/${bodyLines.length}`, width)));
+      }
+      return out;
+    },
+    invalidate() {},
+  };
+  return {
+    ...card,
+    scrollBy: (lines: number) => {
+      if (current.collapsed || bodyLines.length <= scroll.height) return;
+      scroll.top = Math.max(0, Math.min(bodyLines.length - scroll.height, scroll.top + lines));
+      if (current.tui) invalidateSidebar(current.tui);
+      current.host?.requestRender();
+    },
+    digest: () =>
+      JSON.stringify([current.tui?.terminal?.rows, current.collapsed, current.turn, scroll.top, current.state.tasks.length, current.lastWriteTurn]),
+    dispose: () => {},
+  };
+};
+```
+
+The `digest()` method is optional but recommended: the sidebar layout caches rendered sections and reuses them when the digest is unchanged, skipping re-render for unchanged cards.
+
+### Step 3 — Register via `ctx.ui.setWidget`
+
+The `show` function registers the widget. The factory callback receives `(tui, theme)` — `tui` is the `TUI` instance, `theme` is the current theme. From `extensions/todo/index.ts` (lines 228–250):
+
+```typescript
+const show = (current: TodoSession) => {
+  if (current.tui) invalidateSidebar(current.tui);
+  if (!current.ui) return;
+  if (current.state.tasks.length === 0) {
+    current.scrollTodo = undefined;
+    current.ui.setWidget(WIDGET_KEY, undefined);
+    return;
+  }
+  const snapshot = current;
+  current.ui.setWidget(WIDGET_KEY, (tui, theme) => {
+    snapshot.host = tui;
+    snapshot.tui = tui;
+    const barTheme = buildTheme(theme);
+    const rail = makeCard(snapshot, barTheme, true);
+    snapshot.scrollTodo = (lines) => rail.scrollBy(lines);
+    // Main-view widget renders nothing: the todo card lives exclusively in
+    // the skill-pi-tui right sidebar rail. sidebarPart keeps the empty
+    // bottom component mounted (required by the layout) and registers the
+    // rail for the sidebar.
+    const empty: Component = { render: () => [], invalidate() {} };
+    return sidebarPart(tui, "todo", empty, rail);
+  });
+};
+```
+
+Passing `undefined` to `setWidget` removes the widget. The `sidebarPart(tui, key, bottom, rail)` call registers `rail` in the sidebar state under `key` and returns a wrapper that suppresses the main-column paint when the rail is active.
+
+### Step 4 — Wire events to refresh
+
+```typescript
+pi.on("tool_execution_end", (event, ctx) => {
+  if (event.toolName !== TODO_TOOL_NAME) return;
+  show(session(ctx));
+});
+
+pi.on("session_start", (_event, ctx) => {
+  const current = session(ctx);
+  // … replay state, set turn counters …
+  current.ui = ctx.hasUI ? ctx.ui : undefined;
+  show(current);
+});
+```
+
+### Step 5 — Invalidate on state change
+
+Whenever the card's data changes (tool execution, toggle, turn advance), call `invalidateSidebar(current.tui)` followed by `requestRender()`:
+
+```typescript
+const toggle = (current: TodoSession) => {
+  current.collapsed = !current.collapsed;
+  if (current.tui) invalidateSidebar(current.tui);
+  current.host?.requestRender();
+};
+```
+
+### Layout behavior
+
+- **Fullscreen, ≥ 140 columns:** the card renders in the right sidebar rail. `sidebarPart` suppresses the main-column widget paint (the `empty` component renders `[]`).
+- **Narrow terminal or non-fullscreen:** the card renders as a bottom widget in the main column. The `inSidebar` flag in `makeCard` controls the height budget (fixed 16 rows in sidebar, `min(16, rows/3)` in main column) and shows a scroll hint only in the main column.
+- The sidebar layout (`installSidebar` in `sidebar-layout.ts`) polls every 100ms, re-prepares the rail when `invalidateSidebar` bumps the revision, and renders cached sections when the digest is unchanged.
 
 ## 9. Cross-Extension Communication
 
-The three channels: event bus (`pi.events.on` / `pi.events.emit`), tool result `details` field, file handshakes. _Filled in by Task 3._
+Three channels, matched to what you need to pass:
+
+| Channel | Use case | Lifetime |
+|---|---|---|
+| Event bus (`pi.events`) | Notifications, RPC, state change signals | in-process, session-scoped |
+| Tool result `details` | Machine-readable data in a tool result, readable by other extensions via `tool_execution_end` | in-process, per tool call |
+| File handshake | Cross-process data (user config, include lists) | on-disk, persistent |
+
+### Channel 1: Event bus (`pi.events`)
+
+`pi.events.on(event, handler)` subscribes; `pi.events.emit(event, payload)` publishes. Handlers receive the payload and must guard its shape (any extension can emit). `on` returns an unsubscribe function.
+
+**Emit** — from `extensions/pi-swarm/index.ts` (line 333):
+
+```typescript
+pi.events.emit(SWARM_READY_EVENT, { v: 1 });
+```
+
+**Subscribe** — from `extensions/pi-swarm/index.ts` (lines 338–353):
+
+```typescript
+pi.events.on(PLAN_PRESENT_EVENT, () => {
+  for (const session of fleetSessions.values()) {
+    session.planAvailable = true;
+    if (session.ctx && session.ctx.hasUI) updateTargetStatus(session);
+  }
+});
+
+pi.events.on(TARGET_SET_EVENT, (data: unknown) => {
+  if (typeof data !== "object" || data === null) return;
+  const target = (data as { target?: unknown }).target;
+  if (typeof target !== "string") return;
+  for (const session of fleetSessions.values()) {
+    session.target.set(target as TargetId);
+    if (session.ctx && session.ctx.hasUI) updateTargetStatus(session);
+  }
+});
+```
+
+The `webfetch` extension also uses the bus for handler registration (extensions can register fetch handlers at runtime):
+
+```typescript
+pi.events.on("webfetch:register", (data: unknown) => {
+  const handler = data as WebFetchExtension;
+  if (!handler || typeof handler !== "object") return;
+  if (!handler.name || !handler.matches || !Array.isArray(handler.matches)) {
+    console.error(
+      "webfetch: received registration missing required fields (name, matches)",
+    );
+    return;
+  }
+  registry.addEventBus(handler);
+});
+```
+
+**RPC over the bus** — pi-swarm implements a request/reply protocol on the bus. From `extensions/pi-swarm/src/protocol.ts` (lines 25–72):
+
+```typescript
+const RPC_CHANNELS: Record<string, string> = {
+  "swarm:rpc:ping": "ping",
+  "swarm:rpc:spawn": "spawn",
+  "swarm:rpc:steer": "steer",
+  "swarm:rpc:consume": "consume",
+  "swarm:rpc:stop": "stop",
+};
+
+const REPLY_CHANNEL = "swarm:rpc:reply";
+
+// …
+
+const reply = (reqId: string, payload: unknown): void => {
+  bus.emit(REPLY_CHANNEL, { v: PROTOCOL_VERSION, reqId, type: "reply", payload });
+};
+
+const handle = (channel: string) => (data: unknown): void => {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return;
+  const envelope = data as Partial<RpcEnvelope>;
+  if (typeof envelope.reqId !== "string") return;
+  const { reqId, v } = envelope;
+  const type = typeof envelope.type === "string" ? envelope.type : undefined;
+  const { payload } = envelope;
+  if (v !== PROTOCOL_VERSION) {
+    reply(reqId, { error: "unsupported_version", supported: [PROTOCOL_VERSION] });
+    return;
+  }
+  // … dispatch by kind …
+};
+
+for (const channel of Object.keys(RPC_CHANNELS)) {
+  disposers.push(bus.on(channel, handle(channel)));
+}
+```
+
+Event naming convention: `<extension>:<event-name>` (e.g. `swarm:rpc:spawn`, `webfetch:register`, `swarm:plan-present`). This avoids collisions.
+
+### Channel 2: Tool result `details` field
+
+A tool's `execute` return value is `{ content: [...], details? }`. The `details` field is a machine-readable side channel: the model sees `content`, other extensions read `details` from the `tool_execution_end` event.
+
+Writing — from `extensions/todo/index.ts` (lines 284–289):
+
+```typescript
+const details: Record<string, unknown> = { [TODO_DETAILS_KEY]: result.state };
+if (result.error) details.error = result.error;
+return {
+  content: [{ type: "text", text: result.text }],
+  details,
+};
+```
+
+`TODO_DETAILS_KEY` is `"pi-todo"` — a namespaced key so multiple extensions can write to the same `details` object without colliding.
+
+Reading — another extension subscribes to `tool_execution_end` and reads the details:
+
+```typescript
+pi.on("tool_execution_end", (event, ctx) => {
+  if (event.toolName !== "todo") return;
+  const state = (event.result?.details as Record<string, unknown> | undefined)?.[TODO_DETAILS_KEY];
+  if (typeof state !== "string") return;
+  // … react to the todo state change …
+});
+```
+
+### Channel 3: File handshakes
+
+For cross-process data (one extension writes, another reads, possibly in different processes), write a JSON file to the agent dir. The convention is `<agent-dir>/<name>-handshake.json`, overridable by an env var.
+
+Writing (best-effort, fail-open):
+
+```typescript
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+
+function writeIncludesHandshake(entries: IncludeEntry[]): void {
+  try {
+    writeFileSync(join(getAgentDir(), "pi-vcc-includes.json"), JSON.stringify({ includes: entries }, null, 2));
+  } catch {
+    // fail-open: a missing handshake file means the reader gets an empty list
+  }
+}
+```
+
+Reading — from `extensions/pi-vcc/src/core/includes.ts` (lines 17–44):
+
+```typescript
+export const INCLUDES_PATH_DEFAULT: string = join(getAgentDir(), "pi-vcc-includes.json");
+const includesPath = (): string => process.env.PI_VCC_INCLUDES_PATH ?? INCLUDES_PATH_DEFAULT;
+
+export const readIncludes = (): IncludeEntry[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(includesPath(), "utf-8"));
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const list = (parsed as { includes?: unknown }).includes;
+  if (!Array.isArray(list)) return [];
+  const entries: IncludeEntry[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as { path?: unknown; source?: unknown };
+    if (typeof entry.path !== "string") continue;
+    if (!entry.path.startsWith("/") || !entry.path.endsWith(".md")) continue;
+    entries.push({
+      path: entry.path,
+      ...(typeof entry.source === "string" ? { source: entry.source } : {}),
+    });
+  }
+  return entries;
+};
+```
+
+Rules:
+
+- Write is best-effort: a failed write is silent (the reader fails open to an empty/ default).
+- Read is fail-open: missing file, malformed JSON, or wrong shape → default (empty array, `{}`).
+- The path is overridable by env (`PI_VCC_INCLUDES_PATH`) for testability.
+- Validate each entry's shape on read — the file is written by a different extension and may be stale or hand-edited.
 
 ## 10. Keybindings
 
-The Ctrl+Q leader prefix convention (ADR-0010): `onTerminalInput` handler, leader → action key, no standalone Ctrl+Q re-registration. _Filled in by Task 3._
+The `Ctrl+Q` leader prefix convention (ADR-0010): every extension action key is `Ctrl+Q` + one letter (or `Tab`), and **no extension registers a standalone `Ctrl+Q` shortcut**. The leader is implemented as a raw `ctx.ui.onTerminalInput` listener, not a `registerShortcut` (which caused conflict warnings with pi built-ins under the old `Ctrl+A` scheme).
+
+### The API
+
+```typescript
+import { parseKey } from "@earendil-works/pi-tui";
+
+ctx.ui.onTerminalInput((data: string) => {
+  // data is the raw terminal input string
+  // parseKey(data) → "ctrl+q", "t", "escape", "enter", "tab", … or undefined
+  // return { consume: true } to prevent the key from reaching the editor
+  // return undefined to let the key pass through
+});
+// returns a stop function — call it on session_shutdown
+```
+
+### Leader pattern (full implementation)
+
+From `extensions/todo/index.ts` (lines 293–330) — the collapse keybinding:
+
+```typescript
+const collapseListener: { stop: (() => void) | undefined } = { stop: undefined };
+let armed = false;
+let armedCtx: ExtensionContext | undefined;
+const pendingKey = collapseKey?.toLowerCase() ?? "";
+
+const startLeaderListener = (ctx: ExtensionContext) => {
+  collapseListener.stop?.();
+  collapseListener.stop = undefined;
+  if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function") return;
+  collapseListener.stop = ctx.ui.onTerminalInput((data) => {
+    if (parseKey(data) === "ctrl+q") {
+      armed = true;
+      armedCtx = ctx;
+      return { consume: true };
+    }
+    if (armed) {
+      const parsed = parseKey(data);
+      if (parsed && parsed.length === 1 && parsed >= "a" && parsed <= "z" && parsed === pendingKey) {
+        const target = armedCtx;
+        armed = false;
+        if (target) toggle(session(target));
+        return { consume: true };
+      }
+      armed = false;
+      return undefined;
+    }
+    return undefined;
+  });
+};
+
+pi.on("session_start", (_event, ctx) => startLeaderListener(ctx));
+
+pi.on("session_shutdown", () => {
+  collapseListener.stop?.();
+  collapseListener.stop = undefined;
+  armed = false;
+  armedCtx = undefined;
+});
+```
+
+How it works:
+
+1. `Ctrl+Q` arrives → `armed = true`, return `{ consume: true }` (the editor never sees it).
+2. Next key arrives while armed:
+   - If it matches `pendingKey` (the configured action key, default `t` for todo) → execute the action, return `{ consume: true }`.
+   - Any other key → disarm, return `undefined` (the key passes through to the editor).
+3. If no second key arrives, the leader simply stays armed (pi-swarm adds a 2s timeout for auto-disarm).
+
+### Multi-key leader (plan-build)
+
+From `extensions/plan-build/index.ts` (lines 480–515) — mode switching:
+
+```typescript
+const modeLeader: { stop: () => void | undefined } = { stop: undefined };
+const modeKeys: Record<string, Mode> = {};
+for (const key of shortcutConfig.planMode) modeKeys[key] = "plan";
+for (const key of shortcutConfig.buildMode) modeKeys[key] = "build";
+
+const startModeLeader = (ctx: ExtensionContext) => {
+  modeLeader.stop?.();
+  modeLeader.stop = undefined;
+  if (!ctx.hasUI || typeof ctx.ui.onTerminalInput !== "function" || Object.keys(modeKeys).length === 0) return;
+  let armed = false;
+  modeLeader.stop = ctx.ui.onTerminalInput((data) => {
+    if (parseKey(data) === "ctrl+q") {
+      armed = true;
+      return { consume: true };
+    }
+    if (armed) {
+      const parsed = parseKey(data);
+      const mode = parsed ? modeKeys[parsed] : undefined;
+      armed = false;
+      if (mode) {
+        void selectMode(mode, session(ctx), ctx, "manual");
+        return { consume: true };
+      }
+    }
+    return undefined;
+  });
+};
+```
+
+Here `modeKeys` maps multiple possible action keys (`p` → plan, `b` → build) — the leader resolves any of them.
+
+### Tab-key leader (pi-swarm)
+
+From `extensions/pi-swarm/index.ts` (lines 142–171) — target cycle:
+
+```typescript
+function fleetInputHandler(session: FleetViewSession, onLeaderArm: () => void) {
+  return (data: string): { consume?: boolean; data?: string } | undefined => {
+    if (session.leaderArmed) {
+      const key = parseKey(data);
+      const targetKey = swarmTargetKey();
+      if (targetKey && key === targetKey) {
+        session.leaderArmed = false;
+        if (session.armedTimer) {
+          clearTimeout(session.armedTimer);
+          session.armedTimer = undefined;
+        }
+        cycleTarget(session);
+        return { consume: true };
+      }
+      if (key === "escape" || (key === undefined && data.length > 0)) {
+        session.leaderArmed = false;
+        if (session.armedTimer) {
+          clearTimeout(session.armedTimer);
+          session.armedTimer = undefined;
+        }
+        return { consume: true };
+      }
+      return undefined;
+    }
+    if (!session.ctx || !session.ui) return undefined;
+    if (parseKey(data) === "ctrl+q") {
+      session.leaderArmed = true;
+      onLeaderArm();
+      return { consume: true };
+    }
+    // … non-leader input handling (fleet view focus) …
+    return undefined;
+  };
+}
+```
+
+pi-swarm adds a **2-second auto-disarm timer** (`onLeaderArm` sets `setTimeout(() => { session.leaderArmed = false }, 2000)`) and treats `escape` or any unparseable input while armed as "cancel the leader, consume the key".
+
+### ADR-0010 constraints
+
+- **No standalone `Ctrl+Q` re-registration.** The prefix is intercepted by `onTerminalInput` only. A `registerShortcut("ctrl+q", …)` would conflict with pi's Windows `app.message.dequeue` fallback and produce diagnostic warnings.
+- **The plate is `/cp`-only.** The command plate palette is reachable via the `/cp` slash command; its keys are also reachable as leader actions but the plate itself is command-only.
+- **Action keys are rebindable per extension.** `SKILL_PI_TODO_KEY` (default `t`), plan-build `shortcuts.planMode` / `shortcuts.buildMode` (default `["p"]` / `["b"]`), `SKILL_PI_SWARM_TARGET_KEY` (default `tab`) set the second key of the chord. The `Ctrl+Q` prefix is fixed.
+- **Assigned keys:** `?` (plate), `m` (models), `s` (subagents), `t` (todo collapse), `p` (plan), `b` (build), `q` (quit), `Tab` (swarm target). A new extension picks an unassigned letter.
+- **Guard for non-TUI modes.** Always check `ctx.hasUI` and `typeof ctx.ui.onTerminalInput === "function"` before registering the listener — RPC and print modes have no terminal input.
+- **Stop the listener on `session_shutdown`.** The `onTerminalInput` registration is per-session; calling `stop()` prevents a dangling listener from consuming input in the next session.
 
 ## 11. Defensive Coding Checklist
 
